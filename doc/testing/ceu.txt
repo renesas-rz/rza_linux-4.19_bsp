@@ -1,0 +1,35 @@
+
+
+The camera interface on the Stream it board was testing by first modifying the board
+for 16MB instead of 32MB because of the address pin conflict.
+
+The following options in the kernel needed to be enabled.
+     CONFIG_MEDIA_SUPPORT=y
+     CONFIG_MEDIA_CAMERA_SUPPORT=y
+     CONFIG_V4L_PLATFORM_DRIVERS=y
+     CONFIG_VIDEO_RENESAS_CEU=y
+     CONFIG_MEDIA_CONTROLLER=y
+     CONFIG_VIDEO_V4L2_SUBDEV_API=y
+     CONFIG_MEDIA_SUBDRV_AUTOSELECT=n    (NOTE this is =n)
+     CONFIG_VIDEO_OV7740=y
+
+The OV7740 camera that comes wtih the stream it was used.
+
+After you boot, you should see the device /dev/video0
+
+
+The latest version of the yavta program was built (the one in Buildroot was too old)
+  $ ./build.sh env
+  $ export ROOTDIR=$(pwd) ; source ./setup_env.sh
+  $ git clone git://git.ideasonboard.org/yavta.git
+  $ cd yavta
+  $ make
+
+The command line to capture one frame on the Stream it board was:
+  $ yavta /dev/video0 -c1 -n1 -f YUYV -s 640x480 -F"yuyv#.yuv"
+
+After transfering the output file (yuyv000000.yuv) to the PC, ffmpeg was used to convert it to JPEG.
+
+  ffmpeg -f rawvideo -vcodec rawvideo -s 640x480 -pix_fmt yuyv422 -i yuyv000000.yuv yuyv000000.jpg
+
+

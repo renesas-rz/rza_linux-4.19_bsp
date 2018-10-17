@@ -1,0 +1,3497 @@
+diff --git a/CHANGES b/CHANGES
+index d8b369fe8..90d409f2c 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,31 @@
++2017.02.4, Released July 4th, 2017
++
++	Important / security related fixes.
++
++	Update support/scripts/scancpan to use METACPAN v1 API as v0
++	has been shutdown.
++
++	Update support/scripts/mkusers to handle setups where
++	/etc/shadow is a symlink.
++
++	External toolchain: Don't create musl dynamic loader symlink
++	for static builds.
++
++	Setlocalversion: Correct detection of mercurial revisions for
++	non-tagged versions.
++
++	Updated/fixed packages: apache, automake, bind, botan, c-ares,
++	dhcp, expat, fcgiwrap, gcc, gdb, gesftpserver, glibc, gnutls,
++	gst1-plugins-bad, imagemagick, imx-uuc, intltool, iperf,
++	ipsec-tools, irssi, libgcrypt, libmad, libnl, mosquitto,
++	mpg123, ncurses, nodejs, ntp, openssh, openvpn, qt5base,
++	qt5multimedia, rtl8821au, socat, spice, systemd, tor, tslib,
++	vlc, x264, xserver_xorg-server
++
++	Issues resolved (http://bugs.buildroot.org):
++
++	#9976: License file for package 'rtl8821au' incorrect
++
+ 2017.02.3, Released June 2nd, 2017
+ 
+ 	Important / security related fixes.
+diff --git a/Config.in.legacy b/Config.in.legacy
+index 20445b8a1..0f2f95b80 100644
+--- a/Config.in.legacy
++++ b/Config.in.legacy
+@@ -143,8 +143,42 @@ comment "----------------------------------------------------"
+ endif
+ 
+ ###############################################################################
++
+ comment "Legacy options removed in 2017.02"
+ 
++config BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_WEBRTC
++	bool "gst1-plugins-bad webrtc renamed to webrtcdsp"
++	select BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_WEBRTCDSP
++	select BR2_LEGACY
++	help
++	  The WebRTC plugin in GStreamer 1.x has always been named
++	  webrtcdsp, but was wrongly introduced in Buildroot under the
++	  name webrtc. Therefore, we have renamed the option to match
++	  the actual name of the GStreamer plugin.
++
++config BR2_PACKAGE_SPICE_CLIENT
++	bool "spice client support removed"
++	select BR2_LEGACY
++	help
++	  Spice client support has been removed upstream. The
++	  functionality now lives in the spice-gtk widget and
++	  virt-viewer.
++
++config BR2_PACKAGE_SPICE_GUI
++	bool "spice gui support removed"
++	select BR2_LEGACY
++	help
++	  Spice gui support has been removed upstream. The
++	  functionality now lives in the spice-gtk widget and
++	  virt-viewer.
++
++config BR2_PACKAGE_SPICE_TUNNEL
++	bool "spice network redirection removed"
++	select BR2_LEGACY
++	help
++	  Spice network redirection, aka tunnelling has been removed
++	  upstream.
++
+ config BR2_PACKAGE_PERL_DB_FILE
+ 	bool "perl-db-file removed"
+ 	select BR2_LEGACY
+diff --git a/Makefile b/Makefile
+index f74d59b3a..321b30738 100644
+--- a/Makefile
++++ b/Makefile
+@@ -86,9 +86,9 @@ else # umask / $(CURDIR) / $(O)
+ all:
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2017.02.3
++export BR2_VERSION := 2017.02.4
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1496390000
++BR2_VERSION_EPOCH = 1499186000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+diff --git a/linux/linux.mk b/linux/linux.mk
+index 7f4432e7b..131489ac9 100644
+--- a/linux/linux.mk
++++ b/linux/linux.mk
+@@ -274,7 +274,7 @@ define LINUX_KCONFIG_FIXUP_CMDS
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_FHANDLE,$(@D)/.config)
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_AUTOFS4_FS,$(@D)/.config)
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_TMPFS_POSIX_ACL,$(@D)/.config)
+-		$(call KCONFIG_ENABLE_OPT,CONFIG_TMPFS_POSIX_XATTR,$(@D)/.config))
++		$(call KCONFIG_ENABLE_OPT,CONFIG_TMPFS_XATTR,$(@D)/.config))
+ 	$(if $(BR2_PACKAGE_SMACK),
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_SECURITY,$(@D)/.config)
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_SECURITY_SMACK,$(@D)/.config)
+diff --git a/package/Makefile.in b/package/Makefile.in
+index 4a3eb2696..c1dc71433 100644
+--- a/package/Makefile.in
++++ b/package/Makefile.in
+@@ -207,7 +207,7 @@ TARGET_STRIP = $(TARGET_CROSS)strip
+ STRIPCMD = $(TARGET_CROSS)strip --remove-section=.comment --remove-section=.note
+ endif
+ ifeq ($(BR2_STRIP_none),y)
+-TARGET_STRIP = true
++TARGET_STRIP = /bin/true
+ STRIPCMD = $(TARGET_STRIP)
+ endif
+ INSTALL := $(shell which install || type -p install)
+diff --git a/package/apache/apache.hash b/package/apache/apache.hash
+index 38fd883f8..fe7174a4d 100644
+--- a/package/apache/apache.hash
++++ b/package/apache/apache.hash
+@@ -1,2 +1,2 @@
+-# From http://www.apache.org/dist/httpd/httpd-2.4.23.tar.bz2.sha1
+-sha1 bd6d138c31c109297da2346c6e7b93b9283993d2  httpd-2.4.25.tar.bz2
++# From http://www.apache.org/dist/httpd/httpd-2.4.26.tar.bz2.sha256
++sha256 a07eb52fafc879e0149d31882f7da63173e72df4478db4dc69f7a775b663d387 httpd-2.4.26.tar.bz2
+diff --git a/package/apache/apache.mk b/package/apache/apache.mk
+index ae629bd2c..b276b8d49 100644
+--- a/package/apache/apache.mk
++++ b/package/apache/apache.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-APACHE_VERSION = 2.4.25
++APACHE_VERSION = 2.4.26
+ APACHE_SOURCE = httpd-$(APACHE_VERSION).tar.bz2
+ APACHE_SITE = http://archive.apache.org/dist/httpd
+ APACHE_LICENSE = Apache-2.0
+diff --git a/package/automake/0002-port-to-perl-5.22-and-later.patch b/package/automake/0002-port-to-perl-5.22-and-later.patch
+new file mode 100644
+index 000000000..207039be9
+--- /dev/null
++++ b/package/automake/0002-port-to-perl-5.22-and-later.patch
+@@ -0,0 +1,34 @@
++From 13f00eb4493c217269b76614759e452d8302955e Mon Sep 17 00:00:00 2001
++From: Paul Eggert <eggert@cs.ucla.edu>
++Date: Thu, 31 Mar 2016 16:35:29 -0700
++Subject: [PATCH] automake: port to Perl 5.22 and later
++
++Without this change, Perl 5.22 complains "Unescaped left brace in
++regex is deprecated" and this is planned to become a hard error in
++Perl 5.26.  See:
++http://search.cpan.org/dist/perl-5.22.0/pod/perldelta.pod#A_literal_%22{%22_should_now_be_escaped_in_a_pattern
++* bin/automake.in (substitute_ac_subst_variables): Escape left brace.
++
++[Backported from:
++ http://git.savannah.gnu.org/cgit/automake.git/commit/?id=13f00eb4493c217269b76614759e452d8302955e]
++Signed-off-by: Adam Duskett <aduskett@gmail.com>
++---
++ bin/automake.in | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/bin/automake.in b/bin/automake.in
++index a3a0aa3..2c8f31e 100644
++--- a/bin/automake.in
+++++ b/bin/automake.in
++@@ -3878,7 +3878,7 @@ sub substitute_ac_subst_variables_worker
++ sub substitute_ac_subst_variables
++ {
++   my ($text) = @_;
++-  $text =~ s/\${([^ \t=:+{}]+)}/substitute_ac_subst_variables_worker ($1)/ge;
+++  $text =~ s/\$[{]([^ \t=:+{}]+)}/substitute_ac_subst_variables_worker ($1)/ge;
++   return $text;
++ }
++ 
++-- 
++2.7.4
++
+diff --git a/package/bind/bind.hash b/package/bind/bind.hash
+index 8d44d9964..5dd15cb86 100644
+--- a/package/bind/bind.hash
++++ b/package/bind/bind.hash
+@@ -1,2 +1,2 @@
+-# Verified from http://ftp.isc.org/isc/bind9/9.11.0-P5/bind-9.11.0-P5.tar.gz.sha256.asc
+-sha256 1e283f0567b484687dfd7b936e26c9af4f64043daf73cbd8f3eb1122c9fb71f5  bind-9.11.0-P5.tar.gz
++# Verified from http://ftp.isc.org/isc/bind9/9.11.1-P1/bind-9.11.1-P2.tar.gz.sha256.asc
++sha256 bf53c6431575ae1612ddef66d18ef9baf2a22d842fa5b0cadc971919fd81fea5 bind-9.11.1-P2.tar.gz
+diff --git a/package/bind/bind.mk b/package/bind/bind.mk
+index 2903a3163..ee7621cb5 100644
+--- a/package/bind/bind.mk
++++ b/package/bind/bind.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-BIND_VERSION = 9.11.0-P5
++BIND_VERSION = 9.11.1-P2
+ BIND_SITE = ftp://ftp.isc.org/isc/bind9/$(BIND_VERSION)
+ # bind does not support parallel builds.
+ BIND_MAKE = $(MAKE1)
+diff --git a/package/botan/botan.mk b/package/botan/botan.mk
+index 94f1edd2c..fc8fa698e 100644
+--- a/package/botan/botan.mk
++++ b/package/botan/botan.mk
+@@ -43,6 +43,12 @@ BOTAN_DEPENDENCIES += zlib
+ BOTAN_CONF_OPTS += --with-zlib
+ endif
+ 
++ifeq ($(BR2_POWERPC_CPU_HAS_ALTIVEC),y)
++BOTAN_CONF_OPTS += --enable-altivec
++else
++BOTAN_CONF_OPTS += --disable-altivec
++endif
++
+ define BOTAN_CONFIGURE_CMDS
+ 	(cd $(@D); $(TARGET_MAKE_ENV) ./configure.py $(BOTAN_CONF_OPTS))
+ endef
+diff --git a/package/c-ares/c-ares.hash b/package/c-ares/c-ares.hash
+index f46ef02ab..79928ae84 100644
+--- a/package/c-ares/c-ares.hash
++++ b/package/c-ares/c-ares.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated after checking pgp signature
+-sha256 8692f9403cdcdf936130e045c84021665118ee9bfea905d1a76f04d4e6f365fb c-ares-1.12.0.tar.gz
++sha256 03f708f1b14a26ab26c38abd51137640cb444d3ec72380b21b20f1a8d2861da7 c-ares-1.13.0.tar.gz
+diff --git a/package/c-ares/c-ares.mk b/package/c-ares/c-ares.mk
+index e817d4add..72019a042 100644
+--- a/package/c-ares/c-ares.mk
++++ b/package/c-ares/c-ares.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-C_ARES_VERSION = 1.12.0
++C_ARES_VERSION = 1.13.0
+ C_ARES_SITE = http://c-ares.haxx.se/download
+ C_ARES_INSTALL_STAGING = YES
+ C_ARES_CONF_OPTS = --with-random=/dev/urandom
+diff --git a/package/dhcp/Config.in b/package/dhcp/Config.in
+index 4a3049584..398b97545 100644
+--- a/package/dhcp/Config.in
++++ b/package/dhcp/Config.in
+@@ -12,6 +12,7 @@ if BR2_PACKAGE_DHCP
+ 
+ config BR2_PACKAGE_DHCP_SERVER
+ 	bool "dhcp server"
++	select BR2_PACKAGE_SYSTEMD_TMPFILES if BR2_PACKAGE_SYSTEMD
+ 	help
+ 	  DHCP server from the ISC DHCP distribution.
+ 
+diff --git a/package/expat/0001-configure.ac-Fix-mis-detection-of-getrandom-on-Debia.patch b/package/expat/0001-configure.ac-Fix-mis-detection-of-getrandom-on-Debia.patch
+new file mode 100644
+index 000000000..44f43e1cb
+--- /dev/null
++++ b/package/expat/0001-configure.ac-Fix-mis-detection-of-getrandom-on-Debia.patch
+@@ -0,0 +1,29 @@
++From 602e6c78ca750c082b72f8cdf4a38839b312959f Mon Sep 17 00:00:00 2001
++From: Sebastian Pipping <sebastian@pipping.org>
++Date: Sun, 18 Jun 2017 18:55:10 +0200
++Subject: [PATCH] configure.ac: Fix mis-detection of getrandom on Debian
++ GNU/kFreeBSD (#50)
++
++There is no such thing but we need to link (not just compile) to realize.
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ expat/configure.ac | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/configure.ac b/configure.ac
++index 1357c9a..444c002 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -130,7 +130,7 @@ AC_LINK_IFELSE([AC_LANG_SOURCE([
++ 
++ 
++ AC_MSG_CHECKING([for getrandom (Linux 3.17+, glibc 2.25+)])
++-AC_COMPILE_IFELSE([AC_LANG_SOURCE([
+++AC_LINK_IFELSE([AC_LANG_SOURCE([
++   #include <stdlib.h>  /* for NULL */
++   #include <sys/random.h>
++   int main() {
++-- 
++2.11.0
++
+diff --git a/package/expat/expat.hash b/package/expat/expat.hash
+index 371abdec9..595597b6f 100644
+--- a/package/expat/expat.hash
++++ b/package/expat/expat.hash
+@@ -1,5 +1,5 @@
+-# From https://sourceforge.net/projects/expat/files/expat/2.2.0/
+-md5	2f47841c829facb346eb6e3fab5212e2	expat-2.2.0.tar.bz2
+-sha1	8453bc52324be4c796fd38742ec48470eef358b3	expat-2.2.0.tar.bz2
++# From https://sourceforge.net/projects/expat/files/expat/2.2.1/
++md5	d9c3baeab58774cefc2f04faf29f2cf8	expat-2.2.1.tar.bz2
++sha1	f45eb724f182776a9cacec9ed70d549e87198987	expat-2.2.1.tar.bz2
+ # Calculated based on the hashes above
+-sha256	d9e50ff2d19b3538bd2127902a89987474e1a4db8e43a66a4d1a712ab9a504ff	expat-2.2.0.tar.bz2
++sha256	1868cadae4c82a018e361e2b2091de103cd820aaacb0d6cfa49bd2cd83978885	expat-2.2.1.tar.bz2
+diff --git a/package/expat/expat.mk b/package/expat/expat.mk
+index e7bb74a96..bb6e627e5 100644
+--- a/package/expat/expat.mk
++++ b/package/expat/expat.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-EXPAT_VERSION = 2.2.0
++EXPAT_VERSION = 2.2.1
+ EXPAT_SITE = http://downloads.sourceforge.net/project/expat/expat/$(EXPAT_VERSION)
+ EXPAT_SOURCE = expat-$(EXPAT_VERSION).tar.bz2
+ EXPAT_INSTALL_STAGING = YES
+@@ -14,6 +14,8 @@ EXPAT_DEPENDENCIES = host-pkgconf
+ HOST_EXPAT_DEPENDENCIES = host-pkgconf
+ EXPAT_LICENSE = MIT
+ EXPAT_LICENSE_FILES = COPYING
++# for 0001-configure.ac-Fix-mis-detection-of-getrandom-on-Debia.patch
++EXPAT_AUTORECONF = YES
+ 
+ $(eval $(autotools-package))
+ $(eval $(host-autotools-package))
+diff --git a/package/fcgiwrap/fcgiwrap.mk b/package/fcgiwrap/fcgiwrap.mk
+index dd74c1ef7..62c4c1369 100644
+--- a/package/fcgiwrap/fcgiwrap.mk
++++ b/package/fcgiwrap/fcgiwrap.mk
+@@ -10,6 +10,7 @@ FCGIWRAP_DEPENDENCIES = host-pkgconf libfcgi
+ FCGIWRAP_LICENSE = MIT
+ FCGIWRAP_LICENSE_FILES = COPYING
+ FCGIWRAP_AUTORECONF = YES
++FCGIWRAP_CONF_ENV = CFLAGS="$(TARGET_CFLAGS) -Wno-error"
+ 
+ ifeq ($(BR2_PACKAGE_SYSTEMD),y)
+ FCGIWRAP_DEPENDENCIES += systemd
+diff --git a/package/freescale-imx/imx-uuc/S80imx-uuc b/package/freescale-imx/imx-uuc/S80imx-uuc
+index 8a02f88e5..9a92c9838 100644
+--- a/package/freescale-imx/imx-uuc/S80imx-uuc
++++ b/package/freescale-imx/imx-uuc/S80imx-uuc
+@@ -6,7 +6,7 @@ DAEMON=/usr/bin/$NAME
+ case "$1" in
+     start)
+ 	printf "Starting $NAME: "
+-	start-stop-daemon -S -q -b -p /var/run/${NAME}.pid -x $DAEMON
++	start-stop-daemon -S -q -b -m -p /var/run/${NAME}.pid -x $DAEMON
+ 	[ $? = 0 ] && echo "OK" || echo "FAIL"
+ 	;;
+     stop)
+diff --git a/package/gcc/6.3.0/942-ubsan-fix-check-empty-string.patch b/package/gcc/6.3.0/942-ubsan-fix-check-empty-string.patch
+new file mode 100644
+index 000000000..98e627053
+--- /dev/null
++++ b/package/gcc/6.3.0/942-ubsan-fix-check-empty-string.patch
+@@ -0,0 +1,40 @@
++From 8db2cf6353c13f2a84cbe49b689654897906c499 Mon Sep 17 00:00:00 2001
++From: kyukhin <kyukhin@138bc75d-0d04-0410-961f-82ee72b054a4>
++Date: Sat, 3 Sep 2016 10:57:05 +0000
++Subject: [PATCH] gcc/ubsan.c: Fix check for empty string
++
++Building host-gcc-initial with GCC7 on the host fails due to the
++comparison of a pointer to an integer in ubsan_use_new_style_p, which
++is forbidden by ISO C++:
++
++ubsan.c:1474:23: error: ISO C++ forbids comparison between pointer and
++integer [-fpermissive]
++       || xloc.file == '\0' || xloc.file[0] == '\xff'
++
++Backport the fix from upstream GCC to enable the build with GCC 7.
++
++Backported from:
++https://gcc.gnu.org/viewcvs/gcc?view=revision&revision=239971
++
++Signed-off-by: Joshua Lock <joshua.g.lock@intel.com>
++[Add commit log from [1]]
++Signed-off-by: Jörg Krause <joerg.krause@embedded.rocks>
++
++[1] https://patchwork.openembedded.org/patch/138884/
++---
++ gcc/ubsan.c   | 2 +-
++ 2 files changed, 5 insertions(+), 1 deletion(-)
++
++Index: gcc-6.3.0/gcc/ubsan.c
++===================================================================
++--- gcc-6.3.0.orig/gcc/ubsan.c
+++++ gcc-6.3.0/gcc/ubsan.c
++@@ -1471,7 +1471,7 @@ ubsan_use_new_style_p (location_t loc)
++ 
++   expanded_location xloc = expand_location (loc);
++   if (xloc.file == NULL || strncmp (xloc.file, "\1", 2) == 0
++-      || xloc.file == '\0' || xloc.file[0] == '\xff'
+++      || xloc.file[0] == '\0' || xloc.file[0] == '\xff'
++       || xloc.file[1] == '\xff')
++     return false;
++ 
+diff --git a/package/gdb/7.10.1/0011-use-asm-sgidefs.h.patch b/package/gdb/7.10.1/0011-use-asm-sgidefs.h.patch
+new file mode 100644
+index 000000000..fdc56793f
+--- /dev/null
++++ b/package/gdb/7.10.1/0011-use-asm-sgidefs.h.patch
+@@ -0,0 +1,41 @@
++From 12a0b8d81e1fda6ba98abdce8d6f09f9555ebcf5 Mon Sep 17 00:00:00 2001
++From: Andre McCurdy <amccurdy@gmail.com>
++Date: Sat, 30 Apr 2016 15:29:06 -0700
++Subject: [PATCH] use <asm/sgidefs.h>
++
++Build fix for MIPS with musl libc
++
++The MIPS specific header <sgidefs.h> is provided by glibc and uclibc
++but not by musl. Regardless of the libc, the kernel headers provide
++<asm/sgidefs.h> which provides the same definitions, so use that
++instead.
++
++Upstream-Status: Pending
++
++[Vincent:
++Taken from https://sourceware.org/bugzilla/show_bug.cgi?id=21070
++Patch has been adapted to apply on 7.10.1.]
++
++Signed-off-by: Andre McCurdy <armccurdy@gmail.com>
++Signed-off-by: Khem Raj <raj.khem@gmail.com>
++Signed-off-by: Vicente Olivert Riera <Vincent.Riera@imgtec.com>
++---
++ gdb/mips-linux-nat.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/gdb/mips-linux-nat.c b/gdb/mips-linux-nat.c
++index 9f6d697..8f57bb2 100644
++--- a/gdb/mips-linux-nat.c
+++++ b/gdb/mips-linux-nat.c
++@@ -31,7 +31,7 @@
++ #include "gdb_proc_service.h"
++ #include "gregset.h"
++ 
++-#include <sgidefs.h>
+++#include <asm/sgidefs.h>
++ #include <sys/ptrace.h>
++ #include <asm/ptrace.h>
++
++-- 
++2.13.1
++ 
+diff --git a/package/gdb/7.11.1/0006-use-asm-sgidefs.h.patch b/package/gdb/7.11.1/0006-use-asm-sgidefs.h.patch
+new file mode 100644
+index 000000000..d30336904
+--- /dev/null
++++ b/package/gdb/7.11.1/0006-use-asm-sgidefs.h.patch
+@@ -0,0 +1,40 @@
++From 12a0b8d81e1fda6ba98abdce8d6f09f9555ebcf5 Mon Sep 17 00:00:00 2001
++From: Andre McCurdy <amccurdy@gmail.com>
++Date: Sat, 30 Apr 2016 15:29:06 -0700
++Subject: [PATCH] use <asm/sgidefs.h>
++
++Build fix for MIPS with musl libc
++
++The MIPS specific header <sgidefs.h> is provided by glibc and uclibc
++but not by musl. Regardless of the libc, the kernel headers provide
++<asm/sgidefs.h> which provides the same definitions, so use that
++instead.
++
++Upstream-Status: Pending
++
++[Vincent:
++Taken from: https://sourceware.org/bugzilla/show_bug.cgi?id=21070]
++
++Signed-off-by: Andre McCurdy <armccurdy@gmail.com>
++Signed-off-by: Khem Raj <raj.khem@gmail.com>
++Signed-off-by: Vicente Olivert Riera <Vincent.Riera@imgtec.com>
++---
++ gdb/mips-linux-nat.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/gdb/mips-linux-nat.c b/gdb/mips-linux-nat.c
++index f2df1b9907..d24664cb56 100644
++--- a/gdb/mips-linux-nat.c
+++++ b/gdb/mips-linux-nat.c
++@@ -31,7 +31,7 @@
++ #include "gdb_proc_service.h"
++ #include "gregset.h"
++ 
++-#include <sgidefs.h>
+++#include <asm/sgidefs.h>
++ #include "nat/gdb_ptrace.h"
++ #include <asm/ptrace.h>
++ #include "inf-ptrace.h"
++-- 
++2.13.1
++
+diff --git a/package/gesftpserver/gesftpserver.hash b/package/gesftpserver/gesftpserver.hash
+index b4c9fdf52..1a8a5f349 100644
+--- a/package/gesftpserver/gesftpserver.hash
++++ b/package/gesftpserver/gesftpserver.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated
+-sha256	5f744c38df9bb82f5ab500858a0fb4767ac3ee2254301da03cbcf8e6c587cbf5	sftpserver-0.2.1.tar.gz
++sha256 8ac1938d0f62a05799b2aeab489d6ce098c3fe53280a9b66c0957b1fdcbcbab9  sftpserver-0.2.2.tar.gz
+diff --git a/package/gesftpserver/gesftpserver.mk b/package/gesftpserver/gesftpserver.mk
+index 25c947a78..2fadfe5c9 100644
+--- a/package/gesftpserver/gesftpserver.mk
++++ b/package/gesftpserver/gesftpserver.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-GESFTPSERVER_VERSION = 0.2.1
++GESFTPSERVER_VERSION = 0.2.2
+ GESFTPSERVER_SOURCE = sftpserver-$(GESFTPSERVER_VERSION).tar.gz
+ GESFTPSERVER_SITE = http://www.greenend.org.uk/rjk/sftpserver
+ GESFTPSERVER_LICENSE = GPLv2+
+diff --git a/package/glibc/2.22/0006-CVE-2017-1000366-Ignore-LD_LIBRARY_PATH-for-AT_SECUR.patch b/package/glibc/2.22/0006-CVE-2017-1000366-Ignore-LD_LIBRARY_PATH-for-AT_SECUR.patch
+new file mode 100644
+index 000000000..d701294de
+--- /dev/null
++++ b/package/glibc/2.22/0006-CVE-2017-1000366-Ignore-LD_LIBRARY_PATH-for-AT_SECUR.patch
+@@ -0,0 +1,35 @@
++From f6110a8fee2ca36f8e2d2abecf3cba9fa7b8ea7d Mon Sep 17 00:00:00 2001
++From: Florian Weimer <fweimer@redhat.com>
++Date: Mon, 19 Jun 2017 17:09:55 +0200
++Subject: [PATCH] CVE-2017-1000366: Ignore LD_LIBRARY_PATH for AT_SECURE=1
++ programs [BZ #21624]
++
++LD_LIBRARY_PATH can only be used to reorder system search paths, which
++is not useful functionality.
++
++This makes an exploitable unbounded alloca in _dl_init_paths unreachable
++for AT_SECURE=1 programs.
++
++[Peter: Drop ChangeLog modification]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ elf/rtld.c | 3 ++-
++ 1 file changed, 8 insertions(+), 1 deletion(-)
++
++diff --git a/elf/rtld.c b/elf/rtld.c
++index 2446a87680..2269dbec81 100644
++--- a/elf/rtld.c
+++++ b/elf/rtld.c
++@@ -2422,7 +2422,8 @@ process_envvars (enum mode *modep)
++ 
++ 	case 12:
++ 	  /* The library search path.  */
++-	  if (memcmp (envline, "LIBRARY_PATH", 12) == 0)
+++	  if (!__libc_enable_secure
+++	      && memcmp (envline, "LIBRARY_PATH", 12) == 0)
++ 	    {
++ 	      library_path = &envline[13];
++ 	      break;
++-- 
++2.11.0
++
+diff --git a/package/glibc/2.22/0007-ld.so-Reject-overly-long-LD_PRELOAD-path-elements.patch b/package/glibc/2.22/0007-ld.so-Reject-overly-long-LD_PRELOAD-path-elements.patch
+new file mode 100644
+index 000000000..df410931d
+--- /dev/null
++++ b/package/glibc/2.22/0007-ld.so-Reject-overly-long-LD_PRELOAD-path-elements.patch
+@@ -0,0 +1,122 @@
++From 6d0ba622891bed9d8394eef1935add53003b12e8 Mon Sep 17 00:00:00 2001
++From: Florian Weimer <fweimer@redhat.com>
++Date: Mon, 19 Jun 2017 22:31:04 +0200
++Subject: [PATCH] ld.so: Reject overly long LD_PRELOAD path elements
++
++[Peter: Drop ChangeLog modification]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ elf/rtld.c | 82 ++++++++++++++++++++++++++++++++++++++++++++++++++------------
++ 1 file changed, 72 insertions(+), 16 deletions(-)
++
++diff --git a/elf/rtld.c b/elf/rtld.c
++index 2269dbec81..86ae20c83f 100644
++--- a/elf/rtld.c
+++++ b/elf/rtld.c
++@@ -99,6 +99,35 @@ uintptr_t __pointer_chk_guard_local
++ strong_alias (__pointer_chk_guard_local, __pointer_chk_guard)
++ #endif
++ 
+++/* Length limits for names and paths, to protect the dynamic linker,
+++   particularly when __libc_enable_secure is active.  */
+++#ifdef NAME_MAX
+++# define SECURE_NAME_LIMIT NAME_MAX
+++#else
+++# define SECURE_NAME_LIMIT 255
+++#endif
+++#ifdef PATH_MAX
+++# define SECURE_PATH_LIMIT PATH_MAX
+++#else
+++# define SECURE_PATH_LIMIT 1024
+++#endif
+++
+++/* Check that AT_SECURE=0, or that the passed name does not contain
+++   directories and is not overly long.  Reject empty names
+++   unconditionally.  */
+++static bool
+++dso_name_valid_for_suid (const char *p)
+++{
+++  if (__glibc_unlikely (__libc_enable_secure))
+++    {
+++      /* Ignore pathnames with directories for AT_SECURE=1
+++	 programs, and also skip overlong names.  */
+++      size_t len = strlen (p);
+++      if (len >= SECURE_NAME_LIMIT || memchr (p, '/', len) != NULL)
+++	return false;
+++    }
+++  return *p != '\0';
+++}
++ 
++ /* List of auditing DSOs.  */
++ static struct audit_list
++@@ -718,6 +747,42 @@ static const char *preloadlist attribute_relro;
++ /* Nonzero if information about versions has to be printed.  */
++ static int version_info attribute_relro;
++ 
+++/* The LD_PRELOAD environment variable gives list of libraries
+++   separated by white space or colons that are loaded before the
+++   executable's dependencies and prepended to the global scope list.
+++   (If the binary is running setuid all elements containing a '/' are
+++   ignored since it is insecure.)  Return the number of preloads
+++   performed.  */
+++unsigned int
+++handle_ld_preload (const char *preloadlist, struct link_map *main_map)
+++{
+++  unsigned int npreloads = 0;
+++  const char *p = preloadlist;
+++  char fname[SECURE_PATH_LIMIT];
+++
+++  while (*p != '\0')
+++    {
+++      /* Split preload list at space/colon.  */
+++      size_t len = strcspn (p, " :");
+++      if (len > 0 && len < sizeof (fname))
+++	{
+++	  memcpy (fname, p, len);
+++	  fname[len] = '\0';
+++	}
+++      else
+++	fname[0] = '\0';
+++
+++      /* Skip over the substring and the following delimiter.  */
+++      p += len;
+++      if (*p != '\0')
+++	++p;
+++
+++      if (dso_name_valid_for_suid (fname))
+++	npreloads += do_preload (fname, main_map, "LD_PRELOAD");
+++    }
+++  return npreloads;
+++}
+++
++ static void
++ dl_main (const ElfW(Phdr) *phdr,
++ 	 ElfW(Word) phnum,
++@@ -1464,23 +1529,8 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++ 
++   if (__glibc_unlikely (preloadlist != NULL))
++     {
++-      /* The LD_PRELOAD environment variable gives list of libraries
++-	 separated by white space or colons that are loaded before the
++-	 executable's dependencies and prepended to the global scope
++-	 list.  If the binary is running setuid all elements
++-	 containing a '/' are ignored since it is insecure.  */
++-      char *list = strdupa (preloadlist);
++-      char *p;
++-
++       HP_TIMING_NOW (start);
++-
++-      /* Prevent optimizing strsep.  Speed is not important here.  */
++-      while ((p = (strsep) (&list, " :")) != NULL)
++-	if (p[0] != '\0'
++-	    && (__builtin_expect (! __libc_enable_secure, 1)
++-		|| strchr (p, '/') == NULL))
++-	  npreloads += do_preload (p, main_map, "LD_PRELOAD");
++-
+++      npreloads += handle_ld_preload (preloadlist, main_map);
++       HP_TIMING_NOW (stop);
++       HP_TIMING_DIFF (diff, start, stop);
++       HP_TIMING_ACCUM_NT (load_time, diff);
++-- 
++2.11.0
++
+diff --git a/package/glibc/2.22/0008-ld.so-Reject-overly-long-LD_AUDIT-path-elements.patch b/package/glibc/2.22/0008-ld.so-Reject-overly-long-LD_AUDIT-path-elements.patch
+new file mode 100644
+index 000000000..25e937bd1
+--- /dev/null
++++ b/package/glibc/2.22/0008-ld.so-Reject-overly-long-LD_AUDIT-path-elements.patch
+@@ -0,0 +1,204 @@
++From 81b82fb966ffbd94353f793ad17116c6088dedd9 Mon Sep 17 00:00:00 2001
++From: Florian Weimer <fweimer@redhat.com>
++Date: Mon, 19 Jun 2017 22:32:12 +0200
++Subject: [PATCH] ld.so: Reject overly long LD_AUDIT path elements
++
++Also only process the last LD_AUDIT entry.
++
++[Peter: Drop ChangeLog modification]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ elf/rtld.c | 110 ++++++++++++++++++++++++++++++++++++++++++++++++++++---------
++ 1 file changed, 105 insertions(+), 15 deletions(-)
++
++diff --git a/elf/rtld.c b/elf/rtld.c
++index 86ae20c83f..65647fb1c8 100644
++--- a/elf/rtld.c
+++++ b/elf/rtld.c
++@@ -129,13 +129,91 @@ dso_name_valid_for_suid (const char *p)
++   return *p != '\0';
++ }
++ 
++-/* List of auditing DSOs.  */
+++/* LD_AUDIT variable contents.  Must be processed before the
+++   audit_list below.  */
+++const char *audit_list_string;
+++
+++/* Cyclic list of auditing DSOs.  audit_list->next is the first
+++   element.  */
++ static struct audit_list
++ {
++   const char *name;
++   struct audit_list *next;
++ } *audit_list;
++ 
+++/* Iterator for audit_list_string followed by audit_list.  */
+++struct audit_list_iter
+++{
+++  /* Tail of audit_list_string still needing processing, or NULL.  */
+++  const char *audit_list_tail;
+++
+++  /* The list element returned in the previous iteration.  NULL before
+++     the first element.  */
+++  struct audit_list *previous;
+++
+++  /* Scratch buffer for returning a name which is part of
+++     audit_list_string.  */
+++  char fname[SECURE_NAME_LIMIT];
+++};
+++
+++/* Initialize an audit list iterator.  */
+++static void
+++audit_list_iter_init (struct audit_list_iter *iter)
+++{
+++  iter->audit_list_tail = audit_list_string;
+++  iter->previous = NULL;
+++}
+++
+++/* Iterate through both audit_list_string and audit_list.  */
+++static const char *
+++audit_list_iter_next (struct audit_list_iter *iter)
+++{
+++  if (iter->audit_list_tail != NULL)
+++    {
+++      /* First iterate over audit_list_string.  */
+++      while (*iter->audit_list_tail != '\0')
+++	{
+++	  /* Split audit list at colon.  */
+++	  size_t len = strcspn (iter->audit_list_tail, ":");
+++	  if (len > 0 && len < sizeof (iter->fname))
+++	    {
+++	      memcpy (iter->fname, iter->audit_list_tail, len);
+++	      iter->fname[len] = '\0';
+++	    }
+++	  else
+++	    /* Do not return this name to the caller.  */
+++	    iter->fname[0] = '\0';
+++
+++	  /* Skip over the substring and the following delimiter.  */
+++	  iter->audit_list_tail += len;
+++	  if (*iter->audit_list_tail == ':')
+++	    ++iter->audit_list_tail;
+++
+++	  /* If the name is valid, return it.  */
+++	  if (dso_name_valid_for_suid (iter->fname))
+++	    return iter->fname;
+++	  /* Otherwise, wrap around and try the next name.  */
+++	}
+++      /* Fall through to the procesing of audit_list.  */
+++    }
+++
+++  if (iter->previous == NULL)
+++    {
+++      if (audit_list == NULL)
+++	/* No pre-parsed audit list.  */
+++	return NULL;
+++      /* Start of audit list.  The first list element is at
+++	 audit_list->next (cyclic list).  */
+++      iter->previous = audit_list->next;
+++      return iter->previous->name;
+++    }
+++  if (iter->previous == audit_list)
+++    /* Cyclic list wrap-around.  */
+++    return NULL;
+++  iter->previous = iter->previous->next;
+++  return iter->previous->name;
+++}
+++
++ #ifndef HAVE_INLINED_SYSCALLS
++ /* Set nonzero during loading and initialization of executable and
++    libraries, cleared before the executable's entry point runs.  This
++@@ -1305,11 +1383,13 @@ of this helper program; chances are you did not intend to run this program.\n\
++     GL(dl_rtld_map).l_tls_modid = _dl_next_tls_modid ();
++ 
++   /* If we have auditing DSOs to load, do it now.  */
++-  if (__glibc_unlikely (audit_list != NULL))
+++  bool need_security_init = true;
+++  if (__glibc_unlikely (audit_list != NULL)
+++      || __glibc_unlikely (audit_list_string != NULL))
++     {
++-      /* Iterate over all entries in the list.  The order is important.  */
++       struct audit_ifaces *last_audit = NULL;
++-      struct audit_list *al = audit_list->next;
+++      struct audit_list_iter al_iter;
+++      audit_list_iter_init (&al_iter);
++ 
++       /* Since we start using the auditing DSOs right away we need to
++ 	 initialize the data structures now.  */
++@@ -1320,9 +1400,14 @@ of this helper program; chances are you did not intend to run this program.\n\
++ 	 use different values (especially the pointer guard) and will
++ 	 fail later on.  */
++       security_init ();
+++      need_security_init = false;
++ 
++-      do
+++      while (true)
++ 	{
+++	  const char *name = audit_list_iter_next (&al_iter);
+++	  if (name == NULL)
+++	    break;
+++
++ 	  int tls_idx = GL(dl_tls_max_dtv_idx);
++ 
++ 	  /* Now it is time to determine the layout of the static TLS
++@@ -1331,7 +1416,7 @@ of this helper program; chances are you did not intend to run this program.\n\
++ 	     no DF_STATIC_TLS bit is set.  The reason is that we know
++ 	     glibc will use the static model.  */
++ 	  struct dlmopen_args dlmargs;
++-	  dlmargs.fname = al->name;
+++	  dlmargs.fname = name;
++ 	  dlmargs.map = NULL;
++ 
++ 	  const char *objname;
++@@ -1344,7 +1429,7 @@ of this helper program; chances are you did not intend to run this program.\n\
++ 	    not_loaded:
++ 	      _dl_error_printf ("\
++ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++-				al->name, err_str);
+++				name, err_str);
++ 	      if (malloced)
++ 		free ((char *) err_str);
++ 	    }
++@@ -1448,10 +1533,7 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++ 		  goto not_loaded;
++ 		}
++ 	    }
++-
++-	  al = al->next;
++ 	}
++-      while (al != audit_list->next);
++ 
++       /* If we have any auditing modules, announce that we already
++ 	 have two objects loaded.  */
++@@ -1715,7 +1797,7 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++   if (tcbp == NULL)
++     tcbp = init_tls ();
++ 
++-  if (__glibc_likely (audit_list == NULL))
+++  if (__glibc_likely (need_security_init))
++     /* Initialize security features.  But only if we have not done it
++        earlier.  */
++     security_init ();
++@@ -2346,9 +2428,7 @@ process_dl_audit (char *str)
++   char *p;
++ 
++   while ((p = (strsep) (&str, ":")) != NULL)
++-    if (p[0] != '\0'
++-	&& (__builtin_expect (! __libc_enable_secure, 1)
++-	    || strchr (p, '/') == NULL))
+++    if (dso_name_valid_for_suid (p))
++       {
++ 	/* This is using the local malloc, not the system malloc.  The
++ 	   memory can never be freed.  */
++@@ -2412,7 +2492,7 @@ process_envvars (enum mode *modep)
++ 	      break;
++ 	    }
++ 	  if (memcmp (envline, "AUDIT", 5) == 0)
++-	    process_dl_audit (&envline[6]);
+++	    audit_list_string = &envline[6];
++ 	  break;
++ 
++ 	case 7:
++-- 
++2.11.0
++
+diff --git a/package/glibc/2.23/0006-CVE-2017-1000366-Ignore-LD_LIBRARY_PATH-for-AT_SECUR.patch b/package/glibc/2.23/0006-CVE-2017-1000366-Ignore-LD_LIBRARY_PATH-for-AT_SECUR.patch
+new file mode 100644
+index 000000000..d701294de
+--- /dev/null
++++ b/package/glibc/2.23/0006-CVE-2017-1000366-Ignore-LD_LIBRARY_PATH-for-AT_SECUR.patch
+@@ -0,0 +1,35 @@
++From f6110a8fee2ca36f8e2d2abecf3cba9fa7b8ea7d Mon Sep 17 00:00:00 2001
++From: Florian Weimer <fweimer@redhat.com>
++Date: Mon, 19 Jun 2017 17:09:55 +0200
++Subject: [PATCH] CVE-2017-1000366: Ignore LD_LIBRARY_PATH for AT_SECURE=1
++ programs [BZ #21624]
++
++LD_LIBRARY_PATH can only be used to reorder system search paths, which
++is not useful functionality.
++
++This makes an exploitable unbounded alloca in _dl_init_paths unreachable
++for AT_SECURE=1 programs.
++
++[Peter: Drop ChangeLog modification]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ elf/rtld.c | 3 ++-
++ 1 file changed, 8 insertions(+), 1 deletion(-)
++
++diff --git a/elf/rtld.c b/elf/rtld.c
++index 2446a87680..2269dbec81 100644
++--- a/elf/rtld.c
+++++ b/elf/rtld.c
++@@ -2422,7 +2422,8 @@ process_envvars (enum mode *modep)
++ 
++ 	case 12:
++ 	  /* The library search path.  */
++-	  if (memcmp (envline, "LIBRARY_PATH", 12) == 0)
+++	  if (!__libc_enable_secure
+++	      && memcmp (envline, "LIBRARY_PATH", 12) == 0)
++ 	    {
++ 	      library_path = &envline[13];
++ 	      break;
++-- 
++2.11.0
++
+diff --git a/package/glibc/2.23/0007-ld.so-Reject-overly-long-LD_PRELOAD-path-elements.patch b/package/glibc/2.23/0007-ld.so-Reject-overly-long-LD_PRELOAD-path-elements.patch
+new file mode 100644
+index 000000000..df410931d
+--- /dev/null
++++ b/package/glibc/2.23/0007-ld.so-Reject-overly-long-LD_PRELOAD-path-elements.patch
+@@ -0,0 +1,122 @@
++From 6d0ba622891bed9d8394eef1935add53003b12e8 Mon Sep 17 00:00:00 2001
++From: Florian Weimer <fweimer@redhat.com>
++Date: Mon, 19 Jun 2017 22:31:04 +0200
++Subject: [PATCH] ld.so: Reject overly long LD_PRELOAD path elements
++
++[Peter: Drop ChangeLog modification]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ elf/rtld.c | 82 ++++++++++++++++++++++++++++++++++++++++++++++++++------------
++ 1 file changed, 72 insertions(+), 16 deletions(-)
++
++diff --git a/elf/rtld.c b/elf/rtld.c
++index 2269dbec81..86ae20c83f 100644
++--- a/elf/rtld.c
+++++ b/elf/rtld.c
++@@ -99,6 +99,35 @@ uintptr_t __pointer_chk_guard_local
++ strong_alias (__pointer_chk_guard_local, __pointer_chk_guard)
++ #endif
++ 
+++/* Length limits for names and paths, to protect the dynamic linker,
+++   particularly when __libc_enable_secure is active.  */
+++#ifdef NAME_MAX
+++# define SECURE_NAME_LIMIT NAME_MAX
+++#else
+++# define SECURE_NAME_LIMIT 255
+++#endif
+++#ifdef PATH_MAX
+++# define SECURE_PATH_LIMIT PATH_MAX
+++#else
+++# define SECURE_PATH_LIMIT 1024
+++#endif
+++
+++/* Check that AT_SECURE=0, or that the passed name does not contain
+++   directories and is not overly long.  Reject empty names
+++   unconditionally.  */
+++static bool
+++dso_name_valid_for_suid (const char *p)
+++{
+++  if (__glibc_unlikely (__libc_enable_secure))
+++    {
+++      /* Ignore pathnames with directories for AT_SECURE=1
+++	 programs, and also skip overlong names.  */
+++      size_t len = strlen (p);
+++      if (len >= SECURE_NAME_LIMIT || memchr (p, '/', len) != NULL)
+++	return false;
+++    }
+++  return *p != '\0';
+++}
++ 
++ /* List of auditing DSOs.  */
++ static struct audit_list
++@@ -718,6 +747,42 @@ static const char *preloadlist attribute_relro;
++ /* Nonzero if information about versions has to be printed.  */
++ static int version_info attribute_relro;
++ 
+++/* The LD_PRELOAD environment variable gives list of libraries
+++   separated by white space or colons that are loaded before the
+++   executable's dependencies and prepended to the global scope list.
+++   (If the binary is running setuid all elements containing a '/' are
+++   ignored since it is insecure.)  Return the number of preloads
+++   performed.  */
+++unsigned int
+++handle_ld_preload (const char *preloadlist, struct link_map *main_map)
+++{
+++  unsigned int npreloads = 0;
+++  const char *p = preloadlist;
+++  char fname[SECURE_PATH_LIMIT];
+++
+++  while (*p != '\0')
+++    {
+++      /* Split preload list at space/colon.  */
+++      size_t len = strcspn (p, " :");
+++      if (len > 0 && len < sizeof (fname))
+++	{
+++	  memcpy (fname, p, len);
+++	  fname[len] = '\0';
+++	}
+++      else
+++	fname[0] = '\0';
+++
+++      /* Skip over the substring and the following delimiter.  */
+++      p += len;
+++      if (*p != '\0')
+++	++p;
+++
+++      if (dso_name_valid_for_suid (fname))
+++	npreloads += do_preload (fname, main_map, "LD_PRELOAD");
+++    }
+++  return npreloads;
+++}
+++
++ static void
++ dl_main (const ElfW(Phdr) *phdr,
++ 	 ElfW(Word) phnum,
++@@ -1464,23 +1529,8 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++ 
++   if (__glibc_unlikely (preloadlist != NULL))
++     {
++-      /* The LD_PRELOAD environment variable gives list of libraries
++-	 separated by white space or colons that are loaded before the
++-	 executable's dependencies and prepended to the global scope
++-	 list.  If the binary is running setuid all elements
++-	 containing a '/' are ignored since it is insecure.  */
++-      char *list = strdupa (preloadlist);
++-      char *p;
++-
++       HP_TIMING_NOW (start);
++-
++-      /* Prevent optimizing strsep.  Speed is not important here.  */
++-      while ((p = (strsep) (&list, " :")) != NULL)
++-	if (p[0] != '\0'
++-	    && (__builtin_expect (! __libc_enable_secure, 1)
++-		|| strchr (p, '/') == NULL))
++-	  npreloads += do_preload (p, main_map, "LD_PRELOAD");
++-
+++      npreloads += handle_ld_preload (preloadlist, main_map);
++       HP_TIMING_NOW (stop);
++       HP_TIMING_DIFF (diff, start, stop);
++       HP_TIMING_ACCUM_NT (load_time, diff);
++-- 
++2.11.0
++
+diff --git a/package/glibc/2.23/0008-ld.so-Reject-overly-long-LD_AUDIT-path-elements.patch b/package/glibc/2.23/0008-ld.so-Reject-overly-long-LD_AUDIT-path-elements.patch
+new file mode 100644
+index 000000000..25e937bd1
+--- /dev/null
++++ b/package/glibc/2.23/0008-ld.so-Reject-overly-long-LD_AUDIT-path-elements.patch
+@@ -0,0 +1,204 @@
++From 81b82fb966ffbd94353f793ad17116c6088dedd9 Mon Sep 17 00:00:00 2001
++From: Florian Weimer <fweimer@redhat.com>
++Date: Mon, 19 Jun 2017 22:32:12 +0200
++Subject: [PATCH] ld.so: Reject overly long LD_AUDIT path elements
++
++Also only process the last LD_AUDIT entry.
++
++[Peter: Drop ChangeLog modification]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ elf/rtld.c | 110 ++++++++++++++++++++++++++++++++++++++++++++++++++++---------
++ 1 file changed, 105 insertions(+), 15 deletions(-)
++
++diff --git a/elf/rtld.c b/elf/rtld.c
++index 86ae20c83f..65647fb1c8 100644
++--- a/elf/rtld.c
+++++ b/elf/rtld.c
++@@ -129,13 +129,91 @@ dso_name_valid_for_suid (const char *p)
++   return *p != '\0';
++ }
++ 
++-/* List of auditing DSOs.  */
+++/* LD_AUDIT variable contents.  Must be processed before the
+++   audit_list below.  */
+++const char *audit_list_string;
+++
+++/* Cyclic list of auditing DSOs.  audit_list->next is the first
+++   element.  */
++ static struct audit_list
++ {
++   const char *name;
++   struct audit_list *next;
++ } *audit_list;
++ 
+++/* Iterator for audit_list_string followed by audit_list.  */
+++struct audit_list_iter
+++{
+++  /* Tail of audit_list_string still needing processing, or NULL.  */
+++  const char *audit_list_tail;
+++
+++  /* The list element returned in the previous iteration.  NULL before
+++     the first element.  */
+++  struct audit_list *previous;
+++
+++  /* Scratch buffer for returning a name which is part of
+++     audit_list_string.  */
+++  char fname[SECURE_NAME_LIMIT];
+++};
+++
+++/* Initialize an audit list iterator.  */
+++static void
+++audit_list_iter_init (struct audit_list_iter *iter)
+++{
+++  iter->audit_list_tail = audit_list_string;
+++  iter->previous = NULL;
+++}
+++
+++/* Iterate through both audit_list_string and audit_list.  */
+++static const char *
+++audit_list_iter_next (struct audit_list_iter *iter)
+++{
+++  if (iter->audit_list_tail != NULL)
+++    {
+++      /* First iterate over audit_list_string.  */
+++      while (*iter->audit_list_tail != '\0')
+++	{
+++	  /* Split audit list at colon.  */
+++	  size_t len = strcspn (iter->audit_list_tail, ":");
+++	  if (len > 0 && len < sizeof (iter->fname))
+++	    {
+++	      memcpy (iter->fname, iter->audit_list_tail, len);
+++	      iter->fname[len] = '\0';
+++	    }
+++	  else
+++	    /* Do not return this name to the caller.  */
+++	    iter->fname[0] = '\0';
+++
+++	  /* Skip over the substring and the following delimiter.  */
+++	  iter->audit_list_tail += len;
+++	  if (*iter->audit_list_tail == ':')
+++	    ++iter->audit_list_tail;
+++
+++	  /* If the name is valid, return it.  */
+++	  if (dso_name_valid_for_suid (iter->fname))
+++	    return iter->fname;
+++	  /* Otherwise, wrap around and try the next name.  */
+++	}
+++      /* Fall through to the procesing of audit_list.  */
+++    }
+++
+++  if (iter->previous == NULL)
+++    {
+++      if (audit_list == NULL)
+++	/* No pre-parsed audit list.  */
+++	return NULL;
+++      /* Start of audit list.  The first list element is at
+++	 audit_list->next (cyclic list).  */
+++      iter->previous = audit_list->next;
+++      return iter->previous->name;
+++    }
+++  if (iter->previous == audit_list)
+++    /* Cyclic list wrap-around.  */
+++    return NULL;
+++  iter->previous = iter->previous->next;
+++  return iter->previous->name;
+++}
+++
++ #ifndef HAVE_INLINED_SYSCALLS
++ /* Set nonzero during loading and initialization of executable and
++    libraries, cleared before the executable's entry point runs.  This
++@@ -1305,11 +1383,13 @@ of this helper program; chances are you did not intend to run this program.\n\
++     GL(dl_rtld_map).l_tls_modid = _dl_next_tls_modid ();
++ 
++   /* If we have auditing DSOs to load, do it now.  */
++-  if (__glibc_unlikely (audit_list != NULL))
+++  bool need_security_init = true;
+++  if (__glibc_unlikely (audit_list != NULL)
+++      || __glibc_unlikely (audit_list_string != NULL))
++     {
++-      /* Iterate over all entries in the list.  The order is important.  */
++       struct audit_ifaces *last_audit = NULL;
++-      struct audit_list *al = audit_list->next;
+++      struct audit_list_iter al_iter;
+++      audit_list_iter_init (&al_iter);
++ 
++       /* Since we start using the auditing DSOs right away we need to
++ 	 initialize the data structures now.  */
++@@ -1320,9 +1400,14 @@ of this helper program; chances are you did not intend to run this program.\n\
++ 	 use different values (especially the pointer guard) and will
++ 	 fail later on.  */
++       security_init ();
+++      need_security_init = false;
++ 
++-      do
+++      while (true)
++ 	{
+++	  const char *name = audit_list_iter_next (&al_iter);
+++	  if (name == NULL)
+++	    break;
+++
++ 	  int tls_idx = GL(dl_tls_max_dtv_idx);
++ 
++ 	  /* Now it is time to determine the layout of the static TLS
++@@ -1331,7 +1416,7 @@ of this helper program; chances are you did not intend to run this program.\n\
++ 	     no DF_STATIC_TLS bit is set.  The reason is that we know
++ 	     glibc will use the static model.  */
++ 	  struct dlmopen_args dlmargs;
++-	  dlmargs.fname = al->name;
+++	  dlmargs.fname = name;
++ 	  dlmargs.map = NULL;
++ 
++ 	  const char *objname;
++@@ -1344,7 +1429,7 @@ of this helper program; chances are you did not intend to run this program.\n\
++ 	    not_loaded:
++ 	      _dl_error_printf ("\
++ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++-				al->name, err_str);
+++				name, err_str);
++ 	      if (malloced)
++ 		free ((char *) err_str);
++ 	    }
++@@ -1448,10 +1533,7 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++ 		  goto not_loaded;
++ 		}
++ 	    }
++-
++-	  al = al->next;
++ 	}
++-      while (al != audit_list->next);
++ 
++       /* If we have any auditing modules, announce that we already
++ 	 have two objects loaded.  */
++@@ -1715,7 +1797,7 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++   if (tcbp == NULL)
++     tcbp = init_tls ();
++ 
++-  if (__glibc_likely (audit_list == NULL))
+++  if (__glibc_likely (need_security_init))
++     /* Initialize security features.  But only if we have not done it
++        earlier.  */
++     security_init ();
++@@ -2346,9 +2428,7 @@ process_dl_audit (char *str)
++   char *p;
++ 
++   while ((p = (strsep) (&str, ":")) != NULL)
++-    if (p[0] != '\0'
++-	&& (__builtin_expect (! __libc_enable_secure, 1)
++-	    || strchr (p, '/') == NULL))
+++    if (dso_name_valid_for_suid (p))
++       {
++ 	/* This is using the local malloc, not the system malloc.  The
++ 	   memory can never be freed.  */
++@@ -2412,7 +2492,7 @@ process_envvars (enum mode *modep)
++ 	      break;
++ 	    }
++ 	  if (memcmp (envline, "AUDIT", 5) == 0)
++-	    process_dl_audit (&envline[6]);
+++	    audit_list_string = &envline[6];
++ 	  break;
++ 
++ 	case 7:
++-- 
++2.11.0
++
+diff --git a/package/glibc/2.24/0002-CVE-2017-1000366-Ignore-LD_LIBRARY_PATH-for-AT_SECUR.patch b/package/glibc/2.24/0002-CVE-2017-1000366-Ignore-LD_LIBRARY_PATH-for-AT_SECUR.patch
+new file mode 100644
+index 000000000..d701294de
+--- /dev/null
++++ b/package/glibc/2.24/0002-CVE-2017-1000366-Ignore-LD_LIBRARY_PATH-for-AT_SECUR.patch
+@@ -0,0 +1,35 @@
++From f6110a8fee2ca36f8e2d2abecf3cba9fa7b8ea7d Mon Sep 17 00:00:00 2001
++From: Florian Weimer <fweimer@redhat.com>
++Date: Mon, 19 Jun 2017 17:09:55 +0200
++Subject: [PATCH] CVE-2017-1000366: Ignore LD_LIBRARY_PATH for AT_SECURE=1
++ programs [BZ #21624]
++
++LD_LIBRARY_PATH can only be used to reorder system search paths, which
++is not useful functionality.
++
++This makes an exploitable unbounded alloca in _dl_init_paths unreachable
++for AT_SECURE=1 programs.
++
++[Peter: Drop ChangeLog modification]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ elf/rtld.c | 3 ++-
++ 1 file changed, 8 insertions(+), 1 deletion(-)
++
++diff --git a/elf/rtld.c b/elf/rtld.c
++index 2446a87680..2269dbec81 100644
++--- a/elf/rtld.c
+++++ b/elf/rtld.c
++@@ -2422,7 +2422,8 @@ process_envvars (enum mode *modep)
++ 
++ 	case 12:
++ 	  /* The library search path.  */
++-	  if (memcmp (envline, "LIBRARY_PATH", 12) == 0)
+++	  if (!__libc_enable_secure
+++	      && memcmp (envline, "LIBRARY_PATH", 12) == 0)
++ 	    {
++ 	      library_path = &envline[13];
++ 	      break;
++-- 
++2.11.0
++
+diff --git a/package/glibc/2.24/0003-ld.so-Reject-overly-long-LD_PRELOAD-path-elements.patch b/package/glibc/2.24/0003-ld.so-Reject-overly-long-LD_PRELOAD-path-elements.patch
+new file mode 100644
+index 000000000..df410931d
+--- /dev/null
++++ b/package/glibc/2.24/0003-ld.so-Reject-overly-long-LD_PRELOAD-path-elements.patch
+@@ -0,0 +1,122 @@
++From 6d0ba622891bed9d8394eef1935add53003b12e8 Mon Sep 17 00:00:00 2001
++From: Florian Weimer <fweimer@redhat.com>
++Date: Mon, 19 Jun 2017 22:31:04 +0200
++Subject: [PATCH] ld.so: Reject overly long LD_PRELOAD path elements
++
++[Peter: Drop ChangeLog modification]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ elf/rtld.c | 82 ++++++++++++++++++++++++++++++++++++++++++++++++++------------
++ 1 file changed, 72 insertions(+), 16 deletions(-)
++
++diff --git a/elf/rtld.c b/elf/rtld.c
++index 2269dbec81..86ae20c83f 100644
++--- a/elf/rtld.c
+++++ b/elf/rtld.c
++@@ -99,6 +99,35 @@ uintptr_t __pointer_chk_guard_local
++ strong_alias (__pointer_chk_guard_local, __pointer_chk_guard)
++ #endif
++ 
+++/* Length limits for names and paths, to protect the dynamic linker,
+++   particularly when __libc_enable_secure is active.  */
+++#ifdef NAME_MAX
+++# define SECURE_NAME_LIMIT NAME_MAX
+++#else
+++# define SECURE_NAME_LIMIT 255
+++#endif
+++#ifdef PATH_MAX
+++# define SECURE_PATH_LIMIT PATH_MAX
+++#else
+++# define SECURE_PATH_LIMIT 1024
+++#endif
+++
+++/* Check that AT_SECURE=0, or that the passed name does not contain
+++   directories and is not overly long.  Reject empty names
+++   unconditionally.  */
+++static bool
+++dso_name_valid_for_suid (const char *p)
+++{
+++  if (__glibc_unlikely (__libc_enable_secure))
+++    {
+++      /* Ignore pathnames with directories for AT_SECURE=1
+++	 programs, and also skip overlong names.  */
+++      size_t len = strlen (p);
+++      if (len >= SECURE_NAME_LIMIT || memchr (p, '/', len) != NULL)
+++	return false;
+++    }
+++  return *p != '\0';
+++}
++ 
++ /* List of auditing DSOs.  */
++ static struct audit_list
++@@ -718,6 +747,42 @@ static const char *preloadlist attribute_relro;
++ /* Nonzero if information about versions has to be printed.  */
++ static int version_info attribute_relro;
++ 
+++/* The LD_PRELOAD environment variable gives list of libraries
+++   separated by white space or colons that are loaded before the
+++   executable's dependencies and prepended to the global scope list.
+++   (If the binary is running setuid all elements containing a '/' are
+++   ignored since it is insecure.)  Return the number of preloads
+++   performed.  */
+++unsigned int
+++handle_ld_preload (const char *preloadlist, struct link_map *main_map)
+++{
+++  unsigned int npreloads = 0;
+++  const char *p = preloadlist;
+++  char fname[SECURE_PATH_LIMIT];
+++
+++  while (*p != '\0')
+++    {
+++      /* Split preload list at space/colon.  */
+++      size_t len = strcspn (p, " :");
+++      if (len > 0 && len < sizeof (fname))
+++	{
+++	  memcpy (fname, p, len);
+++	  fname[len] = '\0';
+++	}
+++      else
+++	fname[0] = '\0';
+++
+++      /* Skip over the substring and the following delimiter.  */
+++      p += len;
+++      if (*p != '\0')
+++	++p;
+++
+++      if (dso_name_valid_for_suid (fname))
+++	npreloads += do_preload (fname, main_map, "LD_PRELOAD");
+++    }
+++  return npreloads;
+++}
+++
++ static void
++ dl_main (const ElfW(Phdr) *phdr,
++ 	 ElfW(Word) phnum,
++@@ -1464,23 +1529,8 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++ 
++   if (__glibc_unlikely (preloadlist != NULL))
++     {
++-      /* The LD_PRELOAD environment variable gives list of libraries
++-	 separated by white space or colons that are loaded before the
++-	 executable's dependencies and prepended to the global scope
++-	 list.  If the binary is running setuid all elements
++-	 containing a '/' are ignored since it is insecure.  */
++-      char *list = strdupa (preloadlist);
++-      char *p;
++-
++       HP_TIMING_NOW (start);
++-
++-      /* Prevent optimizing strsep.  Speed is not important here.  */
++-      while ((p = (strsep) (&list, " :")) != NULL)
++-	if (p[0] != '\0'
++-	    && (__builtin_expect (! __libc_enable_secure, 1)
++-		|| strchr (p, '/') == NULL))
++-	  npreloads += do_preload (p, main_map, "LD_PRELOAD");
++-
+++      npreloads += handle_ld_preload (preloadlist, main_map);
++       HP_TIMING_NOW (stop);
++       HP_TIMING_DIFF (diff, start, stop);
++       HP_TIMING_ACCUM_NT (load_time, diff);
++-- 
++2.11.0
++
+diff --git a/package/glibc/2.24/0004-ld.so-Reject-overly-long-LD_AUDIT-path-elements.patch b/package/glibc/2.24/0004-ld.so-Reject-overly-long-LD_AUDIT-path-elements.patch
+new file mode 100644
+index 000000000..25e937bd1
+--- /dev/null
++++ b/package/glibc/2.24/0004-ld.so-Reject-overly-long-LD_AUDIT-path-elements.patch
+@@ -0,0 +1,204 @@
++From 81b82fb966ffbd94353f793ad17116c6088dedd9 Mon Sep 17 00:00:00 2001
++From: Florian Weimer <fweimer@redhat.com>
++Date: Mon, 19 Jun 2017 22:32:12 +0200
++Subject: [PATCH] ld.so: Reject overly long LD_AUDIT path elements
++
++Also only process the last LD_AUDIT entry.
++
++[Peter: Drop ChangeLog modification]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ elf/rtld.c | 110 ++++++++++++++++++++++++++++++++++++++++++++++++++++---------
++ 1 file changed, 105 insertions(+), 15 deletions(-)
++
++diff --git a/elf/rtld.c b/elf/rtld.c
++index 86ae20c83f..65647fb1c8 100644
++--- a/elf/rtld.c
+++++ b/elf/rtld.c
++@@ -129,13 +129,91 @@ dso_name_valid_for_suid (const char *p)
++   return *p != '\0';
++ }
++ 
++-/* List of auditing DSOs.  */
+++/* LD_AUDIT variable contents.  Must be processed before the
+++   audit_list below.  */
+++const char *audit_list_string;
+++
+++/* Cyclic list of auditing DSOs.  audit_list->next is the first
+++   element.  */
++ static struct audit_list
++ {
++   const char *name;
++   struct audit_list *next;
++ } *audit_list;
++ 
+++/* Iterator for audit_list_string followed by audit_list.  */
+++struct audit_list_iter
+++{
+++  /* Tail of audit_list_string still needing processing, or NULL.  */
+++  const char *audit_list_tail;
+++
+++  /* The list element returned in the previous iteration.  NULL before
+++     the first element.  */
+++  struct audit_list *previous;
+++
+++  /* Scratch buffer for returning a name which is part of
+++     audit_list_string.  */
+++  char fname[SECURE_NAME_LIMIT];
+++};
+++
+++/* Initialize an audit list iterator.  */
+++static void
+++audit_list_iter_init (struct audit_list_iter *iter)
+++{
+++  iter->audit_list_tail = audit_list_string;
+++  iter->previous = NULL;
+++}
+++
+++/* Iterate through both audit_list_string and audit_list.  */
+++static const char *
+++audit_list_iter_next (struct audit_list_iter *iter)
+++{
+++  if (iter->audit_list_tail != NULL)
+++    {
+++      /* First iterate over audit_list_string.  */
+++      while (*iter->audit_list_tail != '\0')
+++	{
+++	  /* Split audit list at colon.  */
+++	  size_t len = strcspn (iter->audit_list_tail, ":");
+++	  if (len > 0 && len < sizeof (iter->fname))
+++	    {
+++	      memcpy (iter->fname, iter->audit_list_tail, len);
+++	      iter->fname[len] = '\0';
+++	    }
+++	  else
+++	    /* Do not return this name to the caller.  */
+++	    iter->fname[0] = '\0';
+++
+++	  /* Skip over the substring and the following delimiter.  */
+++	  iter->audit_list_tail += len;
+++	  if (*iter->audit_list_tail == ':')
+++	    ++iter->audit_list_tail;
+++
+++	  /* If the name is valid, return it.  */
+++	  if (dso_name_valid_for_suid (iter->fname))
+++	    return iter->fname;
+++	  /* Otherwise, wrap around and try the next name.  */
+++	}
+++      /* Fall through to the procesing of audit_list.  */
+++    }
+++
+++  if (iter->previous == NULL)
+++    {
+++      if (audit_list == NULL)
+++	/* No pre-parsed audit list.  */
+++	return NULL;
+++      /* Start of audit list.  The first list element is at
+++	 audit_list->next (cyclic list).  */
+++      iter->previous = audit_list->next;
+++      return iter->previous->name;
+++    }
+++  if (iter->previous == audit_list)
+++    /* Cyclic list wrap-around.  */
+++    return NULL;
+++  iter->previous = iter->previous->next;
+++  return iter->previous->name;
+++}
+++
++ #ifndef HAVE_INLINED_SYSCALLS
++ /* Set nonzero during loading and initialization of executable and
++    libraries, cleared before the executable's entry point runs.  This
++@@ -1305,11 +1383,13 @@ of this helper program; chances are you did not intend to run this program.\n\
++     GL(dl_rtld_map).l_tls_modid = _dl_next_tls_modid ();
++ 
++   /* If we have auditing DSOs to load, do it now.  */
++-  if (__glibc_unlikely (audit_list != NULL))
+++  bool need_security_init = true;
+++  if (__glibc_unlikely (audit_list != NULL)
+++      || __glibc_unlikely (audit_list_string != NULL))
++     {
++-      /* Iterate over all entries in the list.  The order is important.  */
++       struct audit_ifaces *last_audit = NULL;
++-      struct audit_list *al = audit_list->next;
+++      struct audit_list_iter al_iter;
+++      audit_list_iter_init (&al_iter);
++ 
++       /* Since we start using the auditing DSOs right away we need to
++ 	 initialize the data structures now.  */
++@@ -1320,9 +1400,14 @@ of this helper program; chances are you did not intend to run this program.\n\
++ 	 use different values (especially the pointer guard) and will
++ 	 fail later on.  */
++       security_init ();
+++      need_security_init = false;
++ 
++-      do
+++      while (true)
++ 	{
+++	  const char *name = audit_list_iter_next (&al_iter);
+++	  if (name == NULL)
+++	    break;
+++
++ 	  int tls_idx = GL(dl_tls_max_dtv_idx);
++ 
++ 	  /* Now it is time to determine the layout of the static TLS
++@@ -1331,7 +1416,7 @@ of this helper program; chances are you did not intend to run this program.\n\
++ 	     no DF_STATIC_TLS bit is set.  The reason is that we know
++ 	     glibc will use the static model.  */
++ 	  struct dlmopen_args dlmargs;
++-	  dlmargs.fname = al->name;
+++	  dlmargs.fname = name;
++ 	  dlmargs.map = NULL;
++ 
++ 	  const char *objname;
++@@ -1344,7 +1429,7 @@ of this helper program; chances are you did not intend to run this program.\n\
++ 	    not_loaded:
++ 	      _dl_error_printf ("\
++ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++-				al->name, err_str);
+++				name, err_str);
++ 	      if (malloced)
++ 		free ((char *) err_str);
++ 	    }
++@@ -1448,10 +1533,7 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++ 		  goto not_loaded;
++ 		}
++ 	    }
++-
++-	  al = al->next;
++ 	}
++-      while (al != audit_list->next);
++ 
++       /* If we have any auditing modules, announce that we already
++ 	 have two objects loaded.  */
++@@ -1715,7 +1797,7 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++   if (tcbp == NULL)
++     tcbp = init_tls ();
++ 
++-  if (__glibc_likely (audit_list == NULL))
+++  if (__glibc_likely (need_security_init))
++     /* Initialize security features.  But only if we have not done it
++        earlier.  */
++     security_init ();
++@@ -2346,9 +2428,7 @@ process_dl_audit (char *str)
++   char *p;
++ 
++   while ((p = (strsep) (&str, ":")) != NULL)
++-    if (p[0] != '\0'
++-	&& (__builtin_expect (! __libc_enable_secure, 1)
++-	    || strchr (p, '/') == NULL))
+++    if (dso_name_valid_for_suid (p))
++       {
++ 	/* This is using the local malloc, not the system malloc.  The
++ 	   memory can never be freed.  */
++@@ -2412,7 +2492,7 @@ process_envvars (enum mode *modep)
++ 	      break;
++ 	    }
++ 	  if (memcmp (envline, "AUDIT", 5) == 0)
++-	    process_dl_audit (&envline[6]);
+++	    audit_list_string = &envline[6];
++ 	  break;
++ 
++ 	case 7:
++-- 
++2.11.0
++
+diff --git a/package/glibc/2.25/0002-CVE-2017-1000366-Ignore-LD_LIBRARY_PATH-for-AT_SECUR.patch b/package/glibc/2.25/0002-CVE-2017-1000366-Ignore-LD_LIBRARY_PATH-for-AT_SECUR.patch
+new file mode 100644
+index 000000000..d701294de
+--- /dev/null
++++ b/package/glibc/2.25/0002-CVE-2017-1000366-Ignore-LD_LIBRARY_PATH-for-AT_SECUR.patch
+@@ -0,0 +1,35 @@
++From f6110a8fee2ca36f8e2d2abecf3cba9fa7b8ea7d Mon Sep 17 00:00:00 2001
++From: Florian Weimer <fweimer@redhat.com>
++Date: Mon, 19 Jun 2017 17:09:55 +0200
++Subject: [PATCH] CVE-2017-1000366: Ignore LD_LIBRARY_PATH for AT_SECURE=1
++ programs [BZ #21624]
++
++LD_LIBRARY_PATH can only be used to reorder system search paths, which
++is not useful functionality.
++
++This makes an exploitable unbounded alloca in _dl_init_paths unreachable
++for AT_SECURE=1 programs.
++
++[Peter: Drop ChangeLog modification]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ elf/rtld.c | 3 ++-
++ 1 file changed, 8 insertions(+), 1 deletion(-)
++
++diff --git a/elf/rtld.c b/elf/rtld.c
++index 2446a87680..2269dbec81 100644
++--- a/elf/rtld.c
+++++ b/elf/rtld.c
++@@ -2422,7 +2422,8 @@ process_envvars (enum mode *modep)
++ 
++ 	case 12:
++ 	  /* The library search path.  */
++-	  if (memcmp (envline, "LIBRARY_PATH", 12) == 0)
+++	  if (!__libc_enable_secure
+++	      && memcmp (envline, "LIBRARY_PATH", 12) == 0)
++ 	    {
++ 	      library_path = &envline[13];
++ 	      break;
++-- 
++2.11.0
++
+diff --git a/package/glibc/2.25/0003-ld.so-Reject-overly-long-LD_PRELOAD-path-elements.patch b/package/glibc/2.25/0003-ld.so-Reject-overly-long-LD_PRELOAD-path-elements.patch
+new file mode 100644
+index 000000000..df410931d
+--- /dev/null
++++ b/package/glibc/2.25/0003-ld.so-Reject-overly-long-LD_PRELOAD-path-elements.patch
+@@ -0,0 +1,122 @@
++From 6d0ba622891bed9d8394eef1935add53003b12e8 Mon Sep 17 00:00:00 2001
++From: Florian Weimer <fweimer@redhat.com>
++Date: Mon, 19 Jun 2017 22:31:04 +0200
++Subject: [PATCH] ld.so: Reject overly long LD_PRELOAD path elements
++
++[Peter: Drop ChangeLog modification]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ elf/rtld.c | 82 ++++++++++++++++++++++++++++++++++++++++++++++++++------------
++ 1 file changed, 72 insertions(+), 16 deletions(-)
++
++diff --git a/elf/rtld.c b/elf/rtld.c
++index 2269dbec81..86ae20c83f 100644
++--- a/elf/rtld.c
+++++ b/elf/rtld.c
++@@ -99,6 +99,35 @@ uintptr_t __pointer_chk_guard_local
++ strong_alias (__pointer_chk_guard_local, __pointer_chk_guard)
++ #endif
++ 
+++/* Length limits for names and paths, to protect the dynamic linker,
+++   particularly when __libc_enable_secure is active.  */
+++#ifdef NAME_MAX
+++# define SECURE_NAME_LIMIT NAME_MAX
+++#else
+++# define SECURE_NAME_LIMIT 255
+++#endif
+++#ifdef PATH_MAX
+++# define SECURE_PATH_LIMIT PATH_MAX
+++#else
+++# define SECURE_PATH_LIMIT 1024
+++#endif
+++
+++/* Check that AT_SECURE=0, or that the passed name does not contain
+++   directories and is not overly long.  Reject empty names
+++   unconditionally.  */
+++static bool
+++dso_name_valid_for_suid (const char *p)
+++{
+++  if (__glibc_unlikely (__libc_enable_secure))
+++    {
+++      /* Ignore pathnames with directories for AT_SECURE=1
+++	 programs, and also skip overlong names.  */
+++      size_t len = strlen (p);
+++      if (len >= SECURE_NAME_LIMIT || memchr (p, '/', len) != NULL)
+++	return false;
+++    }
+++  return *p != '\0';
+++}
++ 
++ /* List of auditing DSOs.  */
++ static struct audit_list
++@@ -718,6 +747,42 @@ static const char *preloadlist attribute_relro;
++ /* Nonzero if information about versions has to be printed.  */
++ static int version_info attribute_relro;
++ 
+++/* The LD_PRELOAD environment variable gives list of libraries
+++   separated by white space or colons that are loaded before the
+++   executable's dependencies and prepended to the global scope list.
+++   (If the binary is running setuid all elements containing a '/' are
+++   ignored since it is insecure.)  Return the number of preloads
+++   performed.  */
+++unsigned int
+++handle_ld_preload (const char *preloadlist, struct link_map *main_map)
+++{
+++  unsigned int npreloads = 0;
+++  const char *p = preloadlist;
+++  char fname[SECURE_PATH_LIMIT];
+++
+++  while (*p != '\0')
+++    {
+++      /* Split preload list at space/colon.  */
+++      size_t len = strcspn (p, " :");
+++      if (len > 0 && len < sizeof (fname))
+++	{
+++	  memcpy (fname, p, len);
+++	  fname[len] = '\0';
+++	}
+++      else
+++	fname[0] = '\0';
+++
+++      /* Skip over the substring and the following delimiter.  */
+++      p += len;
+++      if (*p != '\0')
+++	++p;
+++
+++      if (dso_name_valid_for_suid (fname))
+++	npreloads += do_preload (fname, main_map, "LD_PRELOAD");
+++    }
+++  return npreloads;
+++}
+++
++ static void
++ dl_main (const ElfW(Phdr) *phdr,
++ 	 ElfW(Word) phnum,
++@@ -1464,23 +1529,8 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++ 
++   if (__glibc_unlikely (preloadlist != NULL))
++     {
++-      /* The LD_PRELOAD environment variable gives list of libraries
++-	 separated by white space or colons that are loaded before the
++-	 executable's dependencies and prepended to the global scope
++-	 list.  If the binary is running setuid all elements
++-	 containing a '/' are ignored since it is insecure.  */
++-      char *list = strdupa (preloadlist);
++-      char *p;
++-
++       HP_TIMING_NOW (start);
++-
++-      /* Prevent optimizing strsep.  Speed is not important here.  */
++-      while ((p = (strsep) (&list, " :")) != NULL)
++-	if (p[0] != '\0'
++-	    && (__builtin_expect (! __libc_enable_secure, 1)
++-		|| strchr (p, '/') == NULL))
++-	  npreloads += do_preload (p, main_map, "LD_PRELOAD");
++-
+++      npreloads += handle_ld_preload (preloadlist, main_map);
++       HP_TIMING_NOW (stop);
++       HP_TIMING_DIFF (diff, start, stop);
++       HP_TIMING_ACCUM_NT (load_time, diff);
++-- 
++2.11.0
++
+diff --git a/package/glibc/2.25/0004-ld.so-Reject-overly-long-LD_AUDIT-path-elements.patch b/package/glibc/2.25/0004-ld.so-Reject-overly-long-LD_AUDIT-path-elements.patch
+new file mode 100644
+index 000000000..25e937bd1
+--- /dev/null
++++ b/package/glibc/2.25/0004-ld.so-Reject-overly-long-LD_AUDIT-path-elements.patch
+@@ -0,0 +1,204 @@
++From 81b82fb966ffbd94353f793ad17116c6088dedd9 Mon Sep 17 00:00:00 2001
++From: Florian Weimer <fweimer@redhat.com>
++Date: Mon, 19 Jun 2017 22:32:12 +0200
++Subject: [PATCH] ld.so: Reject overly long LD_AUDIT path elements
++
++Also only process the last LD_AUDIT entry.
++
++[Peter: Drop ChangeLog modification]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ elf/rtld.c | 110 ++++++++++++++++++++++++++++++++++++++++++++++++++++---------
++ 1 file changed, 105 insertions(+), 15 deletions(-)
++
++diff --git a/elf/rtld.c b/elf/rtld.c
++index 86ae20c83f..65647fb1c8 100644
++--- a/elf/rtld.c
+++++ b/elf/rtld.c
++@@ -129,13 +129,91 @@ dso_name_valid_for_suid (const char *p)
++   return *p != '\0';
++ }
++ 
++-/* List of auditing DSOs.  */
+++/* LD_AUDIT variable contents.  Must be processed before the
+++   audit_list below.  */
+++const char *audit_list_string;
+++
+++/* Cyclic list of auditing DSOs.  audit_list->next is the first
+++   element.  */
++ static struct audit_list
++ {
++   const char *name;
++   struct audit_list *next;
++ } *audit_list;
++ 
+++/* Iterator for audit_list_string followed by audit_list.  */
+++struct audit_list_iter
+++{
+++  /* Tail of audit_list_string still needing processing, or NULL.  */
+++  const char *audit_list_tail;
+++
+++  /* The list element returned in the previous iteration.  NULL before
+++     the first element.  */
+++  struct audit_list *previous;
+++
+++  /* Scratch buffer for returning a name which is part of
+++     audit_list_string.  */
+++  char fname[SECURE_NAME_LIMIT];
+++};
+++
+++/* Initialize an audit list iterator.  */
+++static void
+++audit_list_iter_init (struct audit_list_iter *iter)
+++{
+++  iter->audit_list_tail = audit_list_string;
+++  iter->previous = NULL;
+++}
+++
+++/* Iterate through both audit_list_string and audit_list.  */
+++static const char *
+++audit_list_iter_next (struct audit_list_iter *iter)
+++{
+++  if (iter->audit_list_tail != NULL)
+++    {
+++      /* First iterate over audit_list_string.  */
+++      while (*iter->audit_list_tail != '\0')
+++	{
+++	  /* Split audit list at colon.  */
+++	  size_t len = strcspn (iter->audit_list_tail, ":");
+++	  if (len > 0 && len < sizeof (iter->fname))
+++	    {
+++	      memcpy (iter->fname, iter->audit_list_tail, len);
+++	      iter->fname[len] = '\0';
+++	    }
+++	  else
+++	    /* Do not return this name to the caller.  */
+++	    iter->fname[0] = '\0';
+++
+++	  /* Skip over the substring and the following delimiter.  */
+++	  iter->audit_list_tail += len;
+++	  if (*iter->audit_list_tail == ':')
+++	    ++iter->audit_list_tail;
+++
+++	  /* If the name is valid, return it.  */
+++	  if (dso_name_valid_for_suid (iter->fname))
+++	    return iter->fname;
+++	  /* Otherwise, wrap around and try the next name.  */
+++	}
+++      /* Fall through to the procesing of audit_list.  */
+++    }
+++
+++  if (iter->previous == NULL)
+++    {
+++      if (audit_list == NULL)
+++	/* No pre-parsed audit list.  */
+++	return NULL;
+++      /* Start of audit list.  The first list element is at
+++	 audit_list->next (cyclic list).  */
+++      iter->previous = audit_list->next;
+++      return iter->previous->name;
+++    }
+++  if (iter->previous == audit_list)
+++    /* Cyclic list wrap-around.  */
+++    return NULL;
+++  iter->previous = iter->previous->next;
+++  return iter->previous->name;
+++}
+++
++ #ifndef HAVE_INLINED_SYSCALLS
++ /* Set nonzero during loading and initialization of executable and
++    libraries, cleared before the executable's entry point runs.  This
++@@ -1305,11 +1383,13 @@ of this helper program; chances are you did not intend to run this program.\n\
++     GL(dl_rtld_map).l_tls_modid = _dl_next_tls_modid ();
++ 
++   /* If we have auditing DSOs to load, do it now.  */
++-  if (__glibc_unlikely (audit_list != NULL))
+++  bool need_security_init = true;
+++  if (__glibc_unlikely (audit_list != NULL)
+++      || __glibc_unlikely (audit_list_string != NULL))
++     {
++-      /* Iterate over all entries in the list.  The order is important.  */
++       struct audit_ifaces *last_audit = NULL;
++-      struct audit_list *al = audit_list->next;
+++      struct audit_list_iter al_iter;
+++      audit_list_iter_init (&al_iter);
++ 
++       /* Since we start using the auditing DSOs right away we need to
++ 	 initialize the data structures now.  */
++@@ -1320,9 +1400,14 @@ of this helper program; chances are you did not intend to run this program.\n\
++ 	 use different values (especially the pointer guard) and will
++ 	 fail later on.  */
++       security_init ();
+++      need_security_init = false;
++ 
++-      do
+++      while (true)
++ 	{
+++	  const char *name = audit_list_iter_next (&al_iter);
+++	  if (name == NULL)
+++	    break;
+++
++ 	  int tls_idx = GL(dl_tls_max_dtv_idx);
++ 
++ 	  /* Now it is time to determine the layout of the static TLS
++@@ -1331,7 +1416,7 @@ of this helper program; chances are you did not intend to run this program.\n\
++ 	     no DF_STATIC_TLS bit is set.  The reason is that we know
++ 	     glibc will use the static model.  */
++ 	  struct dlmopen_args dlmargs;
++-	  dlmargs.fname = al->name;
+++	  dlmargs.fname = name;
++ 	  dlmargs.map = NULL;
++ 
++ 	  const char *objname;
++@@ -1344,7 +1429,7 @@ of this helper program; chances are you did not intend to run this program.\n\
++ 	    not_loaded:
++ 	      _dl_error_printf ("\
++ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++-				al->name, err_str);
+++				name, err_str);
++ 	      if (malloced)
++ 		free ((char *) err_str);
++ 	    }
++@@ -1448,10 +1533,7 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++ 		  goto not_loaded;
++ 		}
++ 	    }
++-
++-	  al = al->next;
++ 	}
++-      while (al != audit_list->next);
++ 
++       /* If we have any auditing modules, announce that we already
++ 	 have two objects loaded.  */
++@@ -1715,7 +1797,7 @@ ERROR: ld.so: object '%s' cannot be loaded as audit interface: %s; ignored.\n",
++   if (tcbp == NULL)
++     tcbp = init_tls ();
++ 
++-  if (__glibc_likely (audit_list == NULL))
+++  if (__glibc_likely (need_security_init))
++     /* Initialize security features.  But only if we have not done it
++        earlier.  */
++     security_init ();
++@@ -2346,9 +2428,7 @@ process_dl_audit (char *str)
++   char *p;
++ 
++   while ((p = (strsep) (&str, ":")) != NULL)
++-    if (p[0] != '\0'
++-	&& (__builtin_expect (! __libc_enable_secure, 1)
++-	    || strchr (p, '/') == NULL))
+++    if (dso_name_valid_for_suid (p))
++       {
++ 	/* This is using the local malloc, not the system malloc.  The
++ 	   memory can never be freed.  */
++@@ -2412,7 +2492,7 @@ process_envvars (enum mode *modep)
++ 	      break;
++ 	    }
++ 	  if (memcmp (envline, "AUDIT", 5) == 0)
++-	    process_dl_audit (&envline[6]);
+++	    audit_list_string = &envline[6];
++ 	  break;
++ 
++ 	case 7:
++-- 
++2.11.0
++
+diff --git a/package/gnutls/gnutls.hash b/package/gnutls/gnutls.hash
+index 64b86d759..f69971680 100644
+--- a/package/gnutls/gnutls.hash
++++ b/package/gnutls/gnutls.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated after checking pgp signature
+-sha256	af443e86ba538d4d3e37c4732c00101a492fe4b56a55f4112ff0ab39dbe6579d	gnutls-3.5.10.tar.xz
++sha256	79f5480ad198dad5bc78e075f4a40c4a315a1b2072666919d2d05a08aec13096	gnutls-3.5.13.tar.xz
+diff --git a/package/gnutls/gnutls.mk b/package/gnutls/gnutls.mk
+index be1cf00e0..4d8981ae7 100644
+--- a/package/gnutls/gnutls.mk
++++ b/package/gnutls/gnutls.mk
+@@ -5,9 +5,9 @@
+ ################################################################################
+ 
+ GNUTLS_VERSION_MAJOR = 3.5
+-GNUTLS_VERSION = $(GNUTLS_VERSION_MAJOR).10
++GNUTLS_VERSION = $(GNUTLS_VERSION_MAJOR).13
+ GNUTLS_SOURCE = gnutls-$(GNUTLS_VERSION).tar.xz
+-GNUTLS_SITE = ftp://ftp.gnutls.org/gcrypt/gnutls/v$(GNUTLS_VERSION_MAJOR)
++GNUTLS_SITE = https://www.gnupg.org/ftp/gcrypt/gnutls/v$(GNUTLS_VERSION_MAJOR)
+ GNUTLS_LICENSE = LGPLv2.1+ (core library), GPLv3+ (gnutls-openssl library)
+ GNUTLS_LICENSE_FILES = doc/COPYING doc/COPYING.LESSER
+ GNUTLS_DEPENDENCIES = host-pkgconf libunistring libtasn1 nettle pcre
+diff --git a/package/gstreamer1/gst1-plugins-bad/Config.in b/package/gstreamer1/gst1-plugins-bad/Config.in
+index 1db51877d..2fe9bb621 100644
+--- a/package/gstreamer1/gst1-plugins-bad/Config.in
++++ b/package/gstreamer1/gst1-plugins-bad/Config.in
+@@ -698,8 +698,8 @@ config BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_WEBP
+ 	help
+ 	  Webp image format plugin
+ 
+-config BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_WEBRTC
+-	bool "webrtc"
++config BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_WEBRTCDSP
++	bool "webrtcdsp"
+ 	# All depends from webrtc-audio-processing
+ 	depends on BR2_PACKAGE_WEBRTC_AUDIO_PROCESSING_ARCH_SUPPORTS
+ 	depends on BR2_INSTALL_LIBSTDCPP
+@@ -710,7 +710,7 @@ config BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_WEBRTC
+ 	help
+ 	  WebRTC echo-cancellation, gain control and noise suppression
+ 
+-comment "webrtc needs a toolchain w/ C++, NPTL, gcc >= 4.8"
++comment "webrtcdsp needs a toolchain w/ C++, NPTL, gcc >= 4.8"
+ 	depends on BR2_PACKAGE_WEBRTC_AUDIO_PROCESSING_ARCH_SUPPORTS
+ 	depends on !BR2_INSTALL_LIBSTDCPP || !BR2_TOOLCHAIN_HAS_THREADS_NPTL \
+ 		|| !BR2_TOOLCHAIN_GCC_AT_LEAST_4_8
+diff --git a/package/gstreamer1/gst1-plugins-bad/gst1-plugins-bad.mk b/package/gstreamer1/gst1-plugins-bad/gst1-plugins-bad.mk
+index c6a151a62..9f39bbf9b 100644
+--- a/package/gstreamer1/gst1-plugins-bad/gst1-plugins-bad.mk
++++ b/package/gstreamer1/gst1-plugins-bad/gst1-plugins-bad.mk
+@@ -813,11 +813,11 @@ else
+ GST1_PLUGINS_BAD_CONF_OPTS += --disable-webp
+ endif
+ 
+-ifeq ($(BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_WEBRTC),y)
+-GST1_PLUGINS_BAD_CONF_OPTS += --enable-webrtc
++ifeq ($(BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_WEBRTCDSP),y)
++GST1_PLUGINS_BAD_CONF_OPTS += --enable-webrtcdsp
+ GST1_PLUGINS_BAD_DEPENDENCIES += webrtc-audio-processing
+ else
+-GST1_PLUGINS_BAD_CONF_OPTS += --disable-webrtc
++GST1_PLUGINS_BAD_CONF_OPTS += --disable-webrtcdsp
+ endif
+ 
+ ifeq ($(BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_X265),y)
+diff --git a/package/imagemagick/0001-https-github.com-ImageMagick-ImageMagick-issues-415.patch b/package/imagemagick/0001-https-github.com-ImageMagick-ImageMagick-issues-415.patch
+deleted file mode 100644
+index 943679eda..000000000
+--- a/package/imagemagick/0001-https-github.com-ImageMagick-ImageMagick-issues-415.patch
++++ /dev/null
+@@ -1,52 +0,0 @@
+-From b218117cad34d39b9ffb587b45c71c5a49b12bde Mon Sep 17 00:00:00 2001
+-From: Cristy <urban-warrior@imagemagick.org>
+-Date: Fri, 31 Mar 2017 15:24:33 -0400
+-Subject: [PATCH] https://github.com/ImageMagick/ImageMagick/issues/415
+-
+-Fixes CVE-2017-7606
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- coders/pnm.c | 2 +-
+- coders/rle.c | 5 +++--
+- 2 files changed, 4 insertions(+), 3 deletions(-)
+-
+-diff --git a/coders/pnm.c b/coders/pnm.c
+-index 9a1221d79..c525ebb8f 100644
+---- a/coders/pnm.c
+-+++ b/coders/pnm.c
+-@@ -1979,7 +1979,7 @@ static MagickBooleanType WritePNMImage(const ImageInfo *image_info,Image *image,
+-                           pixel=ScaleQuantumToChar(GetPixelRed(image,p));
+-                         else
+-                           pixel=ScaleQuantumToAny(GetPixelRed(image,p),
+--                          max_value);
+-+                            max_value);
+-                       }
+-                     q=PopCharPixel((unsigned char) pixel,q);
+-                     p+=GetPixelChannels(image);
+-diff --git a/coders/rle.c b/coders/rle.c
+-index 2318901ec..ec071dc7b 100644
+---- a/coders/rle.c
+-+++ b/coders/rle.c
+-@@ -271,7 +271,8 @@ static Image *ReadRLEImage(const ImageInfo *image_info,ExceptionInfo *exception)
+-         p=colormap;
+-         for (i=0; i < (ssize_t) number_colormaps; i++)
+-           for (x=0; x < (ssize_t) map_length; x++)
+--            *p++=(unsigned char) ScaleShortToQuantum(ReadBlobLSBShort(image));
+-+            *p++=(unsigned char) ScaleQuantumToChar(ScaleShortToQuantum(
+-+              ReadBlobLSBShort(image)));
+-       }
+-     if ((flags & 0x08) != 0)
+-       {
+-@@ -476,7 +477,7 @@ static Image *ReadRLEImage(const ImageInfo *image_info,ExceptionInfo *exception)
+-               for (x=0; x < (ssize_t) number_planes; x++)
+-               {
+-                 ValidateColormapValue(image,(size_t) (x*map_length+
+--                    (*p & mask)),&index,exception);
+-+                  (*p & mask)),&index,exception);
+-                 *p=colormap[(ssize_t) index];
+-                 p++;
+-               }
+--- 
+-2.11.0
+-
+diff --git a/package/imagemagick/imagemagick.hash b/package/imagemagick/imagemagick.hash
+index ff7b24a9a..173dd415c 100644
+--- a/package/imagemagick/imagemagick.hash
++++ b/package/imagemagick/imagemagick.hash
+@@ -1,2 +1,2 @@
+ # From http://www.imagemagick.org/download/releases/digest.rdf
+-sha256 4a1dde5bdfec0fc549955a051be25b7ff96dfb192060997699e43c7ce0f06ab2  ImageMagick-7.0.5-4.tar.xz
++sha256 0058fcde533986334458a5c99600b1b9633182dd9562cbad4ba618c5ccf2a28f  ImageMagick-7.0.5-10.tar.xz
+diff --git a/package/imagemagick/imagemagick.mk b/package/imagemagick/imagemagick.mk
+index 9bef6f781..7aade62da 100644
+--- a/package/imagemagick/imagemagick.mk
++++ b/package/imagemagick/imagemagick.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-IMAGEMAGICK_VERSION = 7.0.5-4
++IMAGEMAGICK_VERSION = 7.0.5-10
+ IMAGEMAGICK_SOURCE = ImageMagick-$(IMAGEMAGICK_VERSION).tar.xz
+ IMAGEMAGICK_SITE = http://www.imagemagick.org/download/releases
+ IMAGEMAGICK_LICENSE = Apache-2.0
+diff --git a/package/intltool/0001-perl-5.26-compatibility.patch b/package/intltool/0001-perl-5.26-compatibility.patch
+new file mode 100644
+index 000000000..a2a7aef1d
+--- /dev/null
++++ b/package/intltool/0001-perl-5.26-compatibility.patch
+@@ -0,0 +1,55 @@
++Fix regex errors thrown by Perl 5.26:
++
++Unescaped left brace in regex is illegal here in regex; marked by <-- HERE in m/^(.*)\${ <-- HERE ?([A-Z_]+)}?(.*)$/ at $BUILDROOT/host/usr/bin/intltool-update line 1065.
++
++Fetched from:
++https://github.com/Alexpux/MSYS2-packages/blob/master/intltool/perl-5.22-compatibility.patch
++
++Reported upstream:
++https://bugs.launchpad.net/intltool/+bug/1696658
++
++Signed-off-by: Jörg Krause <joerg.krause@embedded.rocks>
++
++--- intltool-0.51.0.orig/intltool-update.in	2015-03-09 02:39:54.000000000 +0100
+++++ intltool-0.51.0.orig/intltool-update.in	2015-06-19 01:52:07.171228154 +0200
++@@ -1062,7 +1062,7 @@ 
++ 	}
++     }
++ 
++-    if ($str =~ /^(.*)\${?([A-Z_]+)}?(.*)$/)
+++    if ($str =~ /^(.*)\$\{?([A-Z_]+)}?(.*)$/)
++     {
++ 	my $rest = $3;
++ 	my $untouched = $1;
++@@ -1190,10 +1190,10 @@ 
++ 	$name    =~ s/\(+$//g;
++ 	$version =~ s/\(+$//g;
++ 
++-	$varhash{"PACKAGE_NAME"} = $name if (not $name =~ /\${?AC_PACKAGE_NAME}?/);
++-	$varhash{"PACKAGE"} = $name if (not $name =~ /\${?PACKAGE}?/);
++-	$varhash{"PACKAGE_VERSION"} = $version if (not $name =~ /\${?AC_PACKAGE_VERSION}?/);
++-	$varhash{"VERSION"} = $version if (not $name =~ /\${?VERSION}?/);
+++	$varhash{"PACKAGE_NAME"} = $name if (not $name =~ /\$\{?AC_PACKAGE_NAME}?/);
+++	$varhash{"PACKAGE"} = $name if (not $name =~ /\$\{?PACKAGE}?/);
+++	$varhash{"PACKAGE_VERSION"} = $version if (not $name =~ /\$\{?AC_PACKAGE_VERSION}?/);
+++	$varhash{"VERSION"} = $version if (not $name =~ /\$\{?VERSION}?/);
++     }
++ 
++     if ($conf_source =~ /^AC_INIT\(([^,\)]+),([^,\)]+)[,]?([^,\)]+)?/m)
++@@ -1219,11 +1219,11 @@ 
++ 	$version =~ s/\(+$//g;
++         $bugurl  =~ s/\(+$//g if (defined $bugurl);
++ 
++-	$varhash{"PACKAGE_NAME"} = $name if (not $name =~ /\${?AC_PACKAGE_NAME}?/);
++-	$varhash{"PACKAGE"} = $name if (not $name =~ /\${?PACKAGE}?/);
++-	$varhash{"PACKAGE_VERSION"} = $version if (not $name =~ /\${?AC_PACKAGE_VERSION}?/);
++-	$varhash{"VERSION"} = $version if (not $name =~ /\${?VERSION}?/);
++-        $varhash{"PACKAGE_BUGREPORT"} = $bugurl if (defined $bugurl and not $bugurl =~ /\${?\w+}?/);
+++	$varhash{"PACKAGE_NAME"} = $name if (not $name =~ /\$\{?AC_PACKAGE_NAME}?/);
+++	$varhash{"PACKAGE"} = $name if (not $name =~ /\$\{?PACKAGE}?/);
+++	$varhash{"PACKAGE_VERSION"} = $version if (not $name =~ /\$\{?AC_PACKAGE_VERSION}?/);
+++	$varhash{"VERSION"} = $version if (not $name =~ /\$\{?VERSION}?/);
+++        $varhash{"PACKAGE_BUGREPORT"} = $bugurl if (defined $bugurl and not $bugurl =~ /\$\{?\w+}?/);
++     }
++ 
++     # \s makes this not work, why?
+diff --git a/package/iperf/iperf.hash b/package/iperf/iperf.hash
+index 3dd491a2c..3e961435b 100644
+--- a/package/iperf/iperf.hash
++++ b/package/iperf/iperf.hash
+@@ -1,4 +1,4 @@
+ # From https://sourceforge.net/projects/iperf2/files/
+-sha1	9e215f6af8edd97f947f2b0207ff5487845d83d4	iperf-2.0.9.tar.gz
++sha1	59820895df9106ba189ccfdc5677077535ad50e7	iperf-2.0.9.tar.gz
+ # Locally computed:
+-sha256  a5350777b191e910334d3a107b5e5219b72ffa393da4186da1e0a4552aeeded6  iperf-2.0.9.tar.gz
++sha256  db02911f35686e808ed247160dfa766e08ae3f59d1e7dcedef0ffb2a6643f0bf  iperf-2.0.9.tar.gz
+diff --git a/package/ipsec-tools/0002-CVE-2015-4047.patch b/package/ipsec-tools/0002-CVE-2015-4047.patch
+new file mode 100644
+index 000000000..f53fe5cc1
+--- /dev/null
++++ b/package/ipsec-tools/0002-CVE-2015-4047.patch
+@@ -0,0 +1,26 @@
++ipsec-tools: CVE-2015-4047: null pointer dereference crash in racoon
++
++See: https://bugs.gentoo.org/show_bug.cgi?id=550118
++
++Downloaded from
++https://gitweb.gentoo.org/repo/gentoo.git/tree/net-vpn/ipsec-tools/files/ipsec-tools-CVE-2015-4047.patch
++
++See also
++https://sources.debian.net/src/ipsec-tools/1:0.8.2%2B20140711-8/debian/patches/bug785778-null-pointer-deref.patch/
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++
++--- ./src/racoon/gssapi.c    9 Sep 2006 16:22:09 -0000       1.4
+++++ ./src/racoon/gssapi.c    19 May 2015 15:16:00 -0000      1.6
++@@ -192,6 +192,11 @@
++	gss_name_t princ, canon_princ;
++	OM_uint32 maj_stat, min_stat;
++ 
+++	if (iph1->rmconf == NULL) {
+++		plog(LLV_ERROR, LOCATION, NULL, "no remote config\n");
+++		return -1;
+++	}
+++
++	gps = racoon_calloc(1, sizeof (struct gssapi_ph1_state));
++	if (gps == NULL) {
++		plog(LLV_ERROR, LOCATION, NULL, "racoon_calloc failed\n");
+diff --git a/package/irssi/Config.in b/package/irssi/Config.in
+index 7d2920178..2cdd06c87 100644
+--- a/package/irssi/Config.in
++++ b/package/irssi/Config.in
+@@ -2,6 +2,7 @@ config BR2_PACKAGE_IRSSI
+ 	bool "irssi"
+ 	select BR2_PACKAGE_LIBGLIB2
+ 	select BR2_PACKAGE_NCURSES
++	select BR2_PACKAGE_OPENSSL
+ 	depends on BR2_USE_WCHAR # libglib2
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS # libglib2
+ 	depends on BR2_USE_MMU # fork()
+diff --git a/package/irssi/irssi.hash b/package/irssi/irssi.hash
+index b1048bf8f..abb421998 100644
+--- a/package/irssi/irssi.hash
++++ b/package/irssi/irssi.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated after checking pgp signature
+-sha256	e433063b8714dcf17438126902c9a9d5c97944b3185ecd0fc5ae25c4959bf35a	irssi-0.8.21.tar.xz
++sha256	838220297dcbe7c8c42d01005059779a82f5b7b7e7043db37ad13f5966aff581	irssi-1.0.3.tar.xz
+diff --git a/package/irssi/irssi.mk b/package/irssi/irssi.mk
+index e467f8989..12ab57bbc 100644
+--- a/package/irssi/irssi.mk
++++ b/package/irssi/irssi.mk
+@@ -4,27 +4,20 @@
+ #
+ ################################################################################
+ 
+-IRSSI_VERSION = 0.8.21
++IRSSI_VERSION = 1.0.3
+ IRSSI_SOURCE = irssi-$(IRSSI_VERSION).tar.xz
+ # Do not use the github helper here. The generated tarball is *NOT* the
+ # same as the one uploaded by upstream for the release.
+ IRSSI_SITE = https://github.com/irssi/irssi/releases/download/$(IRSSI_VERSION)
+ IRSSI_LICENSE = GPLv2+
+ IRSSI_LICENSE_FILES = COPYING
+-IRSSI_DEPENDENCIES = host-pkgconf libglib2 ncurses
++IRSSI_DEPENDENCIES = host-pkgconf libglib2 ncurses openssl
+ 
+ IRSSI_CONF_OPTS = \
+ 	--disable-glibtest \
+ 	--with-ncurses=$(STAGING_DIR)/usr \
+ 	--without-perl
+ 
+-ifeq ($(BR2_PACKAGE_OPENSSL),y)
+-IRSSI_CONF_OPTS += --enable-ssl
+-IRSSI_DEPENDENCIES += openssl
+-else
+-IRSSI_CONF_OPTS += --disable-ssl
+-endif
+-
+ ifeq ($(BR2_PACKAGE_IRSSI_PROXY),y)
+ IRSSI_CONF_OPTS += --with-proxy
+ # If shared libs are disabled, 'proxy' has to go in the list of built-in
+diff --git a/package/libgcrypt/libgcrypt.hash b/package/libgcrypt/libgcrypt.hash
+index 48bbd6af5..8ac9f0a92 100644
+--- a/package/libgcrypt/libgcrypt.hash
++++ b/package/libgcrypt/libgcrypt.hash
+@@ -1,2 +1,5 @@
+-# Locally calculated
+-sha256  626aafee84af9d2ce253d2c143dc1c0902dda045780cc241f39970fc60be05bc  libgcrypt-1.7.6.tar.bz2
++# From https://lists.gnupg.org/pipermail/gnupg-announce/2017q2/000408.html
++sha1  65a4a495aa858483e66868199eaa8238572ca6cd  libgcrypt-1.7.8.tar.bz2
++# Locally calculated after checking signature
++# https://gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-1.7.8.tar.bz2.sig
++sha256  948276ea47e6ba0244f36a17b51dcdd52cfd1e664b0a1ac3bc82134fb6cec199  libgcrypt-1.7.8.tar.bz2
+diff --git a/package/libgcrypt/libgcrypt.mk b/package/libgcrypt/libgcrypt.mk
+index a034358b3..c18456eaa 100644
+--- a/package/libgcrypt/libgcrypt.mk
++++ b/package/libgcrypt/libgcrypt.mk
+@@ -4,11 +4,11 @@
+ #
+ ################################################################################
+ 
+-LIBGCRYPT_VERSION = 1.7.6
++LIBGCRYPT_VERSION = 1.7.8
+ LIBGCRYPT_SOURCE = libgcrypt-$(LIBGCRYPT_VERSION).tar.bz2
+ LIBGCRYPT_LICENSE = LGPLv2.1+
+ LIBGCRYPT_LICENSE_FILES = COPYING.LIB
+-LIBGCRYPT_SITE = ftp://ftp.gnupg.org/gcrypt/libgcrypt
++LIBGCRYPT_SITE = https://gnupg.org/ftp/gcrypt/libgcrypt
+ LIBGCRYPT_INSTALL_STAGING = YES
+ LIBGCRYPT_DEPENDENCIES = libgpg-error
+ LIBGCRYPT_CONFIG_SCRIPTS = libgcrypt-config
+diff --git a/package/libmad/libmad.hash b/package/libmad/libmad.hash
+index 1e555568f..173399f7f 100644
+--- a/package/libmad/libmad.hash
++++ b/package/libmad/libmad.hash
+@@ -1,2 +1,3 @@
+ # Locally computed:
+ sha256  bbfac3ed6bfbc2823d3775ebb931087371e142bb0e9bb1bee51a76a6e0078690  libmad-0.15.1b.tar.gz
++sha256  0e21f2c6b19337d0b237dacc04f7b90a56be7f359f4c9a2ee0b202d9af0cfa69  frame_length.diff
+diff --git a/package/libmad/libmad.mk b/package/libmad/libmad.mk
+index 9c152f972..2200448d3 100644
+--- a/package/libmad/libmad.mk
++++ b/package/libmad/libmad.mk
+@@ -10,6 +10,8 @@ LIBMAD_INSTALL_STAGING = YES
+ LIBMAD_LIBTOOL_PATCH = NO
+ LIBMAD_LICENSE = GPLv2+
+ LIBMAD_LICENSE_FILES = COPYING
++LIBMAD_PATCH = \
++	https://sources.debian.net/data/main/libm/libmad/0.15.1b-8/debian/patches/frame_length.diff
+ 
+ define LIBMAD_PREVENT_AUTOMAKE
+ 	# Prevent automake from running.
+diff --git a/package/libnl/0001-lib-check-for-integer-overflow-in-nlmsg_reserve.patch b/package/libnl/0001-lib-check-for-integer-overflow-in-nlmsg_reserve.patch
+new file mode 100644
+index 000000000..c1a070ca1
+--- /dev/null
++++ b/package/libnl/0001-lib-check-for-integer-overflow-in-nlmsg_reserve.patch
+@@ -0,0 +1,38 @@
++From 3e18948f17148e6a3c4255bdeaaf01ef6081ceeb Mon Sep 17 00:00:00 2001
++From: Thomas Haller <thaller@redhat.com>
++Date: Mon, 6 Feb 2017 22:23:52 +0100
++Subject: [PATCH] lib: check for integer-overflow in nlmsg_reserve()
++
++In general, libnl functions are not robust against calling with
++invalid arguments. Thus, never call libnl functions with invalid
++arguments. In case of nlmsg_reserve() this means never provide
++a @len argument that causes overflow.
++
++Still, add an additional safeguard to avoid exploiting such bugs.
++
++Assume that @pad is a trusted, small integer.
++Assume that n->nm_size is a valid number of allocated bytes (and thus
++much smaller then SIZE_T_MAX).
++Assume, that @len may be set to an untrusted value. Then the patch
++avoids an integer overflow resulting in reserving too few bytes.
++
++[Upstream commit: https://github.com/thom311/libnl/commit/3e18948f17148e6a3c4255bdeaaf01ef6081ceeb.patch]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ lib/msg.c | 3 +++
++ 1 file changed, 3 insertions(+)
++
++diff --git a/lib/msg.c b/lib/msg.c
++index 9af3f3a0..3e27d4e0 100644
++--- a/lib/msg.c
+++++ b/lib/msg.c
++@@ -411,6 +411,9 @@ void *nlmsg_reserve(struct nl_msg *n, size_t len, int pad)
++ 	size_t nlmsg_len = n->nm_nlh->nlmsg_len;
++ 	size_t tlen;
++ 
+++	if (len > n->nm_size)
+++		return NULL;
+++
++ 	tlen = pad ? ((len + (pad - 1)) & ~(pad - 1)) : len;
++ 
++ 	if ((tlen + nlmsg_len) > n->nm_size)
+diff --git a/package/libnl/libnl.hash b/package/libnl/libnl.hash
+index eafba4a39..2f1a3cb1b 100644
+--- a/package/libnl/libnl.hash
++++ b/package/libnl/libnl.hash
+@@ -1,3 +1,2 @@
+ # From https://github.com/thom311/libnl/releases/download/libnl3_2_27/libnl-3.2.27.tar.gz.sha256sum
+ sha256	4bbbf92b3c78a90f423cf96260bf419a28b75db8cced47051217a56795f58ec6	libnl-3.2.27.tar.gz
+-sha256	b7bb929194eefc56c786a7e1ae5176b54713f9013ccec63760f232742ae80361	3e18948f17148e6a3c4255bdeaaf01ef6081ceeb.patch
+diff --git a/package/libnl/libnl.mk b/package/libnl/libnl.mk
+index af28382dd..85c0db86f 100644
+--- a/package/libnl/libnl.mk
++++ b/package/libnl/libnl.mk
+@@ -11,8 +11,6 @@ LIBNL_LICENSE_FILES = COPYING
+ LIBNL_INSTALL_STAGING = YES
+ LIBNL_DEPENDENCIES = host-bison host-flex
+ 
+-LIBNL_PATCH = https://github.com/thom311/libnl/commit/3e18948f17148e6a3c4255bdeaaf01ef6081ceeb.patch
+-
+ ifeq ($(BR2_PACKAGE_LIBNL_TOOLS),y)
+ LIBNL_CONF_OPTS += --enable-cli
+ else
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index 3d7784664..97e806756 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -214,15 +214,15 @@ endchoice
+ 
+ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+-	default "3.2.88"	if BR2_KERNEL_HEADERS_3_2
++	default "3.2.89"	if BR2_KERNEL_HEADERS_3_2
+ 	default "3.4.113"	if BR2_KERNEL_HEADERS_3_4
+-	default "3.10.105"	if BR2_KERNEL_HEADERS_3_10
++	default "3.10.106"	if BR2_KERNEL_HEADERS_3_10
+ 	default "3.12.74"	if BR2_KERNEL_HEADERS_3_12
+-	default "3.18.55"	if BR2_KERNEL_HEADERS_3_18
++	default "3.18.59"	if BR2_KERNEL_HEADERS_3_18
+ 	default "3.19.8"	if BR2_KERNEL_HEADERS_3_19
+ 	default "4.0.9"		if BR2_KERNEL_HEADERS_4_0
+-	default "4.1.40"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.70"	if BR2_KERNEL_HEADERS_4_4
++	default "4.1.42"	if BR2_KERNEL_HEADERS_4_1
++	default "4.4.75"	if BR2_KERNEL_HEADERS_4_4
+ 	default "4.8.17"	if BR2_KERNEL_HEADERS_4_8
+-	default "4.9.30"	if BR2_KERNEL_HEADERS_4_9
++	default "4.9.33"	if BR2_KERNEL_HEADERS_4_9
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/mosquitto/mosquitto.hash b/package/mosquitto/mosquitto.hash
+index 6c102ebaa..82bf5c6da 100644
+--- a/package/mosquitto/mosquitto.hash
++++ b/package/mosquitto/mosquitto.hash
+@@ -1,2 +1,3 @@
+ # Locally computed:
+ sha512  75e6105498869ab13265df7a0bea6052c014d59d0c0efb61162d8257d34c0153fce32130e84c28e99fd494f374949aac5e01c19f7439c2eea575b52ef1179c3c  mosquitto-1.4.12.tar.gz
++sha256  06abd1206e548ac2378dd96f5434cb3e40ed77cecb6a9c37fbabab0b0f1360e5  mosquitto-1.4.x_cve-2017-9868.patch
+diff --git a/package/mosquitto/mosquitto.mk b/package/mosquitto/mosquitto.mk
+index 985354938..bc693d526 100644
+--- a/package/mosquitto/mosquitto.mk
++++ b/package/mosquitto/mosquitto.mk
+@@ -9,6 +9,8 @@ MOSQUITTO_SITE = http://mosquitto.org/files/source
+ MOSQUITTO_LICENSE = EPLv1.0 or EDLv1.0
+ MOSQUITTO_LICENSE_FILES = LICENSE.txt epl-v10 edl-v10
+ MOSQUITTO_INSTALL_STAGING = YES
++MOSQUITTO_PATCH = \
++	https://mosquitto.org/files/cve/2017-9868/mosquitto-1.4.x_cve-2017-9868.patch
+ 
+ MOSQUITTO_MAKE_OPTS = \
+ 	UNAME=Linux \
+diff --git a/package/mpg123/mpg123.hash b/package/mpg123/mpg123.hash
+index fa5580948..69fbef36c 100644
+--- a/package/mpg123/mpg123.hash
++++ b/package/mpg123/mpg123.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated after checking pgp signature
+-sha256	de2303c8ecb65593e39815c0a2f2f2d91f708c43b85a55fdd1934c82e677cf8e	mpg123-1.23.8.tar.bz2
++sha256	0fe7270a4071367f97a7c1fb45fb2ef3cfef73509c205124e080ea569217b05f	mpg123-1.25.1.tar.bz2
+diff --git a/package/mpg123/mpg123.mk b/package/mpg123/mpg123.mk
+index 27c46dcbc..8eaaa6273 100644
+--- a/package/mpg123/mpg123.mk
++++ b/package/mpg123/mpg123.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MPG123_VERSION = 1.23.8
++MPG123_VERSION = 1.25.1
+ MPG123_SOURCE = mpg123-$(MPG123_VERSION).tar.bz2
+ MPG123_SITE = http://downloads.sourceforge.net/project/mpg123/mpg123/$(MPG123_VERSION)
+ MPG123_CONF_OPTS = --disable-lfs-alias
+@@ -74,10 +74,11 @@ endif
+ 
+ MPG123_CONF_OPTS += --with-audio=$(subst $(space),$(comma),$(MPG123_AUDIO))
+ 
+-ifeq ($(BR2_PACKAGE_LIBTOOL),y)
+-MPG123_DEPENDENCIES += libtool
+-# .la files gets stripped , so directly load .so files rather than .la
+-MPG123_CONF_OPTS += --with-modules --with-module-suffix=.so
++# output modules are loaded with dlopen()
++ifeq ($(BR2_STATIC_LIBS),y)
++MPG123_CONF_OPTS += --disable-modules
++else
++MPG123_CONF_OPTS += --enable-modules
+ endif
+ 
+ $(eval $(autotools-package))
+diff --git a/package/ncurses/ncurses.mk b/package/ncurses/ncurses.mk
+index bc0ea290b..b0f172474 100644
+--- a/package/ncurses/ncurses.mk
++++ b/package/ncurses/ncurses.mk
+@@ -46,10 +46,12 @@ endif
+ 
+ NCURSES_TERMINFO_FILES = \
+ 	a/ansi \
++	d/dumb \
+ 	l/linux \
+ 	p/putty \
+ 	p/putty-vt100 \
+ 	s/screen \
++	s/screen-256color \
+ 	v/vt100 \
+ 	v/vt100-putty \
+ 	v/vt102 \
+diff --git a/package/nodejs/6.9.4/0001-gyp-force-link-command-to-use-CXX.patch b/package/nodejs/6.11.0/0001-gyp-force-link-command-to-use-CXX.patch
+similarity index 100%
+rename from package/nodejs/6.9.4/0001-gyp-force-link-command-to-use-CXX.patch
+rename to package/nodejs/6.11.0/0001-gyp-force-link-command-to-use-CXX.patch
+diff --git a/package/nodejs/6.9.4/0002-inspector-don-t-build-when-ssl-support-is-disabled.patch b/package/nodejs/6.11.0/0002-inspector-don-t-build-when-ssl-support-is-disabled.patch
+similarity index 100%
+rename from package/nodejs/6.9.4/0002-inspector-don-t-build-when-ssl-support-is-disabled.patch
+rename to package/nodejs/6.11.0/0002-inspector-don-t-build-when-ssl-support-is-disabled.patch
+diff --git a/package/nodejs/6.11.0/0003-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch b/package/nodejs/6.11.0/0003-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch
+new file mode 100644
+index 000000000..f07fdc245
+--- /dev/null
++++ b/package/nodejs/6.11.0/0003-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch
+@@ -0,0 +1,49 @@
++From e1d8899c28997613505d288d22bfb95470d606a1 Mon Sep 17 00:00:00 2001
++From: Daniel Bevenius <daniel.bevenius@gmail.com>
++Date: Tue, 28 Feb 2017 20:04:12 +0100
++Subject: [PATCH] src: add HAVE_OPENSSL directive to openssl_config
++
++Currently when building with the following configuration options:
++$ ./configure --without-ssl && make
++
++The following link error is reported:
++
++Undefined symbols for architecture x86_64:
++  "node::openssl_config", referenced from:
++      node::Init(int*, char const**, int*, char const***) in node.o
++ld: symbol(s) not found for architecture x86_64
++clang: error: linker command failed with exit code 1 (use -v to see
++invocation)
++
++Adding an HAVE_OPENSSL directive around this code allows the build to
++pass.
++
++PR-URL: https://github.com/nodejs/node/pull/11618
++Reviewed-By: Anna Henningsen <anna@addaleax.net>
++Reviewed-By: James M Snell <jasnell@gmail.com>
++Reviewed-By: Colin Ihrig <cjihrig@gmail.com>
++Reviewed-By: Ben Noordhuis <info@bnoordhuis.nl>
++Reviewed-By: Sam Roberts <vieuxtech@gmail.com>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/node.cc | 2 ++
++ 1 file changed, 2 insertions(+)
++
++diff --git a/src/node.cc b/src/node.cc
++index 57415bba41..ec78339d89 100644
++--- a/src/node.cc
+++++ b/src/node.cc
++@@ -4233,8 +4233,10 @@ void Init(int* argc,
++   if (config_warning_file.empty())
++     SafeGetenv("NODE_REDIRECT_WARNINGS", &config_warning_file);
++ 
+++#if HAVE_OPENSSL
++   if (openssl_config.empty())
++     SafeGetenv("OPENSSL_CONF", &openssl_config);
+++#endif
++ 
++   // Parse a few arguments which are specific to Node.
++   int v8_argc;
++-- 
++2.11.0
++
+diff --git a/package/nodejs/Config.in b/package/nodejs/Config.in
+index ad5ca050b..be20af56d 100644
+--- a/package/nodejs/Config.in
++++ b/package/nodejs/Config.in
+@@ -43,7 +43,7 @@ config BR2_PACKAGE_NODEJS_V8_ARCH_SUPPORTS
+ 
+ config BR2_PACKAGE_NODEJS_VERSION_STRING
+ 	string
+-	default "6.10.2"		if BR2_PACKAGE_NODEJS_V8_ARCH_SUPPORTS
++	default "6.11.0"		if BR2_PACKAGE_NODEJS_V8_ARCH_SUPPORTS
+ 	default "0.10.48"
+ 
+ config BR2_PACKAGE_NODEJS_NPM
+diff --git a/package/nodejs/nodejs.hash b/package/nodejs/nodejs.hash
+index 4c63f5894..ac010ab6d 100644
+--- a/package/nodejs/nodejs.hash
++++ b/package/nodejs/nodejs.hash
+@@ -1,5 +1,5 @@
+ # From upstream URL: http://nodejs.org/dist/v0.10.48/SHASUMS256.txt
+ sha256  365a93d9acc076a0d93f087d269f376abeebccad599a9dab72f2f6ed96c8ae6e  node-v0.10.48.tar.xz
+ 
+-# From upstream URL: http://nodejs.org/dist/v6.10.2/SHASUMS256.txt
+-sha256  80aa11333da99813973a99646e2113c6be5b63f665c0731ed14ecb94cbe846b6  node-v6.10.2.tar.xz
++# From upstream URL: http://nodejs.org/dist/v6.11.0/SHASUMS256.txt
++sha256  02ba35391edea2b294c736489af01954ce6e6c39d318f4423ae6617c69ef0a51  node-v6.11.0.tar.xz
+diff --git a/package/ntp/ntp.mk b/package/ntp/ntp.mk
+index 24403cf4f..6afdd8d46 100644
+--- a/package/ntp/ntp.mk
++++ b/package/ntp/ntp.mk
+@@ -65,6 +65,12 @@ else
+ NTP_CONF_OPTS += --disable-SHM
+ endif
+ 
++ifeq ($(BR2_PACKAGE_NTP_SNTP),y)
++NTP_CONF_OPTS += --with-sntp
++else
++NTP_CONF_OPTS += --without-sntp
++endif
++
+ NTP_INSTALL_FILES_$(BR2_PACKAGE_NTP_NTP_KEYGEN) += util/ntp-keygen
+ NTP_INSTALL_FILES_$(BR2_PACKAGE_NTP_NTP_WAIT) += scripts/ntp-wait/ntp-wait
+ NTP_INSTALL_FILES_$(BR2_PACKAGE_NTP_NTPDATE) += ntpdate/ntpdate
+diff --git a/package/openssh/openssh.hash b/package/openssh/openssh.hash
+index 3685bc0db..ed628fa98 100644
+--- a/package/openssh/openssh.hash
++++ b/package/openssh/openssh.hash
+@@ -1,2 +1,4 @@
+ # From http://www.openssh.com/txt/release-7.5 (base64 encoded)
+ sha256 9846e3c5fab9f0547400b4d2c017992f914222b3fd1f8eee6c7dc6bc5e59f9f0  openssh-7.5p1.tar.gz
++sha256 310860606c4175cdfd095e724f624df27340c89a916f7a09300bcb7988d5cfbf  afc3e31b637db9dae106d4fad78f7b481c8c24e3.patch
++sha256 395aa1006967713b599555440e09f898781a5559e496223587401768ece10904  f4fcd8c788a4854d4ebae400cf55e3957f906835.patch
+diff --git a/package/openssh/openssh.mk b/package/openssh/openssh.mk
+index ba48770af..dea7b472f 100644
+--- a/package/openssh/openssh.mk
++++ b/package/openssh/openssh.mk
+@@ -8,6 +8,12 @@ OPENSSH_VERSION = 7.5p1
+ OPENSSH_SITE = http://ftp.openbsd.org/pub/OpenBSD/OpenSSH/portable
+ OPENSSH_LICENSE = BSD-3c, BSD-2c, Public Domain
+ OPENSSH_LICENSE_FILES = LICENCE
++# Autoreconf needed due to the following patches modifying configure.ac:
++# f4fcd8c788a4854d4ebae400cf55e3957f906835.patch
++# afc3e31b637db9dae106d4fad78f7b481c8c24e3.patch
++OPENSSH_AUTORECONF = YES
++OPENSSH_PATCH = https://github.com/openssh/openssh-portable/commit/f4fcd8c788a4854d4ebae400cf55e3957f906835.patch \
++	https://github.com/openssh/openssh-portable/commit/afc3e31b637db9dae106d4fad78f7b481c8c24e3.patch
+ OPENSSH_CONF_ENV = LD="$(TARGET_CC)" LDFLAGS="$(TARGET_CFLAGS)"
+ OPENSSH_CONF_OPTS = \
+ 	--sysconfdir=/etc/ssh \
+diff --git a/package/openvpn/openvpn.hash b/package/openvpn/openvpn.hash
+index fe054e961..1db3a31e1 100644
+--- a/package/openvpn/openvpn.hash
++++ b/package/openvpn/openvpn.hash
+@@ -1,2 +1,2 @@
+-# Locally calculated
+-sha256 df5c4f384b7df6b08a2f6fa8a84b9fd382baf59c2cef1836f82e2a7f62f1bff9  openvpn-2.4.2.tar.xz
++# Locally calculated after checking signature
++sha256 15e15fc97f189b52aee7c90ec8355aa77469c773125110b4c2f089abecde36fb  openvpn-2.4.3.tar.xz
+diff --git a/package/openvpn/openvpn.mk b/package/openvpn/openvpn.mk
+index 34b0e4bef..31b6e00ae 100644
+--- a/package/openvpn/openvpn.mk
++++ b/package/openvpn/openvpn.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-OPENVPN_VERSION = 2.4.2
++OPENVPN_VERSION = 2.4.3
+ OPENVPN_SOURCE = openvpn-$(OPENVPN_VERSION).tar.xz
+ OPENVPN_SITE = http://swupdate.openvpn.net/community/releases
+ OPENVPN_DEPENDENCIES = host-pkgconf openssl
+diff --git a/package/qt5/qt5base/qmake.conf b/package/qt5/qt5base/qmake.conf
+index 49cf89831..8b6debe58 100644
+--- a/package/qt5/qt5base/qmake.conf
++++ b/package/qt5/qt5base/qmake.conf
+@@ -21,5 +21,8 @@ CONFIG                 += nostrip
+ QMAKE_LIBS             += -lrt -lpthread -ldl
+ QMAKE_CFLAGS_ISYSTEM   =
+ 
++# Architecturespecific configuration
++include(arch.conf)
++
+ include(../common/linux_device_post.conf)
+ load(qt_config)
+diff --git a/package/qt5/qt5base/qt5base.mk b/package/qt5/qt5base/qt5base.mk
+index 102034890..e879474ef 100644
+--- a/package/qt5/qt5base/qt5base.mk
++++ b/package/qt5/qt5base/qt5base.mk
+@@ -219,12 +219,22 @@ define QT5BASE_CONFIGURE_CONFIG_FILE
+ endef
+ endif
+ 
++QT5BASE_ARCH_CONFIG_FILE = $(@D)/mkspecs/devices/linux-buildroot-g++/arch.conf
++ifeq ($(BR2_TOOLCHAIN_HAS_LIBATOMIC)$(BR2_PACKAGE_QT5_VERSION_LATEST),yy)
++# Qt 5.8 needs atomics, which on various architectures are in -latomic
++define QT5BASE_CONFIGURE_ARCH_CONFIG
++	printf 'LIBS += -latomic\n' >$(QT5BASE_ARCH_CONFIG_FILE)
++endef
++endif
++
+ define QT5BASE_CONFIGURE_CMDS
+ 	$(INSTALL) -m 0644 -D $(QT5BASE_PKGDIR)/qmake.conf \
+ 		$(@D)/mkspecs/devices/linux-buildroot-g++/qmake.conf
+ 	$(INSTALL) -m 0644 -D $(QT5BASE_PKGDIR)/qplatformdefs.h \
+ 		$(@D)/mkspecs/devices/linux-buildroot-g++/qplatformdefs.h
+ 	$(QT5BASE_CONFIGURE_CONFIG_FILE)
++	touch $(QT5BASE_ARCH_CONFIG_FILE)
++	$(QT5BASE_CONFIGURE_ARCH_CONFIG)
+ 	(cd $(@D); \
+ 		$(TARGET_MAKE_ENV) \
+ 		PKG_CONFIG="$(PKG_CONFIG_HOST_BINARY)" \
+diff --git a/package/qt5/qt5multimedia/qt5multimedia.mk b/package/qt5/qt5multimedia/qt5multimedia.mk
+index fccdd5d64..4ce98d220 100644
+--- a/package/qt5/qt5multimedia/qt5multimedia.mk
++++ b/package/qt5/qt5multimedia/qt5multimedia.mk
+@@ -31,6 +31,14 @@ ifeq ($(BR2_PACKAGE_QT5DECLARATIVE),y)
+ QT5MULTIMEDIA_DEPENDENCIES += qt5declarative
+ endif
+ 
++ifeq ($(BR2_PACKAGE_LIBGLIB2)$(BR2_PACKAGE_PULSEAUDIO),yy)
++QT5MULTIMEDIA_DEPENDENCIES += libglib2 pulseaudio
++endif
++
++ifeq ($(BR2_PACKAGE_ALSA_LIB),y)
++QT5MULTIMEDIA_DEPENDENCIES += alsa-lib
++endif
++
+ define QT5MULTIMEDIA_CONFIGURE_CMDS
+ 	(cd $(@D); $(TARGET_MAKE_ENV) $(HOST_DIR)/usr/bin/qmake)
+ endef
+diff --git a/package/rtl8821au/rtl8821au.mk b/package/rtl8821au/rtl8821au.mk
+index 9ba43ef14..36454dc74 100644
+--- a/package/rtl8821au/rtl8821au.mk
++++ b/package/rtl8821au/rtl8821au.mk
+@@ -7,7 +7,7 @@
+ RTL8821AU_VERSION = c33ddb05a77741d2a9c9b974ad0cf0fa26d17b6e
+ RTL8821AU_SITE = $(call github,abperiasamy,rtl8812AU_8821AU_linux,$(RTL8821AU_VERSION))
+ RTL8821AU_LICENSE = GPLv2
+-RTL8821AU_LICENSE_FILES = COPYING
++RTL8821AU_LICENSE_FILES = LICENSE
+ 
+ RTL8821AU_MODULE_MAKE_OPTS = \
+ 	CONFIG_RTL8812AU_8821AU=m \
+diff --git a/package/socat/socat.mk b/package/socat/socat.mk
+index 754b210b6..b44b8e61a 100644
+--- a/package/socat/socat.mk
++++ b/package/socat/socat.mk
+@@ -9,11 +9,20 @@ SOCAT_SOURCE = socat-$(SOCAT_VERSION).tar.bz2
+ SOCAT_SITE = http://www.dest-unreach.org/socat/download
+ SOCAT_LICENSE = GPLv2
+ SOCAT_LICENSE_FILES = COPYING
+-SOCAT_CONF_ENV = \
+-	sc_cv_termios_ispeed=no \
++
++SOCAT_CONF_ENV = sc_cv_termios_ispeed=no
++
++ifeq ($(BR2_powerpc)$(BR2_powerpc64)$(BR2_powerpc64le),y)
++SOCAT_CONF_ENV += \
++	sc_cv_sys_crdly_shift=12 \
++	sc_cv_sys_tabdly_shift=10 \
++	sc_cv_sys_csize_shift=8
++else
++SOCAT_CONF_ENV += \
+ 	sc_cv_sys_crdly_shift=9 \
+ 	sc_cv_sys_tabdly_shift=11 \
+ 	sc_cv_sys_csize_shift=4
++endif
+ 
+ # We need to run autoconf to regenerate the configure script, in order
+ # to ensure that the test checking linux/ext2_fs.h works
+diff --git a/package/spice/0001-Prevent-possible-DoS-attempts-during-protocol-handsh.patch b/package/spice/0001-Prevent-possible-DoS-attempts-during-protocol-handsh.patch
+new file mode 100644
+index 000000000..57a64d96b
+--- /dev/null
++++ b/package/spice/0001-Prevent-possible-DoS-attempts-during-protocol-handsh.patch
+@@ -0,0 +1,60 @@
++From 1c6517973095a67c8cb57f3550fc1298404ab556 Mon Sep 17 00:00:00 2001
++From: Frediano Ziglio <fziglio@redhat.com>
++Date: Tue, 13 Dec 2016 14:39:48 +0000
++Subject: [PATCH] Prevent possible DoS attempts during protocol handshake
++
++The limit for link message is specified using a 32 bit unsigned integer.
++This could cause possible DoS due to excessive memory allocations and
++some possible crashes.
++For instance a value >= 2^31 causes a spice_assert to be triggered in
++async_read_handler (reds-stream.c) due to an integer overflow at this
++line:
++
++   int n = async->end - async->now;
++
++This could be easily triggered with a program like
++
++  #!/usr/bin/env python
++
++  import socket
++  import time
++  from struct import pack
++
++  server = '127.0.0.1'
++  port = 5900
++
++  s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
++  s.connect((server, port))
++  data = pack('<4sIII', 'REDQ', 2, 2, 0xaaaaaaaa)
++  s.send(data)
++
++  time.sleep(1)
++
++without requiring any authentication (the same can be done
++with TLS).
++
++[Peter: fixes CVE-2016-9578]
++Signed-off-by: Frediano Ziglio <fziglio@redhat.com>
++Acked-by: Christophe Fergeau <cfergeau@redhat.com>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ server/reds.c | 3 ++-
++ 1 file changed, 2 insertions(+), 1 deletion(-)
++
++diff --git a/server/reds.c b/server/reds.c
++index f40b65c1..86a33d53 100644
++--- a/server/reds.c
+++++ b/server/reds.c
++@@ -2202,7 +2202,8 @@ static void reds_handle_read_header_done(void *opaque)
++ 
++     reds->peer_minor_version = header->minor_version;
++ 
++-    if (header->size < sizeof(SpiceLinkMess)) {
+++    /* the check for 4096 is to avoid clients to cause arbitrary big memory allocations */
+++    if (header->size < sizeof(SpiceLinkMess) || header->size > 4096) {
++         reds_send_link_error(link, SPICE_LINK_ERR_INVALID_DATA);
++         spice_warning("bad size %u", header->size);
++         reds_link_free(link);
++-- 
++2.11.0
++
+diff --git a/package/spice/0001-fix-missing-monitor_latency-argument.patch b/package/spice/0001-fix-missing-monitor_latency-argument.patch
+deleted file mode 100644
+index e14dd2ce3..000000000
+--- a/package/spice/0001-fix-missing-monitor_latency-argument.patch
++++ /dev/null
+@@ -1,28 +0,0 @@
+-From 0d3767853ca179ce04a9b312d7a30d33d1266a3b Mon Sep 17 00:00:00 2001
+-From: Axel Lin <axel.lin@ingics.com>
+-Date: Thu, 10 Oct 2013 12:36:40 +0800
+-Subject: [PATCH] red_tunnel_worker: Fix build error due to missing monitor_latency argument
+-
+-Fix missing monitor_latency argument in red_channel_client_create call.
+-
+-Signed-off-by: Axel Lin <axel.lin@ingics.com>
+----
+- server/red_tunnel_worker.c | 2 +-
+- 1 file changed, 1 insertion(+), 1 deletion(-)
+-
+-diff --git a/server/red_tunnel_worker.c b/server/red_tunnel_worker.c
+-index 97dcafd..6781d73 100644
+---- a/server/red_tunnel_worker.c
+-+++ b/server/red_tunnel_worker.c
+-@@ -3417,7 +3417,7 @@ static void handle_tunnel_channel_link(RedChannel *channel, RedClient *client,
+-     }
+- 
+-     tcc = (TunnelChannelClient*)red_channel_client_create(sizeof(TunnelChannelClient),
+--                                                          channel, client, stream,
+-+                                                          channel, client, stream, FALSE,
+-                                                           0, NULL, 0, NULL);
+-     if (!tcc) {
+-         return;
+--- 
+-1.8.1.2
+-
+diff --git a/package/spice/0002-Prevent-integer-overflows-in-capability-checks.patch b/package/spice/0002-Prevent-integer-overflows-in-capability-checks.patch
+new file mode 100644
+index 000000000..5bf9b89d1
+--- /dev/null
++++ b/package/spice/0002-Prevent-integer-overflows-in-capability-checks.patch
+@@ -0,0 +1,43 @@
++From f66dc643635518e53dfbe5262f814a64eec54e4a Mon Sep 17 00:00:00 2001
++From: Frediano Ziglio <fziglio@redhat.com>
++Date: Tue, 13 Dec 2016 14:40:10 +0000
++Subject: [PATCH] Prevent integer overflows in capability checks
++
++The limits for capabilities are specified using 32 bit unsigned integers.
++This could cause possible integer overflows causing buffer overflows.
++For instance the sum of num_common_caps and num_caps can be 0 avoiding
++additional checks.
++As the link message is now capped to 4096 and the capabilities are
++contained in the link message limit the capabilities to 1024
++(capabilities are expressed in number of uint32_t items).
++
++[Peter: fixes CVE-2016-9578]
++Signed-off-by: Frediano Ziglio <fziglio@redhat.com>
++Acked-by: Christophe Fergeau <cfergeau@redhat.com>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ server/reds.c | 8 ++++++++
++ 1 file changed, 8 insertions(+)
++
++diff --git a/server/reds.c b/server/reds.c
++index 86a33d53..91504544 100644
++--- a/server/reds.c
+++++ b/server/reds.c
++@@ -2110,6 +2110,14 @@ static void reds_handle_read_link_done(void *opaque)
++     link_mess->num_channel_caps = GUINT32_FROM_LE(link_mess->num_channel_caps);
++     link_mess->num_common_caps = GUINT32_FROM_LE(link_mess->num_common_caps);
++ 
+++    /* Prevent DoS. Currently we defined only 13 capabilities,
+++     * I expect 1024 to be valid for quite a lot time */
+++    if (link_mess->num_channel_caps > 1024 || link_mess->num_common_caps > 1024) {
+++        reds_send_link_error(link, SPICE_LINK_ERR_INVALID_DATA);
+++        reds_link_free(link);
+++        return;
+++    }
+++
++     num_caps = link_mess->num_common_caps + link_mess->num_channel_caps;
++     caps = (uint32_t *)((uint8_t *)link_mess + link_mess->caps_offset);
++ 
++-- 
++2.11.0
++
+diff --git a/package/spice/0003-main-channel-Prevent-overflow-reading-messages-from-.patch b/package/spice/0003-main-channel-Prevent-overflow-reading-messages-from-.patch
+new file mode 100644
+index 000000000..f602d5f3b
+--- /dev/null
++++ b/package/spice/0003-main-channel-Prevent-overflow-reading-messages-from-.patch
+@@ -0,0 +1,33 @@
++From 5f96b596353d73bdf4bb3cd2de61e48a7fd5b4c3 Mon Sep 17 00:00:00 2001
++From: Frediano Ziglio <fziglio@redhat.com>
++Date: Tue, 29 Nov 2016 16:46:56 +0000
++Subject: [PATCH] main-channel: Prevent overflow reading messages from client
++
++Caller is supposed the function return a buffer able to store
++size bytes.
++
++[Peter: fixes CVE-2016-9577]
++Signed-off-by: Frediano Ziglio <fziglio@redhat.com>
++Acked-by: Christophe Fergeau <cfergeau@redhat.com>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ server/main_channel.c | 3 +++
++ 1 file changed, 3 insertions(+)
++
++diff --git a/server/main_channel.c b/server/main_channel.c
++index 0ecc9df8..1fc39155 100644
++--- a/server/main_channel.c
+++++ b/server/main_channel.c
++@@ -1026,6 +1026,9 @@ static uint8_t *main_channel_alloc_msg_rcv_buf(RedChannelClient *rcc,
++ 
++     if (type == SPICE_MSGC_MAIN_AGENT_DATA) {
++         return reds_get_agent_data_buffer(mcc, size);
+++    } else if (size > sizeof(main_chan->recv_buf)) {
+++        /* message too large, caller will log a message and close the connection */
+++        return NULL;
++     } else {
++         return main_chan->recv_buf;
++     }
++-- 
++2.11.0
++
+diff --git a/package/spice/Config.in b/package/spice/Config.in
+index bde3a9285..2241b55b3 100644
+--- a/package/spice/Config.in
++++ b/package/spice/Config.in
+@@ -2,23 +2,15 @@ comment "spice server needs a toolchain w/ wchar, threads"
+ 	depends on BR2_i386 || BR2_x86_64
+ 	depends on !BR2_USE_WCHAR || !BR2_TOOLCHAIN_HAS_THREADS
+ 
+-comment "spice server depends on python (for pyparsing)"
+-	depends on BR2_i386 || BR2_x86_64
+-	depends on !BR2_PACKAGE_PYTHON
+-
+ config BR2_PACKAGE_SPICE
+ 	bool "spice server"
+ 	depends on BR2_i386 || BR2_x86_64
+-	depends on BR2_PACKAGE_PYTHON
+ 	depends on BR2_USE_WCHAR # libglib2
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS # libglib2
+-	select BR2_PACKAGE_ALSA_LIB
+-	select BR2_PACKAGE_CELT051
+ 	select BR2_PACKAGE_JPEG
+ 	select BR2_PACKAGE_LIBGLIB2
+ 	select BR2_PACKAGE_OPENSSL
+ 	select BR2_PACKAGE_PIXMAN
+-	select BR2_PACKAGE_PYTHON_PYPARSING
+ 	select BR2_PACKAGE_SPICE_PROTOCOL
+ 	help
+ 	  The Spice project aims to provide a complete open source
+@@ -30,41 +22,3 @@ config BR2_PACKAGE_SPICE
+ 	  This package implements the server-part of Spice.
+ 
+ 	  http://www.spice-space.org/
+-
+-if BR2_PACKAGE_SPICE
+-
+-comment "client depends on X.org"
+-	depends on !BR2_PACKAGE_XORG7
+-
+-config BR2_PACKAGE_SPICE_CLIENT
+-	bool "Enable client"
+-	depends on BR2_PACKAGE_XORG7
+-	depends on BR2_TOOLCHAIN_HAS_THREADS
+-	depends on BR2_INSTALL_LIBSTDCPP
+-	select BR2_PACKAGE_XLIB_LIBXFIXES
+-	select BR2_PACKAGE_XLIB_LIBXRANDR
+-
+-comment "client needs a toolchain w/ threads, C++"
+-	depends on BR2_PACKAGE_XORG7
+-	depends on !BR2_TOOLCHAIN_HAS_THREADS || !BR2_INSTALL_LIBSTDCPP
+-
+-config BR2_PACKAGE_SPICE_GUI
+-	bool "Enable GUI"
+-	depends on BR2_PACKAGE_SPICE_CLIENT
+-	depends on !BR2_STATIC_LIBS
+-	select BR2_PACKAGE_CEGUI06
+-	help
+-	  Say 'y' here to enable the Graphical User Interface (GUI)
+-	  start dialog.
+-
+-comment "gui needs a toolchain w/ dynamic library"
+-	depends on BR2_STATIC_LIBS
+-
+-config BR2_PACKAGE_SPICE_TUNNEL
+-	bool "Enable network redirection"
+-	select BR2_PACKAGE_SLIRP
+-	help
+-	  Say 'y' here to enable network redirection, aka tunnelling
+-	  through a SLIP/SLIRP session.
+-
+-endif # BR2_PACKAGE_SPICE
+diff --git a/package/spice/spice.hash b/package/spice/spice.hash
+index c4d63198f..c9b591f41 100644
+--- a/package/spice/spice.hash
++++ b/package/spice/spice.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated
+-sha256	cf063e7df42e331a835529d2f613d8a01f8cb2963e8edaadf73a8d65c46fb387	spice-0.12.4.tar.bz2
++sha256	f901a5c5873d61acac84642f9eea5c4d6386fc3e525c2b68792322794e1c407d	spice-0.12.8.tar.bz2
+diff --git a/package/spice/spice.mk b/package/spice/spice.mk
+index 61a977225..6ac209ed4 100644
+--- a/package/spice/spice.mk
++++ b/package/spice/spice.mk
+@@ -4,21 +4,18 @@
+ #
+ ################################################################################
+ 
+-SPICE_VERSION = 0.12.4
++SPICE_VERSION = 0.12.8
+ SPICE_SOURCE = spice-$(SPICE_VERSION).tar.bz2
+ SPICE_SITE = http://www.spice-space.org/download/releases
+ SPICE_LICENSE = LGPLv2.1+
+ SPICE_LICENSE_FILES = COPYING
+ SPICE_INSTALL_STAGING = YES
+ SPICE_DEPENDENCIES =        \
+-	alsa-lib            \
+-	celt051             \
+ 	jpeg                \
+ 	libglib2            \
+ 	openssl             \
+ 	pixman              \
+-	python-pyparsing    \
+-	spice-protocol      \
++	spice-protocol
+ 
+ # We disable everything for now, because the dependency tree can become
+ # quite deep if we try to enable some features, and I have not tested that.
+@@ -27,33 +24,29 @@ SPICE_CONF_OPTS =                 \
+ 	--disable-smartcard       \
+ 	--disable-automated-tests \
+ 	--without-sasl            \
++	--disable-manual
+ 
+ SPICE_DEPENDENCIES += host-pkgconf
+ 
+-ifeq ($(BR2_PACKAGE_SPICE_CLIENT),y)
+-SPICE_CONF_OPTS += --enable-client
+-SPICE_DEPENDENCIES += xlib_libXfixes xlib_libXrandr
++ifeq ($(BR2_PACKAGE_CELT051),y)
++SPICE_CONF_OPTS += --enable-celt051
++SPICE_DEPENDENCIES += celt051
+ else
+-SPICE_CONF_OPTS += --disable-client
++SPICE_CONF_OPTS += --disable-celt051
+ endif
+ 
+-ifeq ($(BR2_PACKAGE_SPICE_GUI),y)
+-SPICE_CONF_OPTS += --enable-gui
+-SPICE_DEPENDENCIES += cegui06
++ifeq ($(BR2_PACKAGE_LZ4),y)
++SPICE_CONF_OPTS += --enable-lz4
++SPICE_DEPENDENCIES += lz4
+ else
+-SPICE_CONF_OPTS += --disable-gui
++SPICE_CONF_OPTS += --disable-lz4
+ endif
+ 
+-ifeq ($(BR2_PACKAGE_SPICE_TUNNEL),y)
+-SPICE_CONF_OPTS += --enable-tunnel
+-SPICE_DEPENDENCIES += slirp
+-else
+-SPICE_CONF_OPTS += --disable-tunnel
++# no enable/disable, detected using pkg-config
++ifeq ($(BR2_PACKAGE_OPUS),y)
++SPICE_DEPENDENCIES += opus
+ endif
+ 
+-SPICE_CONF_ENV = PYTHONPATH=$(TARGET_DIR)/usr/lib/python$(PYTHON_VERSION_MAJOR)/site-packages
+-SPICE_MAKE_ENV = PYTHONPATH=$(TARGET_DIR)/usr/lib/python$(PYTHON_VERSION_MAJOR)/site-packages
+-
+ # We need to tweak spice.pc because it /forgets/ (for static linking) that
+ # it should link against libz and libjpeg. libz is pkg-config-aware, while
+ # libjpeg isn't, hence the two-line tweak
+diff --git a/package/systemd/systemd.hash b/package/systemd/systemd.hash
+index 0acaa3cdc..4417fb3f9 100644
+--- a/package/systemd/systemd.hash
++++ b/package/systemd/systemd.hash
+@@ -1,2 +1,5 @@
+ # sha256 locally computed
+ sha256 1172c7c7d5d72fbded53186e7599d5272231f04cc8b72f9a0fb2c5c20dfc4880  systemd-232.tar.gz
++sha256 eed8fef0045876e9efa0ba6725ed9ea93654bf24d67bb5aad467a341ad375883  a924f43f30f9c4acaf70618dd2a055f8b0f166be.patch
++sha256 43c75bd161a8ef0de5db607aaceed77220f2ba4903cf44e7e9db544980420a5e  db848813bae4d28c524b3b6a7dad135e426659ce.patch
++sha256 451f7c09332479ebe4ac01612f5f034df4524e16b5bc5d1c8ddcda14e9f3cd69  88795538726a5bbfd9efc13d441cb05e1d7fc139.patch
+diff --git a/package/systemd/systemd.mk b/package/systemd/systemd.mk
+index fce5d8411..99827b6f0 100644
+--- a/package/systemd/systemd.mk
++++ b/package/systemd/systemd.mk
+@@ -19,6 +19,11 @@ SYSTEMD_DEPENDENCIES = \
+ SYSTEMD_PROVIDES = udev
+ SYSTEMD_AUTORECONF = YES
+ 
++SYSTEMD_PATCH = \
++	https://github.com/systemd/systemd/commit/a924f43f30f9c4acaf70618dd2a055f8b0f166be.patch \
++	https://github.com/systemd/systemd/commit/db848813bae4d28c524b3b6a7dad135e426659ce.patch \
++	https://github.com/systemd/systemd/commit/88795538726a5bbfd9efc13d441cb05e1d7fc139.patch
++
+ # Make sure that systemd will always be built after busybox so that we have
+ # a consistent init setup between two builds
+ ifeq ($(BR2_PACKAGE_BUSYBOX),y)
+@@ -43,10 +48,16 @@ SYSTEMD_CONF_OPTS += \
+ 
+ SYSTEMD_CFLAGS = $(TARGET_CFLAGS) -fno-lto
+ 
+-# Override path to kmod, used in kmod-static-nodes.service
++# Override paths to a few utilities needed at runtime, to
++# avoid finding those we would install in $(HOST_DIR).
+ SYSTEMD_CONF_ENV = \
+ 	CFLAGS="$(SYSTEMD_CFLAGS)" \
+-	ac_cv_path_KMOD=/usr/bin/kmod
++	ac_cv_path_KILL=/usr/bin/kill \
++	ac_cv_path_KMOD=/usr/bin/kmod \
++	ac_cv_path_KEXEC=/usr/sbin/kexec \
++	ac_cv_path_SULOGIN=/usr/sbin/sulogin \
++	ac_cv_path_MOUNT_PATH=/usr/bin/mount \
++	ac_cv_path_UMOUNT_PATH=/usr/bin/umount
+ 
+ define SYSTEMD_RUN_INTLTOOLIZE
+ 	cd $(@D) && $(HOST_DIR)/usr/bin/intltoolize --force --automake
+@@ -179,8 +190,14 @@ endif
+ 
+ ifeq ($(BR2_PACKAGE_SYSTEMD_QUOTACHECK),y)
+ SYSTEMD_CONF_OPTS += --enable-quotacheck
++SYSTEMD_CONF_ENV += \
++	ac_cv_path_QUOTAON=/usr/sbin/quotaon \
++	ac_cv_path_QUOTACHECK=/usr/sbin/quotacheck
+ else
+ SYSTEMD_CONF_OPTS += --disable-quotacheck
++SYSTEMD_CONF_ENV += \
++	ac_cv_path_QUOTAON=/.missing \
++	ac_cv_path_QUOTACHECK=/.missing
+ endif
+ 
+ ifeq ($(BR2_PACKAGE_SYSTEMD_TMPFILES),y)
+diff --git a/package/tor/tor.hash b/package/tor/tor.hash
+index d14db040e..d42c53498 100644
+--- a/package/tor/tor.hash
++++ b/package/tor/tor.hash
+@@ -1,2 +1,2 @@
+ # Locally computed
+-sha256 d611283e1fb284b5f884f8c07e7d3151016851848304f56cfdf3be2a88bd1341  tor-0.2.9.10.tar.gz
++sha256 c1959bebff9a546a54cbedb58c8289a42441991af417d2d16f7b336be8903221  tor-0.2.9.11.tar.gz
+diff --git a/package/tor/tor.mk b/package/tor/tor.mk
+index 9ccde799d..7bbd2f343 100644
+--- a/package/tor/tor.mk
++++ b/package/tor/tor.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-TOR_VERSION = 0.2.9.10
++TOR_VERSION = 0.2.9.11
+ TOR_SITE = https://dist.torproject.org
+ TOR_LICENSE = BSD-3c
+ TOR_LICENSE_FILES = LICENSE
+diff --git a/package/tslib/tslib.mk b/package/tslib/tslib.mk
+index 08b1d26ac..365065020 100644
+--- a/package/tslib/tslib.mk
++++ b/package/tslib/tslib.mk
+@@ -7,7 +7,7 @@
+ TSLIB_VERSION = 1.5
+ TSLIB_SITE = https://github.com/kergoth/tslib/releases/download/$(TSLIB_VERSION)
+ TSLIB_SOURCE = tslib-$(TSLIB_VERSION).tar.xz
+-TSLIB_LICENSE = GPL, LGPL
++TSLIB_LICENSE = GPL-2.0+ (programs), LGPL-2.1+ (libraries)
+ TSLIB_LICENSE_FILES = COPYING
+ 
+ TSLIB_AUTORECONF = YES
+diff --git a/package/vlc/0013-codec-avcodec-check-avcodec-visible-sizes.patch b/package/vlc/0013-codec-avcodec-check-avcodec-visible-sizes.patch
+new file mode 100644
+index 000000000..41a5e25d3
+--- /dev/null
++++ b/package/vlc/0013-codec-avcodec-check-avcodec-visible-sizes.patch
+@@ -0,0 +1,33 @@
++From 6cc73bcad19da2cd2e95671173f2e0d203a57e9b Mon Sep 17 00:00:00 2001
++From: Francois Cartegnie <fcvlcdev@free.fr>
++Date: Thu, 29 Jun 2017 09:45:20 +0200
++Subject: [PATCH] codec: avcodec: check avcodec visible sizes
++
++refs #18467
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ modules/codec/avcodec/video.c | 6 ++++--
++ 1 file changed, 4 insertions(+), 2 deletions(-)
++
++diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
++index 1bcad21..ce52544 100644
++--- a/modules/codec/avcodec/video.c
+++++ b/modules/codec/avcodec/video.c
++@@ -137,9 +137,11 @@ static inline picture_t *ffmpeg_NewPictBuf( decoder_t *p_dec,
++     }
++ 
++ 
++-    if( width == 0 || height == 0 || width > 8192 || height > 8192 )
+++    if( width == 0 || height == 0 || width > 8192 || height > 8192 ||
+++        width < p_context->width || height < p_context->height )
++     {
++-        msg_Err( p_dec, "Invalid frame size %dx%d.", width, height );
+++        msg_Err( p_dec, "Invalid frame size %dx%d. vsz %dx%d",
+++                 width, height, p_context->width, p_context->height );
++         return NULL; /* invalid display size */
++     }
++     p_dec->fmt_out.video.i_width = width;
++-- 
++2.1.4
++
+diff --git a/package/vlc/0014-decoder-check-visible-size-when-creating-buffer.patch b/package/vlc/0014-decoder-check-visible-size-when-creating-buffer.patch
+new file mode 100644
+index 000000000..a16dcf0e9
+--- /dev/null
++++ b/package/vlc/0014-decoder-check-visible-size-when-creating-buffer.patch
+@@ -0,0 +1,33 @@
++From a38a85db58c569cc592d9380cc07096757ef3d49 Mon Sep 17 00:00:00 2001
++From: Francois Cartegnie <fcvlcdev@free.fr>
++Date: Thu, 29 Jun 2017 11:09:02 +0200
++Subject: [PATCH] decoder: check visible size when creating buffer
++
++early reject invalid visible size
++mishandled by filters.
++
++refs #18467
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/input/decoder.c | 4 +++-
++ 1 file changed, 3 insertions(+), 1 deletion(-)
++
++diff --git a/src/input/decoder.c b/src/input/decoder.c
++index 2c0823f..a216165 100644
++--- a/src/input/decoder.c
+++++ b/src/input/decoder.c
++@@ -2060,7 +2060,9 @@ static picture_t *vout_new_buffer( decoder_t *p_dec )
++         vout_thread_t *p_vout;
++ 
++         if( !p_dec->fmt_out.video.i_width ||
++-            !p_dec->fmt_out.video.i_height )
+++            !p_dec->fmt_out.video.i_height ||
+++            p_dec->fmt_out.video.i_width < p_dec->fmt_out.video.i_visible_width ||
+++            p_dec->fmt_out.video.i_height < p_dec->fmt_out.video.i_visible_height )
++         {
++             /* Can't create a new vout without display size */
++             return NULL;
++-- 
++2.1.4
++
+diff --git a/package/vlc/vlc.hash b/package/vlc/vlc.hash
+index 0f1b6dccd..628dad74d 100644
+--- a/package/vlc/vlc.hash
++++ b/package/vlc/vlc.hash
+@@ -1,6 +1,2 @@
+-# From http://get.videolan.org/vlc/2.2.5.1/vlc-2.2.5.1.tar.xz.md5
+-md5 7ab63964ffec4c92a54deb018f23318b vlc-2.2.5.1.tar.xz
+-# From http://get.videolan.org/vlc/2.2.5.1/vlc-2.2.5.1.tar.xz.sha1
+-sha1 042962dba68e1414aa563883b0172ee121cf9555 vlc-2.2.5.1.tar.xz
+-# From http://get.videolan.org/vlc/2.2.5.1/vlc-2.2.5.1.tar.xz.sha256
+-sha256 b28b8a28f578c0c6cb1ebed293aca2a3cd368906cf777d1ab599e2784ddda1cc vlc-2.2.5.1.tar.xz
++# From http://download.videolan.org/pub/videolan/vlc/2.2.6/vlc-2.2.6.tar.xz.sha256
++sha256 c403d3accd9a400eb2181c958f3e7bc5524fe5738425f4253d42883b425a42a8  vlc-2.2.6.tar.xz
+diff --git a/package/vlc/vlc.mk b/package/vlc/vlc.mk
+index 7f0c4f597..47fb3e80e 100644
+--- a/package/vlc/vlc.mk
++++ b/package/vlc/vlc.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-VLC_VERSION = 2.2.5.1
++VLC_VERSION = 2.2.6
+ VLC_SITE = http://get.videolan.org/vlc/$(VLC_VERSION)
+ VLC_SOURCE = vlc-$(VLC_VERSION).tar.xz
+ VLC_LICENSE = GPLv2+, LGPLv2.1+
+diff --git a/package/x11r7/xserver_xorg-server/1.14.7/0001-sdksyms-gcc5.patch b/package/x11r7/xserver_xorg-server/1.14.7/0001-sdksyms-gcc5.patch
+new file mode 100644
+index 000000000..ad544aa30
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.14.7/0001-sdksyms-gcc5.patch
+@@ -0,0 +1,50 @@
++From 21b896939c5bb242f3aacc37baf12379e43254b6 Mon Sep 17 00:00:00 2001
++From: Egbert Eich <eich@freedesktop.org>
++Date: Tue, 3 Mar 2015 16:27:05 +0100
++Subject: symbols: Fix sdksyms.sh to cope with gcc5
++
++Gcc5 adds additional lines stating line numbers before and
++after __attribute__() which need to be skipped.
++
++Downloaded from upstream commit
++https://cgit.freedesktop.org/xorg/xserver/commit/hw/xfree86/sdksyms.sh?id=21b896939c5bb242f3aacc37baf12379e43254b6
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++Signed-off-by: Egbert Eich <eich@freedesktop.org>
++Tested-by: Daniel Stone <daniels@collabora.com>
++Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
++
++diff --git a/hw/xfree86/sdksyms.sh b/hw/xfree86/sdksyms.sh
++index 2305073..05ac410 100755
++--- a/hw/xfree86/sdksyms.sh
+++++ b/hw/xfree86/sdksyms.sh
++@@ -350,13 +350,25 @@ BEGIN {
++     if (sdk) {
++ 	n = 3;
++ 
+++        # skip line numbers GCC 5 adds before __attribute__
+++        while ($n == "" || $0 ~ /^# [0-9]+ "/) {
+++           getline;
+++           n = 1;
+++        }
+++
++ 	# skip attribute, if any
++ 	while ($n ~ /^(__attribute__|__global)/ ||
++ 	    # skip modifiers, if any
++ 	    $n ~ /^\*?(unsigned|const|volatile|struct|_X_EXPORT)$/ ||
++ 	    # skip pointer
++-	    $n ~ /^[a-zA-Z0-9_]*\*$/)
+++	    $n ~ /^[a-zA-Z0-9_]*\*$/) {
++ 	    n++;
+++            # skip line numbers GCC 5 adds after __attribute__
+++            while ($n == "" || $0 ~ /^# [0-9]+ "/) {
+++               getline;
+++               n = 1;
+++            }
+++        }
++ 
++ 	# type specifier may not be set, as in
++ 	#   extern _X_EXPORT unsigned name(...)
++-- 
++cgit v0.10.2
++
+diff --git a/package/x264/x264.mk b/package/x264/x264.mk
+index 80437c408..307bf6c2a 100644
+--- a/package/x264/x264.mk
++++ b/package/x264/x264.mk
+@@ -10,7 +10,7 @@ X264_LICENSE = GPLv2+
+ X264_DEPENDENCIES = host-pkgconf
+ X264_LICENSE_FILES = COPYING
+ X264_INSTALL_STAGING = YES
+-X264_CONF_OPTS = --disable-avs
++X264_CONF_OPTS = --disable-avs --disable-lavf --disable-swscale
+ 
+ ifeq ($(BR2_i386)$(BR2_x86_64),y)
+ # yasm needed for assembly files
+diff --git a/support/scripts/mkusers b/support/scripts/mkusers
+index 2ac76f986..5bbec3e10 100755
+--- a/support/scripts/mkusers
++++ b/support/scripts/mkusers
+@@ -219,12 +219,12 @@ add_one_group() {
+     fi
+ 
+     # Remove any previous instance of this group, and re-add the new one
+-    sed -i -e '/^'"${group}"':.*/d;' "${GROUP}"
++    sed -i --follow-symlinks -e '/^'"${group}"':.*/d;' "${GROUP}"
+     printf "%s:x:%d:\n" "${group}" "${gid}" >>"${GROUP}"
+ 
+     # Ditto for /etc/gshadow if it exists
+     if [ -f "${GSHADOW}" ]; then
+-        sed -i -e '/^'"${group}"':.*/d;' "${GSHADOW}"
++        sed -i --follow-symlinks -e '/^'"${group}"':.*/d;' "${GSHADOW}"
+         printf "%s:*::\n" "${group}" >>"${GSHADOW}"
+     fi
+ }
+@@ -263,7 +263,8 @@ add_user_to_group() {
+ 
+     for _f in "${GROUP}" "${GSHADOW}"; do
+         [ -f "${_f}" ] || continue
+-        sed -r -i -e 's/^('"${group}"':.*:)(([^:]+,)?)'"${username}"'(,[^:]+*)?$/\1\2\4/;'  \
++        sed -r -i --follow-symlinks \
++                  -e 's/^('"${group}"':.*:)(([^:]+,)?)'"${username}"'(,[^:]+*)?$/\1\2\4/;'  \
+                   -e 's/^('"${group}"':.*)$/\1,'"${username}"'/;'                           \
+                   -e 's/,+/,/'                                                              \
+                   -e 's/:,/:/'                                                              \
+@@ -303,7 +304,7 @@ add_one_user() {
+ 
+     # Remove any previous instance of this user
+     for _f in "${PASSWD}" "${SHADOW}"; do
+-        sed -r -i -e '/^'"${username}"':.*/d;' "${_f}"
++        sed -r -i --follow-symlinks -e '/^'"${username}"':.*/d;' "${_f}"
+     done
+ 
+     _gid="$( get_gid "${group}" )"
+diff --git a/support/scripts/scancpan b/support/scripts/scancpan
+index b6123de02..32908f317 100755
+--- a/support/scripts/scancpan
++++ b/support/scripts/scancpan
+@@ -521,7 +521,7 @@ my %deps_runtime;       # name -> list of target dependencies
+ my %deps_optional;      # name -> list of optional target dependencies
+ my %license_files;      # name -> list of license files
+ my %checksum;           # author -> list of checksum
+-my $mcpan = MetaCPAN::API::Tiny->new();
++my $mcpan = MetaCPAN::API::Tiny->new(base_url => 'http://fastapi.metacpan.org/v1');
+ my $ua = HTTP::Tiny->new();
+ 
+ sub get_checksum {
+@@ -538,7 +538,7 @@ sub get_checksum {
+ 
+ sub get_manifest {
+     my ($author, $distname, $version) = @_;
+-    my $url = qq{http://api.metacpan.org/source/${author}/${distname}-${version}/MANIFEST};
++    my $url = qq{http://fastapi.metacpan.org/source/${author}/${distname}-${version}/MANIFEST};
+     my $response = $ua->get($url);
+     return $response->{content};
+ }
+diff --git a/support/scripts/setlocalversion b/support/scripts/setlocalversion
+index adeeb781e..33cd605bf 100755
+--- a/support/scripts/setlocalversion
++++ b/support/scripts/setlocalversion
+@@ -54,7 +54,7 @@ fi
+ 
+ # Check for mercurial and a mercurial repo.
+ if hgid=`hg id 2>/dev/null`; then
+-	tag=`printf '%s' "$hgid" | cut -d' ' -f2`
++	tag=`printf '%s' "$hgid" | cut -d' ' -f2 --only-delimited`
+ 
+ 	# Do we have an untagged version?
+ 	if [ -z "$tag" -o "$tag" = tip ]; then
+diff --git a/toolchain/toolchain-external/pkg-toolchain-external.mk b/toolchain/toolchain-external/pkg-toolchain-external.mk
+index 653ec87a4..23b941a88 100644
+--- a/toolchain/toolchain-external/pkg-toolchain-external.mk
++++ b/toolchain/toolchain-external/pkg-toolchain-external.mk
+@@ -475,7 +475,7 @@ endef
+ # With the musl C library, the libc.so library directly plays the role
+ # of the dynamic library loader. We just need to create a symbolic
+ # link to libc.so with the appropriate name.
+-ifeq ($(BR2_TOOLCHAIN_EXTERNAL_MUSL),y)
++ifeq ($(BR2_TOOLCHAIN_EXTERNAL_MUSL):$(BR2_STATIC_LIBS),y:)
+ ifeq ($(BR2_i386),y)
+ MUSL_ARCH = i386
+ else ifeq ($(BR2_ARM_EABIHF),y)

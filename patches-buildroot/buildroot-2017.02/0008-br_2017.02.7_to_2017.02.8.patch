@@ -1,0 +1,2419 @@
+diff --git a/CHANGES b/CHANGES
+index 093f8f0473..6387435016 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,31 @@
++2017.02.8, Released November 27th, 2017
++
++	Important / security related fixes.
++
++	Qt: 5.6 version updated to 5.6.3.
++
++	Reproducible: Do not override SOURCE_DATE_EPOCH if already set
++	in the environment.
++
++	Updated/fixed packages: apr, apr-util, arqp-standalone,
++	collectd, dvb-apps, ffmpeg, google-breakpad, gstreamer,
++	imagemagick, libfastjson, libglib2, libpjsip, libplist,
++	localedef, luajit, mesa3d, openssh, openssl, postgresql,
++	python3, python-pyqt5, qt5base, qt5canvas3d, qt5connectivity,
++	qt5declarative, qt5engineio, qt5graphicaleffects,
++	qt5imageformats, qt5location, qt5multimedia, qt5quickcontrols,
++	qt5quickcontrols2, qt5script, qt5sensors, qt5serialbus,
++	qt5serialport, qt5svg, qt5tools, qt5webchannel, qt5webkit,
++	qt5websockets, qt5x11extras, qt5xmlpatterns, quagga, ruby,
++	samba4, snmppp, ti-gfx, vboot-utils, webkitgtk, wireshark,
++	xapp_xdriinfo.
++
++	Issues resolved (http://bugs.buildroot.org):
++
++	10326: mesa3d package fails to build when BR2_SHARED_STATIC_LIBS=y
++	10361: python3 python-config script generates invalid includes
++	10501: host-localedef fails to compile on Ubuntu 17.10
++
+ 2017.02.7, Released October 28th, 2017
+ 
+ 	Important / security related fixes.
+diff --git a/Makefile b/Makefile
+index ae36c66b41..6136593c98 100644
+--- a/Makefile
++++ b/Makefile
+@@ -86,9 +86,9 @@ else # umask / $(CURDIR) / $(O)
+ all:
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2017.02.7
++export BR2_VERSION := 2017.02.8
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1509216000
++BR2_VERSION_EPOCH = 1511823000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+@@ -253,7 +253,7 @@ export LANG = C
+ export LC_ALL = C
+ export GZIP = -n
+ BR2_VERSION_GIT_EPOCH = $(shell GIT_DIR=$(TOPDIR)/.git $(GIT) log -1 --format=%at)
+-export SOURCE_DATE_EPOCH = $(if $(wildcard $(TOPDIR)/.git),$(BR2_VERSION_GIT_EPOCH),$(BR2_VERSION_EPOCH))
++export SOURCE_DATE_EPOCH ?= $(if $(wildcard $(TOPDIR)/.git),$(BR2_VERSION_GIT_EPOCH),$(BR2_VERSION_EPOCH))
+ DEPENDENCIES_HOST_PREREQ += host-fakedate
+ endif
+ 
+diff --git a/package/apr-util/apr-util.hash b/package/apr-util/apr-util.hash
+index 3db4396058..82ad475619 100644
+--- a/package/apr-util/apr-util.hash
++++ b/package/apr-util/apr-util.hash
+@@ -1,2 +1,4 @@
+-# From http://archive.apache.org/dist/apr/apr-util-1.5.4.tar.gz.sha1
+-sha1	72cc3ac693b52fb831063d5c0de18723bc8e0095	apr-util-1.5.4.tar.gz
++# From http://www.apache.org/dist/apr/apr-util-1.6.1.tar.bz2.sha256
++sha256	d3e12f7b6ad12687572a3a39475545a072608f4ba03a6ce8a3778f607dd0035b	apr-util-1.6.1.tar.bz2
++# Locally calculated
++sha256	ef5609d18601645ad6fe22c6c122094be40e976725c1d0490778abacc836e7a2	LICENSE
+diff --git a/package/apr-util/apr-util.mk b/package/apr-util/apr-util.mk
+index bc0572e110..c44cef009f 100644
+--- a/package/apr-util/apr-util.mk
++++ b/package/apr-util/apr-util.mk
+@@ -4,7 +4,8 @@
+ #
+ ################################################################################
+ 
+-APR_UTIL_VERSION = 1.5.4
++APR_UTIL_VERSION = 1.6.1
++APR_UTIL_SOURCE = apr-util-$(APR_UTIL_VERSION).tar.bz2
+ APR_UTIL_SITE = http://archive.apache.org/dist/apr
+ APR_UTIL_LICENSE = Apache-2.0
+ APR_UTIL_LICENSE_FILES = LICENSE
+diff --git a/package/apr/0001-cross-compile.patch b/package/apr/0001-cross-compile.patch
+index 5b596fb20f..559ebb74ba 100644
+--- a/package/apr/0001-cross-compile.patch
++++ b/package/apr/0001-cross-compile.patch
+@@ -42,10 +42,10 @@ diff -uNr apr-1.5.1.org/Makefile.in apr-1.5.1/Makefile.in
+  
+  # get substituted into some targets
+  APR_MAJOR_VERSION=@APR_MAJOR_VERSION@
+-@@ -134,8 +136,13 @@
++@@ -134,8 +134,13 @@
++ 	$(APR_MKDIR) tools
++ 	$(LT_COMPILE)
+  
+- OBJECTS_gen_test_char = tools/gen_test_char.lo $(LOCAL_LIBS)
+- tools/gen_test_char.lo: make_tools_dir
+ +ifdef CC_FOR_BUILD
+ +tools/gen_test_char@EXEEXT@: tools/gen_test_char.c $(LOCAL_LIBS)
+ +	$(CC_FOR_BUILD) $(CFLAGS_FOR_BUILD) -DCROSS_COMPILE -o $@ $<
+diff --git a/package/apr/apr.hash b/package/apr/apr.hash
+index 50d657a8cb..be130a5d78 100644
+--- a/package/apr/apr.hash
++++ b/package/apr/apr.hash
+@@ -1,2 +1,4 @@
+-# From http://archive.apache.org/dist/apr/apr-1.5.1.tar.gz.sha1
+-sha1	9caa83e3f50f3abc9fab7c4a3f2739a12b14c3a3	apr-1.5.1.tar.gz
++# From http://www.apache.org/dist/apr/apr-1.6.3.tar.bz2.sha256
++sha256 131f06d16d7aabd097fa992a33eec2b6af3962f93e6d570a9bd4d85e95993172  apr-1.6.3.tar.bz2
++# Locally calculated
++sha256 f854aeef66ecd55a126226e82b3f26793fc3b1c584647f6a0edc5639974c38ad  LICENSE
+diff --git a/package/apr/apr.mk b/package/apr/apr.mk
+index f09f94368c..58b1d86b28 100644
+--- a/package/apr/apr.mk
++++ b/package/apr/apr.mk
+@@ -4,7 +4,8 @@
+ #
+ ################################################################################
+ 
+-APR_VERSION = 1.5.1
++APR_VERSION = 1.6.3
++APR_SOURCE = apr-$(APR_VERSION).tar.bz2
+ APR_SITE = http://archive.apache.org/dist/apr
+ APR_LICENSE = Apache-2.0
+ APR_LICENSE_FILES = LICENSE
+diff --git a/package/argp-standalone/0003-fix_build_with_c99_compilers.patch b/package/argp-standalone/0003-fix_build_with_c99_compilers.patch
+index bfa0bb53e1..56b753b607 100644
+--- a/package/argp-standalone/0003-fix_build_with_c99_compilers.patch
++++ b/package/argp-standalone/0003-fix_build_with_c99_compilers.patch
+@@ -66,15 +66,3 @@ index e797b11..828f435 100644
+  
+  /* Internal routines.  */
+  extern void _argp_fmtstream_update (argp_fmtstream_t __fs);
+-@@ -216,7 +220,11 @@
+- #endif
+- 
+- #ifndef ARGP_FS_EI
+-+#if defined(__GNUC__) && !defined(__GNUC_STDC_INLINE__)
+- #define ARGP_FS_EI extern inline
+-+#else
+-+#define ARGP_FS_EI inline
+-+#endif
+- #endif
+- 
+- ARGP_FS_EI size_t
+diff --git a/package/argp-standalone/argp-standalone.mk b/package/argp-standalone/argp-standalone.mk
+index b87b923f49..f043936e30 100644
+--- a/package/argp-standalone/argp-standalone.mk
++++ b/package/argp-standalone/argp-standalone.mk
+@@ -10,7 +10,7 @@ ARGP_STANDALONE_INSTALL_STAGING = YES
+ ARGP_STANDALONE_LICENSE = LGPLv2+
+ 
+ ARGP_STANDALONE_CONF_ENV = \
+-	CFLAGS="$(TARGET_CFLAGS) -fPIC"
++	CFLAGS="$(TARGET_CFLAGS) -fPIC -fgnu89-inline"
+ 
+ define ARGP_STANDALONE_INSTALL_STAGING_CMDS
+ 	$(INSTALL) -D $(@D)/libargp.a $(STAGING_DIR)/usr/lib/libargp.a
+diff --git a/package/collectd/collectd.mk b/package/collectd/collectd.mk
+index 38354ac0b4..1b61b0685c 100644
+--- a/package/collectd/collectd.mk
++++ b/package/collectd/collectd.mk
+@@ -24,9 +24,23 @@ COLLECTD_PLUGINS_DISABLE = \
+ 
+ COLLECTD_CONF_ENV += LIBS="-lm"
+ 
++#
++# NOTE: There's also a third availible setting "intswap", which might
++# be needed on some old ARM hardware (see [2]), but is not being
++# accounted for as per discussion [1]
++#
++# [1] http://lists.busybox.net/pipermail/buildroot/2017-November/206100.html
++# [2] http://lists.busybox.net/pipermail/buildroot/2017-November/206251.html
++#
++ifeq ($(BR2_ENDIAN),"BIG")
++COLLECTD_FP_LAYOUT=endianflip
++else
++COLLECTD_FP_LAYOUT=nothing
++endif
++
+ COLLECTD_CONF_OPTS += \
+ 	--with-nan-emulation \
+-	--with-fp-layout=nothing \
++	--with-fp-layout=$(COLLECTD_FP_LAYOUT) \
+ 	--with-perl-bindings=no \
+ 	$(foreach p, $(COLLECTD_PLUGINS_DISABLE), --disable-$(p)) \
+ 	$(if $(BR2_PACKAGE_COLLECTD_AGGREGATION),--enable-aggregation,--disable-aggregation) \
+diff --git a/package/dvb-apps/dvb-apps.mk b/package/dvb-apps/dvb-apps.mk
+index c52252c816..fdd2643d6a 100644
+--- a/package/dvb-apps/dvb-apps.mk
++++ b/package/dvb-apps/dvb-apps.mk
+@@ -15,6 +15,8 @@ DVB_APPS_DEPENDENCIES = libiconv
+ DVB_APPS_LDLIBS += -liconv
+ endif
+ 
++DVB_APPS_MAKE_OPTS = PERL5LIB=$(@D)/util/scan
++
+ ifeq ($(BR2_STATIC_LIBS),y)
+ DVB_APPS_MAKE_OPTS += enable_shared=no
+ else ifeq ($(BR2_SHARED_LIBS),y)
+@@ -25,7 +27,7 @@ DVB_APPS_INSTALL_STAGING = YES
+ 
+ define DVB_APPS_BUILD_CMDS
+ 	$(TARGET_CONFIGURE_OPTS) LDLIBS="$(DVB_APPS_LDLIBS)" \
+-		$(MAKE) -C $(@D) CROSS_ROOT=$(STAGING_DIR) \
++		$(MAKE1) -C $(@D) CROSS_ROOT=$(STAGING_DIR) \
+ 		$(DVB_APPS_MAKE_OPTS)
+ endef
+ 
+diff --git a/package/ffmpeg/ffmpeg.hash b/package/ffmpeg/ffmpeg.hash
+index dcfc8aa8c6..cf41f39eee 100644
+--- a/package/ffmpeg/ffmpeg.hash
++++ b/package/ffmpeg/ffmpeg.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated
+-sha256 42e7362692318afc666f14378dd445effa9a1b09787504a6ab5811fe442674cd  ffmpeg-3.2.8.tar.xz
++sha256 1131d37890ed3dcbc3970452b200a56ceb36b73eaa51d1c23c770c90f928537f  ffmpeg-3.2.9.tar.xz
+diff --git a/package/ffmpeg/ffmpeg.mk b/package/ffmpeg/ffmpeg.mk
+index 9b287c7aaa..f914f4e438 100644
+--- a/package/ffmpeg/ffmpeg.mk
++++ b/package/ffmpeg/ffmpeg.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-FFMPEG_VERSION = 3.2.8
++FFMPEG_VERSION = 3.2.9
+ FFMPEG_SOURCE = ffmpeg-$(FFMPEG_VERSION).tar.xz
+ FFMPEG_SITE = http://ffmpeg.org/releases
+ FFMPEG_INSTALL_STAGING = YES
+diff --git a/package/google-breakpad/0002-Replace-remaining-references-to-struct-ucontext-with.patch b/package/google-breakpad/0002-Replace-remaining-references-to-struct-ucontext-with.patch
+new file mode 100644
+index 0000000000..e02ae268b9
+--- /dev/null
++++ b/package/google-breakpad/0002-Replace-remaining-references-to-struct-ucontext-with.patch
+@@ -0,0 +1,257 @@
++From 7975a962e1d6dbad5a46792a54e647abd7caf5f1 Mon Sep 17 00:00:00 2001
++From: Mark Mentovai <mark@chromium.org>
++Date: Tue, 19 Sep 2017 22:48:30 -0400
++Subject: [PATCH] Replace remaining references to 'struct ucontext' with
++ 'ucontext_t'
++
++This relands
++https://chromium.googlesource.com/breakpad/breakpad/src/+/e3035bc406cee8a4d765e59ad46eb828705f17f4,
++which was accidentally committed to breakpad/breakpad/src, the read-only
++mirror of src in breakpad/breakpad. (Well, it should have been
++read-only.) See https://crbug.com/766164.
++
++This fixes issues with glibc-2.26.
++
++See https://bugs.gentoo.org/show_bug.cgi?id=628782 ,
++https://sourceware.org/git/?p=glibc.git;h=251287734e89a52da3db682a8241eb6bccc050c9 , and
++https://sourceware.org/ml/libc-alpha/2017-08/msg00010.html for context.
++Change-Id: Id66f474d636dd2afa450bab925c5514a800fdd6f
++Reviewed-on: https://chromium-review.googlesource.com/674304
++Reviewed-by: Mark Mentovai <mark@chromium.org>
++
++(cherry picked from commit bddcc58860f522a0d4cbaa7e9d04058caee0db9d)
++[Romain: backport from upstream]
++Signed-off-by: Romain Naour <romain.naour@gmail.com>
++---
++ .../linux/dump_writer_common/ucontext_reader.cc    | 32 +++++++++++-----------
++ .../linux/dump_writer_common/ucontext_reader.h     | 14 +++++-----
++ src/client/linux/handler/exception_handler.cc      | 10 +++----
++ src/client/linux/handler/exception_handler.h       |  6 ++--
++ .../linux/microdump_writer/microdump_writer.cc     |  2 +-
++ .../linux/minidump_writer/minidump_writer.cc       |  2 +-
++ 6 files changed, 33 insertions(+), 33 deletions(-)
++
++diff --git a/src/client/linux/dump_writer_common/ucontext_reader.cc b/src/client/linux/dump_writer_common/ucontext_reader.cc
++index c80724d..052ce37 100644
++--- a/src/client/linux/dump_writer_common/ucontext_reader.cc
+++++ b/src/client/linux/dump_writer_common/ucontext_reader.cc
++@@ -36,19 +36,19 @@ namespace google_breakpad {
++ 
++ // Minidump defines register structures which are different from the raw
++ // structures which we get from the kernel. These are platform specific
++-// functions to juggle the ucontext and user structures into minidump format.
+++// functions to juggle the ucontext_t and user structures into minidump format.
++ 
++ #if defined(__i386__)
++ 
++-uintptr_t UContextReader::GetStackPointer(const struct ucontext* uc) {
+++uintptr_t UContextReader::GetStackPointer(const ucontext_t* uc) {
++   return uc->uc_mcontext.gregs[REG_ESP];
++ }
++ 
++-uintptr_t UContextReader::GetInstructionPointer(const struct ucontext* uc) {
+++uintptr_t UContextReader::GetInstructionPointer(const ucontext_t* uc) {
++   return uc->uc_mcontext.gregs[REG_EIP];
++ }
++ 
++-void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext *uc,
+++void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext_t *uc,
++                                     const struct _libc_fpstate* fp) {
++   const greg_t* regs = uc->uc_mcontext.gregs;
++ 
++@@ -88,15 +88,15 @@ void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext *uc,
++ 
++ #elif defined(__x86_64)
++ 
++-uintptr_t UContextReader::GetStackPointer(const struct ucontext* uc) {
+++uintptr_t UContextReader::GetStackPointer(const ucontext_t* uc) {
++   return uc->uc_mcontext.gregs[REG_RSP];
++ }
++ 
++-uintptr_t UContextReader::GetInstructionPointer(const struct ucontext* uc) {
+++uintptr_t UContextReader::GetInstructionPointer(const ucontext_t* uc) {
++   return uc->uc_mcontext.gregs[REG_RIP];
++ }
++ 
++-void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext *uc,
+++void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext_t *uc,
++                                     const struct _libc_fpstate* fpregs) {
++   const greg_t* regs = uc->uc_mcontext.gregs;
++ 
++@@ -145,15 +145,15 @@ void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext *uc,
++ 
++ #elif defined(__ARM_EABI__)
++ 
++-uintptr_t UContextReader::GetStackPointer(const struct ucontext* uc) {
+++uintptr_t UContextReader::GetStackPointer(const ucontext_t* uc) {
++   return uc->uc_mcontext.arm_sp;
++ }
++ 
++-uintptr_t UContextReader::GetInstructionPointer(const struct ucontext* uc) {
+++uintptr_t UContextReader::GetInstructionPointer(const ucontext_t* uc) {
++   return uc->uc_mcontext.arm_pc;
++ }
++ 
++-void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext *uc) {
+++void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext_t *uc) {
++   out->context_flags = MD_CONTEXT_ARM_FULL;
++ 
++   out->iregs[0] = uc->uc_mcontext.arm_r0;
++@@ -184,15 +184,15 @@ void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext *uc) {
++ 
++ #elif defined(__aarch64__)
++ 
++-uintptr_t UContextReader::GetStackPointer(const struct ucontext* uc) {
+++uintptr_t UContextReader::GetStackPointer(const ucontext_t* uc) {
++   return uc->uc_mcontext.sp;
++ }
++ 
++-uintptr_t UContextReader::GetInstructionPointer(const struct ucontext* uc) {
+++uintptr_t UContextReader::GetInstructionPointer(const ucontext_t* uc) {
++   return uc->uc_mcontext.pc;
++ }
++ 
++-void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext *uc,
+++void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext_t *uc,
++                                     const struct fpsimd_context* fpregs) {
++   out->context_flags = MD_CONTEXT_ARM64_FULL;
++ 
++@@ -210,15 +210,15 @@ void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext *uc,
++ 
++ #elif defined(__mips__)
++ 
++-uintptr_t UContextReader::GetStackPointer(const struct ucontext* uc) {
+++uintptr_t UContextReader::GetStackPointer(const ucontext_t* uc) {
++   return uc->uc_mcontext.gregs[MD_CONTEXT_MIPS_REG_SP];
++ }
++ 
++-uintptr_t UContextReader::GetInstructionPointer(const struct ucontext* uc) {
+++uintptr_t UContextReader::GetInstructionPointer(const ucontext_t* uc) {
++   return uc->uc_mcontext.pc;
++ }
++ 
++-void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext *uc) {
+++void UContextReader::FillCPUContext(RawContextCPU *out, const ucontext_t *uc) {
++ #if _MIPS_SIM == _ABI64
++   out->context_flags = MD_CONTEXT_MIPS64_FULL;
++ #elif _MIPS_SIM == _ABIO32
++diff --git a/src/client/linux/dump_writer_common/ucontext_reader.h b/src/client/linux/dump_writer_common/ucontext_reader.h
++index b6e77b4..2de80b7 100644
++--- a/src/client/linux/dump_writer_common/ucontext_reader.h
+++++ b/src/client/linux/dump_writer_common/ucontext_reader.h
++@@ -39,23 +39,23 @@
++ 
++ namespace google_breakpad {
++ 
++-// Wraps platform-dependent implementations of accessors to ucontext structs.
+++// Wraps platform-dependent implementations of accessors to ucontext_t structs.
++ struct UContextReader {
++-  static uintptr_t GetStackPointer(const struct ucontext* uc);
+++  static uintptr_t GetStackPointer(const ucontext_t* uc);
++ 
++-  static uintptr_t GetInstructionPointer(const struct ucontext* uc);
+++  static uintptr_t GetInstructionPointer(const ucontext_t* uc);
++ 
++-  // Juggle a arch-specific ucontext into a minidump format
+++  // Juggle a arch-specific ucontext_t into a minidump format
++   //   out: the minidump structure
++   //   info: the collection of register structures.
++ #if defined(__i386__) || defined(__x86_64)
++-  static void FillCPUContext(RawContextCPU *out, const ucontext *uc,
+++  static void FillCPUContext(RawContextCPU *out, const ucontext_t *uc,
++                              const struct _libc_fpstate* fp);
++ #elif defined(__aarch64__)
++-  static void FillCPUContext(RawContextCPU *out, const ucontext *uc,
+++  static void FillCPUContext(RawContextCPU *out, const ucontext_t *uc,
++                              const struct fpsimd_context* fpregs);
++ #else
++-  static void FillCPUContext(RawContextCPU *out, const ucontext *uc);
+++  static void FillCPUContext(RawContextCPU *out, const ucontext_t *uc);
++ #endif
++ };
++ 
++diff --git a/src/client/linux/handler/exception_handler.cc b/src/client/linux/handler/exception_handler.cc
++index b63f973..3d809b8 100644
++--- a/src/client/linux/handler/exception_handler.cc
+++++ b/src/client/linux/handler/exception_handler.cc
++@@ -439,9 +439,9 @@ bool ExceptionHandler::HandleSignal(int sig, siginfo_t* info, void* uc) {
++   // Fill in all the holes in the struct to make Valgrind happy.
++   memset(&g_crash_context_, 0, sizeof(g_crash_context_));
++   memcpy(&g_crash_context_.siginfo, info, sizeof(siginfo_t));
++-  memcpy(&g_crash_context_.context, uc, sizeof(struct ucontext));
+++  memcpy(&g_crash_context_.context, uc, sizeof(ucontext_t));
++ #if defined(__aarch64__)
++-  struct ucontext* uc_ptr = (struct ucontext*)uc;
+++  ucontext_t* uc_ptr = (ucontext_t*)uc;
++   struct fpsimd_context* fp_ptr =
++       (struct fpsimd_context*)&uc_ptr->uc_mcontext.__reserved;
++   if (fp_ptr->head.magic == FPSIMD_MAGIC) {
++@@ -450,9 +450,9 @@ bool ExceptionHandler::HandleSignal(int sig, siginfo_t* info, void* uc) {
++   }
++ #elif !defined(__ARM_EABI__) && !defined(__mips__)
++   // FP state is not part of user ABI on ARM Linux.
++-  // In case of MIPS Linux FP state is already part of struct ucontext
+++  // In case of MIPS Linux FP state is already part of ucontext_t
++   // and 'float_state' is not a member of CrashContext.
++-  struct ucontext* uc_ptr = (struct ucontext*)uc;
+++  ucontext_t* uc_ptr = (ucontext_t*)uc;
++   if (uc_ptr->uc_mcontext.fpregs) {
++     memcpy(&g_crash_context_.float_state, uc_ptr->uc_mcontext.fpregs,
++            sizeof(g_crash_context_.float_state));
++@@ -476,7 +476,7 @@ bool ExceptionHandler::SimulateSignalDelivery(int sig) {
++   // ExceptionHandler::HandleSignal().
++   siginfo.si_code = SI_USER;
++   siginfo.si_pid = getpid();
++-  struct ucontext context;
+++  ucontext_t context;
++   getcontext(&context);
++   return HandleSignal(sig, &siginfo, &context);
++ }
++diff --git a/src/client/linux/handler/exception_handler.h b/src/client/linux/handler/exception_handler.h
++index 591c310..42f4055 100644
++--- a/src/client/linux/handler/exception_handler.h
+++++ b/src/client/linux/handler/exception_handler.h
++@@ -191,11 +191,11 @@ class ExceptionHandler {
++   struct CrashContext {
++     siginfo_t siginfo;
++     pid_t tid;  // the crashing thread.
++-    struct ucontext context;
+++    ucontext_t context;
++ #if !defined(__ARM_EABI__) && !defined(__mips__)
++     // #ifdef this out because FP state is not part of user ABI for Linux ARM.
++-    // In case of MIPS Linux FP state is already part of struct
++-    // ucontext so 'float_state' is not required.
+++    // In case of MIPS Linux FP state is already part of ucontext_t so
+++    // 'float_state' is not required.
++     fpstate_t float_state;
++ #endif
++   };
++diff --git a/src/client/linux/microdump_writer/microdump_writer.cc b/src/client/linux/microdump_writer/microdump_writer.cc
++index 6f5b435..a508667 100644
++--- a/src/client/linux/microdump_writer/microdump_writer.cc
+++++ b/src/client/linux/microdump_writer/microdump_writer.cc
++@@ -571,7 +571,7 @@ class MicrodumpWriter {
++ 
++   void* Alloc(unsigned bytes) { return dumper_->allocator()->Alloc(bytes); }
++ 
++-  const struct ucontext* const ucontext_;
+++  const ucontext_t* const ucontext_;
++ #if !defined(__ARM_EABI__) && !defined(__mips__)
++   const google_breakpad::fpstate_t* const float_state_;
++ #endif
++diff --git a/src/client/linux/minidump_writer/minidump_writer.cc b/src/client/linux/minidump_writer/minidump_writer.cc
++index 86009b9..f2aec73 100644
++--- a/src/client/linux/minidump_writer/minidump_writer.cc
+++++ b/src/client/linux/minidump_writer/minidump_writer.cc
++@@ -1248,7 +1248,7 @@ class MinidumpWriter {
++   const int fd_;  // File descriptor where the minidum should be written.
++   const char* path_;  // Path to the file where the minidum should be written.
++ 
++-  const struct ucontext* const ucontext_;  // also from the signal handler
+++  const ucontext_t* const ucontext_;  // also from the signal handler
++ #if !defined(__ARM_EABI__) && !defined(__mips__)
++   const google_breakpad::fpstate_t* const float_state_;  // ditto
++ #endif
++-- 
++2.9.5
++
+diff --git a/package/gstreamer/gstreamer/Config.in b/package/gstreamer/gstreamer/Config.in
+index eb1249ac5f..99c90f1a14 100644
+--- a/package/gstreamer/gstreamer/Config.in
++++ b/package/gstreamer/gstreamer/Config.in
+@@ -1,12 +1,14 @@
+-comment "gstreamer 0.10 needs a toolchain w/ wchar, threads"
++comment "gstreamer 0.10 needs a toolchain w/ wchar, threads, dynamic library"
+ 	depends on BR2_USE_MMU
+-	depends on !BR2_USE_WCHAR || !BR2_TOOLCHAIN_HAS_THREADS
++	depends on !BR2_USE_WCHAR || !BR2_TOOLCHAIN_HAS_THREADS || \
++		BR2_STATIC_LIBS
+ 
+ config BR2_PACKAGE_GSTREAMER
+ 	bool "gstreamer 0.10"
+ 	depends on BR2_USE_WCHAR # glib2
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS # glib2
+ 	depends on BR2_USE_MMU # glib2
++	depends on !BR2_STATIC_LIBS
+ 	select BR2_PACKAGE_LIBGLIB2
+ 	help
+ 	  GStreamer is an open source multimedia framework.
+diff --git a/package/imagemagick/imagemagick.hash b/package/imagemagick/imagemagick.hash
+index 92880a9aec..2468bdbc23 100644
+--- a/package/imagemagick/imagemagick.hash
++++ b/package/imagemagick/imagemagick.hash
+@@ -1,2 +1,2 @@
+ # Locally computed
+-sha256 5a45e29509dbb23793a9c8db5c47ef1114c1ee82c9ca60053eaf06b3fc243e2c  7.0.7-1.tar.gz
++sha256 924d1161ed2399bcb72f98419072b3130a466e07d9a6fce43d27458ffa907ffa  7.0.7-10.tar.gz
+diff --git a/package/imagemagick/imagemagick.mk b/package/imagemagick/imagemagick.mk
+index 9043ce8e5e..c2171a7564 100644
+--- a/package/imagemagick/imagemagick.mk
++++ b/package/imagemagick/imagemagick.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-IMAGEMAGICK_VERSION = 7.0.7-1
++IMAGEMAGICK_VERSION = 7.0.7-10
+ IMAGEMAGICK_SOURCE = $(IMAGEMAGICK_VERSION).tar.gz
+ IMAGEMAGICK_SITE = https://github.com/ImageMagick/ImageMagick/archive
+ IMAGEMAGICK_LICENSE = Apache-2.0
+diff --git a/package/libfastjson/libfastjson.mk b/package/libfastjson/libfastjson.mk
+index b1cdd6a158..06da0d8edd 100644
+--- a/package/libfastjson/libfastjson.mk
++++ b/package/libfastjson/libfastjson.mk
+@@ -7,6 +7,7 @@
+ LIBFASTJSON_VERSION = v0.99.4
+ LIBFASTJSON_SITE = $(call github,rsyslog,libfastjson,$(LIBFASTJSON_VERSION))
+ LIBFASTJSON_INSTALL_STAGING = YES
++LIBFASTJSON_CONF_ENV = ac_cv_prog_cc_c99='-std=gnu99'
+ # From git
+ LIBFASTJSON_AUTORECONF = YES
+ LIBFASTJSON_LICENSE = MIT
+diff --git a/package/libglib2/libglib2.mk b/package/libglib2/libglib2.mk
+index e23c4a2df8..1c1116666c 100644
+--- a/package/libglib2/libglib2.mk
++++ b/package/libglib2/libglib2.mk
+@@ -10,6 +10,8 @@ LIBGLIB2_SOURCE = glib-$(LIBGLIB2_VERSION).tar.xz
+ LIBGLIB2_SITE = http://ftp.gnome.org/pub/gnome/sources/glib/$(LIBGLIB2_VERSION_MAJOR)
+ LIBGLIB2_LICENSE = LGPLv2+
+ LIBGLIB2_LICENSE_FILES = COPYING
++# 0002-disable-tests.patch
++LIBGLIB2_AUTORECONF = YES
+ 
+ LIBGLIB2_INSTALL_STAGING = YES
+ LIBGLIB2_INSTALL_STAGING_OPTS = DESTDIR=$(STAGING_DIR) LDFLAGS=-L$(STAGING_DIR)/usr/lib install
+diff --git a/package/libpjsip/0001-Fixed-possible-function-name-clash.patch b/package/libpjsip/0001-Fixed-possible-function-name-clash.patch
+new file mode 100644
+index 0000000000..435b0eab54
+--- /dev/null
++++ b/package/libpjsip/0001-Fixed-possible-function-name-clash.patch
+@@ -0,0 +1,26 @@
++Re #2059 (misc): Fixed possible function name clash with md5 due to non-static function.
++
++Backported from: https://trac.pjsip.org/repos/changeset/5688
++Signed-off-by: Luca Ceresoli <luca@lucaceresoli.net>
++
++Index: pjlib-util/src/pjlib-util/md5.c
++===================================================================
++diff --git a/pjproject/pjlib-util/src/pjlib-util/md5.c b/pjproject/pjlib-util/src/pjlib-util/md5.c
++--- a/pjlib-util/src/pjlib-util/md5.c	(revision 5687)
+++++ b/pjlib-util/src/pjlib-util/md5.c	(revision 5688)
++@@ -29,13 +29,13 @@
++ #ifndef HIGHFIRST
++ #define byteReverse(buf, len)	/* Nothing */
++ #else
++-void byteReverse(unsigned char *buf, unsigned longs);
+++static void byteReverse(unsigned char *buf, unsigned longs);
++ 
++ #ifndef ASM_MD5
++ /*
++  * Note: this code is harmless on little-endian machines.
++  */
++-void byteReverse(unsigned char *buf, unsigned longs)
+++static void byteReverse(unsigned char *buf, unsigned longs)
++ {
++     pj_uint32_t t;
++     do {
+diff --git a/package/libpjsip/libpjsip.hash b/package/libpjsip/libpjsip.hash
+index ec636a8562..edac3d578f 100644
+--- a/package/libpjsip/libpjsip.hash
++++ b/package/libpjsip/libpjsip.hash
+@@ -1,5 +1,6 @@
+-# From http://www.pjsip.org/release/2.6/MD5SUM.TXT
+-md5	c347a672679e7875ce572e18517884b2  pjproject-2.6.tar.bz2
++# From http://www.pjsip.org/release/2.7.1/MD5SUM.TXT
++md5	99a64110fa5c2debff40e0e8d4676380  pjproject-2.7.1.tar.bz2
+ 
+ # Locally computed
+-sha256	2f5a1da1c174d845871c758bd80fbb580fca7799d3cfaa0d3c4e082b5161c7b4	pjproject-2.6.tar.bz2
++sha256	59fabc62a02b2b80857297cfb10e2c68c473f4a0acc6e848cfefe8421f2c3126	pjproject-2.7.1.tar.bz2
++sha256	8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643	COPYING
+diff --git a/package/libpjsip/libpjsip.mk b/package/libpjsip/libpjsip.mk
+index b0d06099bb..86c99386d7 100644
+--- a/package/libpjsip/libpjsip.mk
++++ b/package/libpjsip/libpjsip.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBPJSIP_VERSION = 2.6
++LIBPJSIP_VERSION = 2.7.1
+ LIBPJSIP_SOURCE = pjproject-$(LIBPJSIP_VERSION).tar.bz2
+ LIBPJSIP_SITE = http://www.pjsip.org/release/$(LIBPJSIP_VERSION)
+ LIBPJSIP_DEPENDENCIES = libsrtp
+@@ -50,7 +50,6 @@ LIBPJSIP_CONF_OPTS = \
+ 	--disable-openh264 \
+ 	--disable-libyuv \
+ 	--disable-ipp \
+-	--disable-ssl \
+ 	--disable-silk \
+ 	--with-external-srtp
+ 
+diff --git a/package/libplayer/Config.in b/package/libplayer/Config.in
+index 37fbb26c5b..82293c020a 100644
+--- a/package/libplayer/Config.in
++++ b/package/libplayer/Config.in
+@@ -20,11 +20,13 @@ config BR2_PACKAGE_LIBPLAYER_GSTREAMER
+ 	depends on BR2_USE_WCHAR # glib2
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS # glib2
+ 	depends on BR2_USE_MMU # glib2
++	depends on !BR2_STATIC_LIBS # gstreamer
+ 	select BR2_PACKAGE_GSTREAMER
+ 
+-comment "gstreamer backend needs a toolchain w/ wchar, threads"
++comment "gstreamer backend needs a toolchain w/ wchar, threads, dynamic library"
+ 	depends on BR2_USE_MMU
+-	depends on !BR2_USE_WCHAR || !BR2_TOOLCHAIN_HAS_THREADS
++	depends on !BR2_USE_WCHAR || !BR2_TOOLCHAIN_HAS_THREADS || \
++		BR2_STATIC_LIBS
+ 
+ config BR2_PACKAGE_LIBPLAYER_PYTHON
+ 	depends on BR2_PACKAGE_PYTHON
+diff --git a/package/libplist/Config.in b/package/libplist/Config.in
+index 5f96746ea9..5a246b4ecd 100644
+--- a/package/libplist/Config.in
++++ b/package/libplist/Config.in
+@@ -1,12 +1,12 @@
+ config BR2_PACKAGE_LIBPLIST
+ 	bool "libplist"
+ 	depends on BR2_INSTALL_LIBSTDCPP
+-	select BR2_PACKAGE_LIBXML2
++	depends on BR2_TOOLCHAIN_HAS_THREADS
+ 	help
+ 	  libplist is a client for manipulating Apple Property List
+ 	  (.plist) files
+ 
+ 	  http://www.libimobiledevice.org/
+ 
+-comment "libplist needs a toolchain w/ C++"
+-	depends on !BR2_INSTALL_LIBSTDCPP
++comment "libplist needs a toolchain w/ C++, threads"
++	depends on !BR2_INSTALL_LIBSTDCPP || !BR2_TOOLCHAIN_HAS_THREADS
+diff --git a/package/libplist/libplist.hash b/package/libplist/libplist.hash
+index 06d1b16426..63c2515062 100644
+--- a/package/libplist/libplist.hash
++++ b/package/libplist/libplist.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated
+-sha256 0effdedcb3de128c4930d8c03a3854c74c426c16728b8ab5f0a5b6bdc0b644be  libplist-1.12.tar.bz2
++sha256 3a7e9694c2d9a85174ba1fa92417cfabaea7f6d19631e544948dc7e17e82f602  libplist-2.0.0.tar.bz2
+diff --git a/package/libplist/libplist.mk b/package/libplist/libplist.mk
+index 7f60b5ee03..bb6a0af799 100644
+--- a/package/libplist/libplist.mk
++++ b/package/libplist/libplist.mk
+@@ -4,17 +4,13 @@
+ #
+ ################################################################################
+ 
+-LIBPLIST_VERSION = 1.12
++LIBPLIST_VERSION = 2.0.0
+ LIBPLIST_SOURCE = libplist-$(LIBPLIST_VERSION).tar.bz2
+ LIBPLIST_SITE = http://www.libimobiledevice.org/downloads
+-LIBPLIST_DEPENDENCIES = libxml2 host-pkgconf
+ LIBPLIST_INSTALL_STAGING = YES
+ LIBPLIST_LICENSE = LGPLv2.1+
+ LIBPLIST_LICENSE_FILES = COPYING
+ 
+-# Straight out of the git tree:
+-LIBPLIST_AUTORECONF = YES
+-
+ # Disable building Python bindings, because it requires host-cython, which
+ # is not packaged in Buildroot at all.
+ LIBPLIST_CONF_OPTS = --without-cython
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index ed02cb54c1..bb516df2cf 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -214,15 +214,15 @@ endchoice
+ 
+ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+-	default "3.2.94"	if BR2_KERNEL_HEADERS_3_2
++	default "3.2.96"	if BR2_KERNEL_HEADERS_3_2
+ 	default "3.4.113"	if BR2_KERNEL_HEADERS_3_4
+-	default "3.10.107"	if BR2_KERNEL_HEADERS_3_10
++	default "3.10.108"	if BR2_KERNEL_HEADERS_3_10
+ 	default "3.12.74"	if BR2_KERNEL_HEADERS_3_12
+ 	default "3.18.72"	if BR2_KERNEL_HEADERS_3_18
+ 	default "3.19.8"	if BR2_KERNEL_HEADERS_3_19
+ 	default "4.0.9"		if BR2_KERNEL_HEADERS_4_0
+-	default "4.1.45"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.95"	if BR2_KERNEL_HEADERS_4_4
++	default "4.1.46"	if BR2_KERNEL_HEADERS_4_1
++	default "4.4.102"	if BR2_KERNEL_HEADERS_4_4
+ 	default "4.8.17"	if BR2_KERNEL_HEADERS_4_8
+-	default "4.9.59"	if BR2_KERNEL_HEADERS_4_9
++	default "4.9.65"	if BR2_KERNEL_HEADERS_4_9
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/localedef/0001-Don-t-include-xlocale.h.patch b/package/localedef/0001-Don-t-include-xlocale.h.patch
+new file mode 100644
+index 0000000000..9a6c2f8e90
+--- /dev/null
++++ b/package/localedef/0001-Don-t-include-xlocale.h.patch
+@@ -0,0 +1,50 @@
++From: Bernhard Walle <bernhard@bwalle.de>
++Date: Mon, 2 Oct 2017 16:55:23 +0200
++Subject: [PATCH] Don't include <xlocale.h>
++
++This header has been removed in glibc 2.26:
++
++https://abi-laboratory.pro/tracker/changelog/glibc/2.26/log.html
++
++------------------------ >8 ------------------------
++* The nonstandard header <xlocale.h> has been removed.  Most programs should
++  use <locale.h> instead.  If you have a specific need for the definition of
++  locale_t with no other declarations, please contact
++  libc-alpha@sourceware.org and explain.
++------------------------ 8< ------------------------
++
++Signed-off-by: Bernhard Walle <bernhard@bwalle.de>
++
++Upstream: https://git.pengutronix.de/cgit/ptxdist/tree/patches/localedef-eglibc-2.14.1-r17443-ptx1/0003-Don-t-include-xlocale.h.patch
++Signed-off-by: Peter Seiderer <ps.report@gmx.net>
++---
++ eglibc/locale/langinfo.h | 2 +-
++ eglibc/locale/locale.h   | 2 +-
++ 2 files changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/eglibc/locale/langinfo.h b/eglibc/locale/langinfo.h
++index 0a5336507196..76707a4584c1 100644
++--- a/eglibc/locale/langinfo.h
+++++ b/eglibc/locale/langinfo.h
++@@ -589,7 +589,7 @@ extern char *nl_langinfo (nl_item __item) __THROW;
++    more information.  */
++ 
++ /* Get locale datatype definition.  */
++-# include <xlocale.h>
+++# include <locale.h>
++ 
++ /* Just like nl_langinfo but get the information from the locale object L.  */
++ extern char *nl_langinfo_l (nl_item __item, __locale_t __l);
++diff --git a/eglibc/locale/locale.h b/eglibc/locale/locale.h
++index 2aa19e76acb2..18be711a2d40 100644
++--- a/eglibc/locale/locale.h
+++++ b/eglibc/locale/locale.h
++@@ -143,7 +143,7 @@ __END_NAMESPACE_STD
++    This is a proof-of-concept implementation.  */
++ 
++ /* Get locale datatype definition.  */
++-# include <xlocale.h>
+++# include_next <locale.h>
++ 
++ /* Return a reference to a data structure representing a set of locale
++    datasets.  Unlike for the CATEGORY parameter for `setlocale' the
+diff --git a/package/luajit/Config.in b/package/luajit/Config.in
+index 380f2472ea..0f84bfd2c9 100644
+--- a/package/luajit/Config.in
++++ b/package/luajit/Config.in
+@@ -1,5 +1,8 @@
+ config BR2_PACKAGE_LUAJIT_ARCH_SUPPORTS
+ 	bool
++	# -m32 flag is used for 32bit builds and host-luajit has
++	# limited architecture support
++	depends on BR2_HOSTARCH = "x86_64" || BR2_HOSTARCH = "x86"
+ 	default y if BR2_i386 || \
+ 		(BR2_x86_64 && BR2_HOSTARCH='x86_64') || \
+ 		BR2_powerpc || BR2_arm || BR2_armeb || \
+diff --git a/package/mesa3d/mesa3d.mk b/package/mesa3d/mesa3d.mk
+index bf2ab6e4de..bed311505c 100644
+--- a/package/mesa3d/mesa3d.mk
++++ b/package/mesa3d/mesa3d.mk
+@@ -22,6 +22,12 @@ MESA3D_DEPENDENCIES = \
+ 	expat \
+ 	libdrm
+ 
++# Disable static, otherwise configure will fail with: "Cannot enable both static
++# and shared."
++ifeq ($(BR2_SHARED_STATIC_LIBS),y)
++MESA3D_CONF_OPTS += --disable-static
++endif
++
+ # The Sourcery MIPS toolchain has a special (non-upstream) feature to
+ # have "compact exception handling", which unfortunately breaks with
+ # mesa3d, so we disable it here by passing -mno-compact-eh.
+diff --git a/package/opencv/Config.in b/package/opencv/Config.in
+index c046baaa4b..5de4cf7390 100644
+--- a/package/opencv/Config.in
++++ b/package/opencv/Config.in
+@@ -211,13 +211,16 @@ config BR2_PACKAGE_OPENCV_WITH_GSTREAMER
+ 	depends on BR2_USE_MMU # gstreamer -> libglib2
+ 	depends on BR2_USE_WCHAR # gstreamer -> libglib2
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS # gstreamer -> libglib2
++	depends on !BR2_STATIC_LIBS # gstreamer
+ 	select BR2_PACKAGE_GSTREAMER
+ 	select BR2_PACKAGE_GST_PLUGINS_BASE
+ 	select BR2_PACKAGE_GST_PLUGINS_BASE_PLUGIN_APP
+ 
+-comment "gstreamer-0.10 support needs a toolchain w/ wchar, threads"
++comment "gstreamer-0.10 support needs a toolchain w/ wchar, threads, dynamic library"
+ 	depends on BR2_USE_MMU
+-	depends on !BR2_USE_WCHAR || !BR2_TOOLCHAIN_HAS_THREADS
++	depends on !BR2_USE_WCHAR || !BR2_TOOLCHAIN_HAS_THREADS || \
++		BR2_STATIC_LIBS
++
+ 
+ config BR2_PACKAGE_OPENCV_WITH_GSTREAMER1
+ 	bool "gstreamer-1.x"
+diff --git a/package/openssh/0005-openbsd-compat-bsd-getpagesize.c-include-includes.h-.patch b/package/openssh/0005-openbsd-compat-bsd-getpagesize.c-include-includes.h-.patch
+new file mode 100644
+index 0000000000..ce60072934
+--- /dev/null
++++ b/package/openssh/0005-openbsd-compat-bsd-getpagesize.c-include-includes.h-.patch
+@@ -0,0 +1,35 @@
++From 9a43657a3dcb868b4f36ade3aba5dcf0871fb412 Mon Sep 17 00:00:00 2001
++From: Peter Korsgaard <peter@korsgaard.com>
++Date: Mon, 30 Oct 2017 23:36:56 +0100
++Subject: [PATCH] openbsd-compat/bsd-getpagesize.c: include includes.h for
++ config.h defines
++
++The configure script checks for getpagesize() and sets HAVE_GETPAGESIZE in
++config.h, but bsd-getpagesize.c forgot to include includes.h (which
++indirectly includes config.h) so the checks always fails, causing linker
++issues when linking statically on systems with getpagesize():
++
++http://autobuild.buildroot.net/results/8cc/8cc30818a400c7a392a3de787cabc9cd8425495f/build-end.log
++
++Fix it by including includes.h
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ openbsd-compat/bsd-getpagesize.c | 2 ++
++ 1 file changed, 2 insertions(+)
++
++diff --git a/openbsd-compat/bsd-getpagesize.c b/openbsd-compat/bsd-getpagesize.c
++index 9daddfbd..416a8d4c 100644
++--- a/openbsd-compat/bsd-getpagesize.c
+++++ b/openbsd-compat/bsd-getpagesize.c
++@@ -1,5 +1,7 @@
++ /* Placed in the public domain */
++ 
+++#include "includes.h"
+++
++ #ifndef HAVE_GETPAGESIZE
++ 
++ #include <unistd.h>
++-- 
++2.11.0
++
+diff --git a/package/openssl/openssl.hash b/package/openssl/openssl.hash
+index 064eeca6f4..c6226c302f 100644
+--- a/package/openssl/openssl.hash
++++ b/package/openssl/openssl.hash
+@@ -1,5 +1,5 @@
+-# From https://www.openssl.org/source/openssl-1.0.2k.tar.gz.sha256
+-sha256	6b3977c61f2aedf0f96367dcfb5c6e578cf37e7b8d913b4ecb6643c3cb88d8c0	openssl-1.0.2k.tar.gz
++# From https://www.openssl.org/source/openssl-1.0.2m.tar.gz.sha256
++sha256	8c6ff15ec6b319b50788f42c7abc2890c08ba5a1cdcd3810eb9092deada37b0f	openssl-1.0.2m.tar.gz
+ # Locally computed
+ sha256	eddd8a5123748052c598214487ac178e4bfa4e31ba2ec520c70d59c8c5bfa2e9	openssl-1.0.2a-parallel-install-dirs.patch?id=c8abcbe8de5d3b6cdd68c162f398c011ff6e2d9d
+ sha256	147c3eeaad614c044749ea527cb433eae5e2d5cad34a78c6ba61cd967bfbe01f	openssl-1.0.2a-parallel-obj-headers.patch?id=c8abcbe8de5d3b6cdd68c162f398c011ff6e2d9d
+diff --git a/package/openssl/openssl.mk b/package/openssl/openssl.mk
+index 1536982f8b..c7ff59f061 100644
+--- a/package/openssl/openssl.mk
++++ b/package/openssl/openssl.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-OPENSSL_VERSION = 1.0.2k
++OPENSSL_VERSION = 1.0.2m
+ OPENSSL_SITE = http://www.openssl.org/source
+ OPENSSL_LICENSE = OpenSSL or SSLeay
+ OPENSSL_LICENSE_FILES = LICENSE
+diff --git a/package/postgresql/postgresql.hash b/package/postgresql/postgresql.hash
+index 62ce9a7407..e62838911e 100644
+--- a/package/postgresql/postgresql.hash
++++ b/package/postgresql/postgresql.hash
+@@ -1,2 +1,4 @@
+-# From https://ftp.postgresql.org/pub/source/v9.6.5/postgresql-9.6.5.tar.bz2.sha256
+-sha256 06da12a7e3dddeb803962af8309fa06da9d6989f49e22865335f0a14bad0744c  postgresql-9.6.5.tar.bz2
++# From https://ftp.postgresql.org/pub/source/v9.6.6/postgresql-9.6.6.tar.bz2.sha256
++sha256 399cdffcb872f785ba67e25d275463d74521566318cfef8fe219050d063c8154  postgresql-9.6.6.tar.bz2
++# License file, Locally calculated
++sha256 7dc8de32741ad1b03e21710771b55a1b9d460671d47f28a8840f917e38c66676  COPYRIGHT
+diff --git a/package/postgresql/postgresql.mk b/package/postgresql/postgresql.mk
+index 7adb957cf0..50ce212c1c 100644
+--- a/package/postgresql/postgresql.mk
++++ b/package/postgresql/postgresql.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-POSTGRESQL_VERSION = 9.6.5
++POSTGRESQL_VERSION = 9.6.6
+ POSTGRESQL_SOURCE = postgresql-$(POSTGRESQL_VERSION).tar.bz2
+ POSTGRESQL_SITE = http://ftp.postgresql.org/pub/source/v$(POSTGRESQL_VERSION)
+ POSTGRESQL_LICENSE = PostgreSQL
+diff --git a/package/python-pyqt5/0002-fix-qt-5.6.2.patch b/package/python-pyqt5/0002-fix-qt-5.6.2.patch
+index a56af09025..fd2f9d9069 100644
+--- a/package/python-pyqt5/0002-fix-qt-5.6.2.patch
++++ b/package/python-pyqt5/0002-fix-qt-5.6.2.patch
+@@ -1,15 +1,15 @@
+-Fix the build with Qt 5.6.2
++Fix the build with Qt 5.6.{2,3}
+ 
+ Building PyQt 5.7 with versions of Qt older than Qt 5.7 is supposed to
+ work, but currently fails in practice. In fact, this is due to the
+ fact that the %Timeline variable in QtCoremod.sip didn't contain the
+-5.6.2 Qt version, so if this version was used, PyQt was assuming it
++5.6.{2,3} Qt versions, so if this version was used, PyQt was assuming it
+ was the later version 5.7, and therefore started enabling APIs only
+ available in Qt 5.7, causing build failures when building against Qt
+-5.6.2.
++5.6.{2,3}.
+ 
+-Adding Qt_5_6_2 to the timeline fixes this problem. This fix was
+-suggested by Phil Thompson <phil@riverbankcomputing.com>.
++Adding Qt_5_6_2 and Qt_5_6_3 to the timeline fixes this problem. This
++fix was suggested by Phil Thompson <phil@riverbankcomputing.com>.
+ 
+ Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+ 
+@@ -22,7 +22,7 @@ Index: PyQt5_gpl-5.7/sip/QtCore/QtCoremod.sip
+  %Module(name=PyQt5.QtCore, call_super_init=True, default_VirtualErrorHandler=PyQt5, keyword_arguments="Optional", version=1)
+  
+ -%Timeline {Qt_5_0_0 Qt_5_0_1 Qt_5_0_2 Qt_5_1_0 Qt_5_1_1 Qt_5_2_0 Qt_5_2_1 Qt_5_3_0 Qt_5_3_1 Qt_5_3_2 Qt_5_4_0 Qt_5_4_1 Qt_5_4_2 Qt_5_5_0 Qt_5_5_1 Qt_5_6_0 Qt_5_6_1 Qt_5_7_0}
+-+%Timeline {Qt_5_0_0 Qt_5_0_1 Qt_5_0_2 Qt_5_1_0 Qt_5_1_1 Qt_5_2_0 Qt_5_2_1 Qt_5_3_0 Qt_5_3_1 Qt_5_3_2 Qt_5_4_0 Qt_5_4_1 Qt_5_4_2 Qt_5_5_0 Qt_5_5_1 Qt_5_6_0 Qt_5_6_1 Qt_5_6_2 Qt_5_7_0}
+++%Timeline {Qt_5_0_0 Qt_5_0_1 Qt_5_0_2 Qt_5_1_0 Qt_5_1_1 Qt_5_2_0 Qt_5_2_1 Qt_5_3_0 Qt_5_3_1 Qt_5_3_2 Qt_5_4_0 Qt_5_4_1 Qt_5_4_2 Qt_5_5_0 Qt_5_5_1 Qt_5_6_0 Qt_5_6_1 Qt_5_6_2 Qt_5_6_3 Qt_5_7_0}
+  
+  %Platforms {WS_X11 WS_WIN WS_MACX}
+  
+diff --git a/package/python3/0029-python-config.sh-don-t-reassign-prefix.patch b/package/python3/0029-python-config.sh-don-t-reassign-prefix.patch
+new file mode 100644
+index 0000000000..49137f27ea
+--- /dev/null
++++ b/package/python3/0029-python-config.sh-don-t-reassign-prefix.patch
+@@ -0,0 +1,53 @@
++From 21f787cb9bf0c1440981262f03bc881c5b77c0d8 Mon Sep 17 00:00:00 2001
++From: Matt Weber <matthew.weber@rockwellcollins.com>
++Date: Fri, 6 Oct 2017 09:54:15 -0500
++Subject: [PATCH] python-config.sh: don't reassign ${prefix}
++
++When prefix is set to a path like /usr during crossbuild
++the sed operations end up executing twice, once for the prefix
++reassignment and another for includedir if it is set as a string
++including the ${prefix} variable.  This results in an issue
++when the build directory is under /usr.
++
++This patch updates the remaining location which uses the prefix
++variable to also sed and update to use the real path.
++
++Upstream bug report:
++https://bugs.python.org/issue31713
++
++Buildroot bug:
++https://bugs.busybox.net/show_bug.cgi?id=10361
++
++Fixes failures like the following:
++dbus-python-1.2.4 | NOK | http://autobuild.buildroot.net/results/758858efa97b6273c1b470513f5492258a6d8853
++
++Signed-off-by: Matthew Weber <matthew.weber@rockwellcollins.com>
++---
++ Misc/python-config.sh.in | 3 +--
++ 1 file changed, 1 insertion(+), 2 deletions(-)
++
++diff --git a/Misc/python-config.sh.in b/Misc/python-config.sh.in
++index f905a71..e06be0f 100644
++--- a/Misc/python-config.sh.in
+++++ b/Misc/python-config.sh.in
++@@ -29,7 +29,7 @@ prefix_real=$(installed_prefix "$0")
++ 
++ # Use sed to fix paths from their built-to locations to their installed-to
++ # locations.
++-prefix=$(echo "$prefix_build" | sed "s#^$prefix_build#$prefix_real#")
+++prefix=$prefix_build
++ exec_prefix_build="@exec_prefix@"
++ exec_prefix=$(echo "$exec_prefix_build" | sed "s#^$exec_prefix_build#$prefix_real#")
++ includedir=$(echo "@includedir@" | sed "s#^$prefix_build#$prefix_real#")
++@@ -47,7 +46,7 @@ LINKFORSHARED="@LINKFORSHARED@"
++ OPT="@OPT@"
++ PY_ENABLE_SHARED="@PY_ENABLE_SHARED@"
++ LDVERSION="@LDVERSION@"
++-LIBDEST=${prefix}/lib/python${VERSION}
+++LIBDEST=$( echo "${prefix}/lib/python${VERSION}" | sed "s#^$prefix_build#$prefix_real#")
++ LIBPL=$(echo "@LIBPL@" | sed "s#^$prefix_build#$prefix_real#")
++ SO="@EXT_SUFFIX@"
++ PYTHONFRAMEWORK="@PYTHONFRAMEWORK@"
++-- 
++1.8.3.1
++
+diff --git a/package/qt5/qt5.mk b/package/qt5/qt5.mk
+index 9e77ce351c..5ba5e8f046 100644
+--- a/package/qt5/qt5.mk
++++ b/package/qt5/qt5.mk
+@@ -5,7 +5,7 @@ QT5_SITE = http://download.qt.io/official_releases/qt/$(QT5_VERSION_MAJOR)/$(QT5
+ QT5_SNAPSHOTS_SITE = http://download.qt.io/snapshots/qt/$(QT5_VERSION_MAJOR)/$(QT5_VERSION)/latest_src/submodules
+ else
+ QT5_VERSION_MAJOR = 5.6
+-QT5_VERSION = $(QT5_VERSION_MAJOR).2
++QT5_VERSION = $(QT5_VERSION_MAJOR).3
+ QT5_SITE = http://download.qt.io/official_releases/qt/$(QT5_VERSION_MAJOR)/$(QT5_VERSION)/submodules
+ QT5_SNAPSHOTS_SITE = http://download.qt.io/snapshots/qt/$(QT5_VERSION_MAJOR)/$(QT5_VERSION)/latest_src/submodules
+ endif
+diff --git a/package/qt5/qt53d/qt53d.hash b/package/qt5/qt53d/qt53d.hash
+index 7eaf2cdb13..e342c126de 100644
+--- a/package/qt5/qt53d/qt53d.hash
++++ b/package/qt5/qt53d/qt53d.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qt3d-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 a21786db6e0f5c6c70213fe1a3530ed3d7f28f28401a0f793970e9bc860ce941 qt3d-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qt3d-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 10d05a30e925fcad971126c7f47a5e32c39f007dab96b298b2094501f9607ffe qt3d-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qt3d-opensource-src-5.8.0.tar.xz
+ sha256 3a224576fc922195ac0063b5b351cd6b9d13afcde9cec14317be0347d10c8ae5  qt3d-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5base/5.6.2/0002-eglfs-fix-eglfs_mali-compile-for-odroid-mali.patch b/package/qt5/qt5base/5.6.2/0002-eglfs-fix-eglfs_mali-compile-for-odroid-mali.patch
+deleted file mode 100644
+index cbafb397bb..0000000000
+--- a/package/qt5/qt5base/5.6.2/0002-eglfs-fix-eglfs_mali-compile-for-odroid-mali.patch
++++ /dev/null
+@@ -1,53 +0,0 @@
+-From b6c602e4264021f98ec2c72316e2a2000bf35e82 Mon Sep 17 00:00:00 2001
+-From: Peter Seiderer <ps.report@gmx.net>
+-Date: Mon, 14 Nov 2016 23:42:25 +0100
+-Subject: [PATCH] eglfs: fix eglfs_mali compile for odroid-mali
+-
+-Avoid duplicated struct fbdev_window definition (introduced by [1]) by
+-renaming struct fbdev_window to shadow_fbdev_window.
+-
+-Fixes the following buildroot compile failure ([2]):
+-
+-qeglfsmaliintegration.cpp:45:8: error: redefinition of 'struct fbdev_window'
+- struct fbdev_window {
+-        ^
+-In file included from /accts/mlweber1/rc-buildroot-test/scripts/instance-0/output/host/usr/aarch64-buildroot-linux-gnu/sysroot/usr/include/EGL/eglplatform.h:28:0,
+-                 from /accts/mlweber1/rc-buildroot-test/scripts/instance-0/output/host/usr/aarch64-buildroot-linux-gnu/sysroot/usr/include/EGL/egl.h:36,
+-                 from ../../../eglfs/qeglfsglobal.h:45,
+-                 from ../../../eglfs/qeglfsdeviceintegration.h:48,
+-                 from qeglfsmaliintegration.h:37,
+-                 from qeglfsmaliintegration.cpp:34:
+-
+-[1] https://code.qt.io/cgit/qt/qtbase.git/commit/?h=dev&id=58bed4cda98e8e25db8adc61c7db73b6853077dc
+-[2] http://autobuild.buildroot.net/results/48c/48c458c035162169e8ca7c34ae65e9064822f25a
+-
+-Signed-off-by: Peter Seiderer <ps.report@gmx.net>
+----
+- .../eglfs/deviceintegration/eglfs_mali/qeglfsmaliintegration.cpp      | 4 ++--
+- 1 file changed, 2 insertions(+), 2 deletions(-)
+-
+-diff --git a/src/plugins/platforms/eglfs/deviceintegration/eglfs_mali/qeglfsmaliintegration.cpp b/src/plugins/platforms/eglfs/deviceintegration/eglfs_mali/qeglfsmaliintegration.cpp
+-index 43decdf..aeba83f 100644
+---- a/src/plugins/platforms/eglfs/deviceintegration/eglfs_mali/qeglfsmaliintegration.cpp
+-+++ b/src/plugins/platforms/eglfs/deviceintegration/eglfs_mali/qeglfsmaliintegration.cpp
+-@@ -42,7 +42,7 @@
+- 
+- QT_BEGIN_NAMESPACE
+- 
+--struct fbdev_window {
+-+struct shadow_fbdev_window {
+-     unsigned short width;
+-     unsigned short height;
+- };
+-@@ -85,7 +85,7 @@ EGLNativeWindowType QEglFSMaliIntegration::createNativeWindow(QPlatformWindow *w
+-     Q_UNUSED(window);
+-     Q_UNUSED(format);
+- 
+--    fbdev_window *fbwin = reinterpret_cast<fbdev_window *>(malloc(sizeof(fbdev_window)));
+-+    shadow_fbdev_window *fbwin = reinterpret_cast<shadow_fbdev_window *>(malloc(sizeof(shadow_fbdev_window)));
+-     if (NULL == fbwin)
+-         return 0;
+- 
+--- 
+-2.8.1
+-
+diff --git a/package/qt5/qt5base/5.6.2/0001-eglfs-rasp-pi-header-inclusion.patch b/package/qt5/qt5base/5.6.3/0001-eglfs-rasp-pi-header-inclusion.patch
+similarity index 100%
+rename from package/qt5/qt5base/5.6.2/0001-eglfs-rasp-pi-header-inclusion.patch
+rename to package/qt5/qt5base/5.6.3/0001-eglfs-rasp-pi-header-inclusion.patch
+diff --git a/package/qt5/qt5base/qt5base.hash b/package/qt5/qt5base/qt5base.hash
+index 3f6af8acb0..fb27dcb768 100644
+--- a/package/qt5/qt5base/qt5base.hash
++++ b/package/qt5/qt5base/qt5base.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtbase-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 2f6eae93c5d982fe0a387a01aeb3435571433e23e9d9d9246741faf51f1ee787 qtbase-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtbase-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 fef48529a6fc2617a30d75d952cb327c6be341fd104154993922184b3b3b4da1 qtbase-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtbase-opensource-src-5.8.0.tar.xz
+ sha256 c17111ae02a44dc7be1ec2cf979a47ee9e58edf4904041a525c21f4fa53fc005  qtbase-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5canvas3d/qt5canvas3d.hash b/package/qt5/qt5canvas3d/qt5canvas3d.hash
+index 2d84fe45c8..f4b35d357f 100644
+--- a/package/qt5/qt5canvas3d/qt5canvas3d.hash
++++ b/package/qt5/qt5canvas3d/qt5canvas3d.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtcanvas3d-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 d7584d006b03f99692ccabce922e755a6f12bb1ed1fbc99c2b84842b9e0aa0ad qtcanvas3d-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtcanvas3d-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 e99e0e159f2fba539b7947a1921072f6807f20958d32809edbf12aac571f56ff qtcanvas3d-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtcanvas3d-opensource-src-5.8.0.tar.xz
+ sha256 5446f790f526f582df7790e1e1442357f61aac9c23ea9b00d4a791c9d78ccaa3  qtcanvas3d-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5connectivity/qt5connectivity.hash b/package/qt5/qt5connectivity/qt5connectivity.hash
+index d6b841aa45..f872721ee4 100644
+--- a/package/qt5/qt5connectivity/qt5connectivity.hash
++++ b/package/qt5/qt5connectivity/qt5connectivity.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtconnectivity-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 1b672923e0703d62f605ccec97b454b1a04c1f0db47f54b687d009e84eabedf9 qtconnectivity-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtconnectivity-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 fa406e3d63fa4a2acc8ecae6d110f20c766f19a21c7061a12f3c167deb07ccde qtconnectivity-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtconnectivity-opensource-src-5.8.0.tar.xz
+ sha256 7b2d01e9d67f6390a9e64bdae62e81a965b0f0b21137cf1a021e08a28bb227f1  qtconnectivity-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5declarative/qt5declarative.hash b/package/qt5/qt5declarative/qt5declarative.hash
+index 98a46f1fed..c05a9ef135 100644
+--- a/package/qt5/qt5declarative/qt5declarative.hash
++++ b/package/qt5/qt5declarative/qt5declarative.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtdeclarative-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 0086a986bc36b398ba518c404d08cdff0a0d7978c30aa3fa2ab73d71654209da qtdeclarative-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtdeclarative-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 f63fc053d0d16b8a9ca9308f8ead77874b470ae31b66057e2bd336bf648191fc qtdeclarative-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtdeclarative-opensource-src-5.8.0.tar.xz
+ sha256 32941eb9ad12d8735dfc64de8b50b5ab830a6d8705a421c57369de7cb5708a46  qtdeclarative-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5enginio/qt5enginio.hash b/package/qt5/qt5enginio/qt5enginio.hash
+index 995183484c..3cf904a35c 100644
+--- a/package/qt5/qt5enginio/qt5enginio.hash
++++ b/package/qt5/qt5enginio/qt5enginio.hash
+@@ -1,2 +1,2 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtenginio-opensource-src-1.6.2.tar.xz.mirrorlist
++# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtenginio-opensource-src-1.6.2.tar.xz.mirrorlist
+ sha256 90ffc38d214a75ab0ef90a4760843f12bc073ae49c17de24c677d1d403bddcc3 qtenginio-opensource-src-1.6.2.tar.xz
+diff --git a/package/qt5/qt5graphicaleffects/qt5graphicaleffects.hash b/package/qt5/qt5graphicaleffects/qt5graphicaleffects.hash
+index ac4167be9e..a0383ceb84 100644
+--- a/package/qt5/qt5graphicaleffects/qt5graphicaleffects.hash
++++ b/package/qt5/qt5graphicaleffects/qt5graphicaleffects.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtgraphicaleffects-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 1e9f0fac2c72a812d396db74b2d9d12f513d2ec9135d5982ca85aee7f00be75e qtgraphicaleffects-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtgraphicaleffects-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 c742592d5e45b122b29df60b69be23ba7c817f2dc471db86e054f6ea24a999ed qtgraphicaleffects-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtgraphicaleffects-opensource-src-5.8.0.tar.xz
+ sha256 5f2a9b50530ac83d7c2b2ce73fbdf03ac61f83a9521e9d4b796fa17a969dd919  qtgraphicaleffects-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5imageformats/qt5imageformats.hash b/package/qt5/qt5imageformats/qt5imageformats.hash
+index 0a635233f2..f6cf9c8dd4 100644
+--- a/package/qt5/qt5imageformats/qt5imageformats.hash
++++ b/package/qt5/qt5imageformats/qt5imageformats.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtimageformats-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 4fb153be62dac393cbcebab65040b3b9d6edecd1ebbe5e543401b0e45bd147e4 qtimageformats-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtimageformats-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 efe4da3c90c976c9b9a2eb6b081d2b8e1435935695104456276ce98e8a5848c3 qtimageformats-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtimageformats-opensource-src-5.8.0.tar.xz
+ sha256 75045eeac11c96194260badbdb4d3e9eb7b7f9972d18d3491230ea820be4606f  qtimageformats-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5location/qt5location.hash b/package/qt5/qt5location/qt5location.hash
+index 6afc918ea8..8ac821c81d 100644
+--- a/package/qt5/qt5location/qt5location.hash
++++ b/package/qt5/qt5location/qt5location.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtlocation-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 7a8995206ed0220f943a33c037527a1a8243d5386f5ca77bf88152675c28d23a qtlocation-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtlocation-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 b7a81c58cc331fb15bea8fba21d3c9a59f6dc6ad2e4855e30a14ce59a2af1466 qtlocation-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtlocation-opensource-src-5.8.0.tar.xz
+ sha256 48a1e39ed989f0133aeacaa379e9c3958ec9b08c043626bba503619891d21abb  qtlocation-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5multimedia/qt5multimedia.hash b/package/qt5/qt5multimedia/qt5multimedia.hash
+index ffd8a77912..9125d21967 100644
+--- a/package/qt5/qt5multimedia/qt5multimedia.hash
++++ b/package/qt5/qt5multimedia/qt5multimedia.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtmultimedia-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 cb9a70a7c6c0eb5be4a3fcaf9590863479e95a255308bbf07d5b7aa303bb8caf qtmultimedia-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtmultimedia-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 ae36039ea8037742342f1615687e0ca2188f3ed0d700627a5e5be546c15e1b46 qtmultimedia-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtmultimedia-opensource-src-5.8.0.tar.xz
+ sha256 a8bc044834f95208261915feefe5e2fdb6761b76f0f99e21062963bd9f9d4a07  qtmultimedia-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5quickcontrols/qt5quickcontrols.hash b/package/qt5/qt5quickcontrols/qt5quickcontrols.hash
+index 95657d2588..d1843a1a2b 100644
+--- a/package/qt5/qt5quickcontrols/qt5quickcontrols.hash
++++ b/package/qt5/qt5quickcontrols/qt5quickcontrols.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtquickcontrols-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 5ed0f2292be10222dfb1b57a05472798fd759279f65455d91c02ef4fb746102c qtquickcontrols-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtquickcontrols-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 31bb0fc8f21b855af6ff02c415be3246128b523d0ef7c05e248e92281ab0db8e qtquickcontrols-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtquickcontrols-opensource-src-5.8.0.tar.xz
+ sha256 04e70d0ccfd9ba882691a5e8f81e3428ae1b72a76bb9f43ba242f1c33bd7b326  qtquickcontrols-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5quickcontrols2/qt5quickcontrols2.hash b/package/qt5/qt5quickcontrols2/qt5quickcontrols2.hash
+index 80a3103b95..fae1a875c4 100644
+--- a/package/qt5/qt5quickcontrols2/qt5quickcontrols2.hash
++++ b/package/qt5/qt5quickcontrols2/qt5quickcontrols2.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtquickcontrols2-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 09dc1710aa4701aebe145829eb99bab94d0870cf578f7dddcec0af92286dfec1 qtquickcontrols2-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtquickcontrols2-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 ec5078470abe2da888c2be5d1749b5961ef5132487c180ce4d4aa19ea7ff81cb qtquickcontrols2-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtquickcontrols2-opensource-src-5.8.0.tar.xz
+ sha256 b099866ec74f13cf0047274c61f0486d1eba27716fa07b69f682c54d3a4ade1b  qtquickcontrols2-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5script/qt5script.hash b/package/qt5/qt5script/qt5script.hash
+index 6e369d8e0c..a77ad9dee6 100644
+--- a/package/qt5/qt5script/qt5script.hash
++++ b/package/qt5/qt5script/qt5script.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtscript-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 e06ef6b271cae2187b57cd4ffdd6759428fd47f94a060e2ed2af024a8c14110e qtscript-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtscript-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 f08720dd0e3a70377c1cb7fa3b129e24f4cdedade279e51b67c9271ab470b389 qtscript-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtscript-opensource-src-5.8.0.tar.xz
+ sha256 293ab91d2d189d889dc80609aa259190fb7de636d360e904784a5ce1a45e5ad3  qtscript-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5sensors/qt5sensors.hash b/package/qt5/qt5sensors/qt5sensors.hash
+index 307ad6fbd7..5160451635 100644
+--- a/package/qt5/qt5sensors/qt5sensors.hash
++++ b/package/qt5/qt5sensors/qt5sensors.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtsensors-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 a7809081aab4f2f0d7a4f40c3abb02e1690bb390d1dd410d7c6c5019a5053427 qtsensors-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtsensors-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 7502d4dc5571865a7eea2a4180c3be396dfb8ce22df4c4f3d7e9ff32ab334973 qtsensors-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtsensors-opensource-src-5.8.0.tar.xz
+ sha256 3a5d0639ecf8cd30c8ca349c353a8f3c424889b53831e70b6d8c481fc45de796  qtsensors-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5serialbus/qt5serialbus.hash b/package/qt5/qt5serialbus/qt5serialbus.hash
+index f15945c736..5bc6863acf 100644
+--- a/package/qt5/qt5serialbus/qt5serialbus.hash
++++ b/package/qt5/qt5serialbus/qt5serialbus.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtserialbus-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 b39260091691532382935ed51de9ead8e66cfb5f7a6e5410c17cd0695ccaf826 qtserialbus-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtserialbus-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 71c89be3879414e2a11cad93a4882758f9259b1c0aec980560309192c99f9a9e qtserialbus-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtserialbus-opensource-src-5.8.0.tar.xz
+ sha256 58343dd9f2e339d4900a2d4b54ee25ed959cf62bacb012fe61e6b99d7958c10a  qtserialbus-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5serialport/qt5serialport.hash b/package/qt5/qt5serialport/qt5serialport.hash
+index 18c590b642..972810085b 100644
+--- a/package/qt5/qt5serialport/qt5serialport.hash
++++ b/package/qt5/qt5serialport/qt5serialport.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtserialport-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 af76281bad2c2bd283189635316b46091f6712134b845ae1b9e3016eec94f376 qtserialport-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtserialport-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 082d1fee2703aed19f840c4e4031e37c9b929e5bd8ebef2ebac4b28c509bae1a qtserialport-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtserialport-opensource-src-5.8.0.tar.xz
+ sha256 52317fded73ad0beb0a2ecf93124a8e2dfdcf14270a762c1f4fd06fb075506ad  qtserialport-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5svg/qt5svg.hash b/package/qt5/qt5svg/qt5svg.hash
+index 6855e85cbd..237c0729bf 100644
+--- a/package/qt5/qt5svg/qt5svg.hash
++++ b/package/qt5/qt5svg/qt5svg.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtsvg-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 f7a361bf661b31ae7779513559dd0b774171911bc57f5cfb6bed6878ddc8bc4e qtsvg-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtsvg-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 100f183517b46554079beabd8d2cabe3070a74dd0a2e64b6a304eac71cfadcec qtsvg-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtsvg-opensource-src-5.8.0.tar.xz
+ sha256 9873191c211ab4da9c0bc47b1e3549f475db4d448bba3175e0f86b24eefadc89  qtsvg-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5tools/qt5tools.hash b/package/qt5/qt5tools/qt5tools.hash
+index 541d95bef1..6ea4c271db 100644
+--- a/package/qt5/qt5tools/qt5tools.hash
++++ b/package/qt5/qt5tools/qt5tools.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qttools-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 db2bb4318786257a47172c377d9c456d5d5ec760d5d69240a4693dc87989e1b7 qttools-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qttools-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 1a63ba838058d73cb540040589b235ded77f76402693decfd6d4d3c75ea67926 qttools-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qttools-opensource-src-5.8.0.tar.xz
+ sha256 95ec8e76d393b6ba26ffff5041fce41946d2bf3aec1402c6533e24d9fc269d83  qttools-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5webchannel/qt5webchannel.hash b/package/qt5/qt5webchannel/qt5webchannel.hash
+index 7fd01efbe7..ac6a8278c4 100644
+--- a/package/qt5/qt5webchannel/qt5webchannel.hash
++++ b/package/qt5/qt5webchannel/qt5webchannel.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtwebchannel-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 700efdef5f51bdb77093f4db212afe275ad35a710ea08ba0e9e9cbc8f09f1a52 qtwebchannel-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtwebchannel-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 8eb1b0ac2286653c7932758c21e7760788a5d7cfd6162da09afa926d5be50713 qtwebchannel-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtwebchannel-opensource-src-5.8.0.tar.xz
+ sha256 5bf5b15413baa235ee2cbfd136ea3b9303b32879b54f9f25bfb4dc96d37d0b4a  qtwebchannel-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5webkit/qt5webkit.hash b/package/qt5/qt5webkit/qt5webkit.hash
+index 4431e2d163..d4e772c454 100644
+--- a/package/qt5/qt5webkit/qt5webkit.hash
++++ b/package/qt5/qt5webkit/qt5webkit.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/snapshots/qt/5.6/5.6.2/latest_src/submodules/qtwebkit-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 528a6b8b1c5095367b26e8ce4f3a46bb739e2e9913ff4dfc6ef58a04fcd73966 qtwebkit-opensource-src-5.6.2.tar.xz
++# Hash from: http://download.qt.io/community_releases/5.6/5.6.3/qtwebkit-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256  098c6bb25798fbf1b619b540621287787064efc9b586d76ac0ce7e39b87a3896  qtwebkit-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtwebkit-opensource-src-5.8.0.tar.xz
+ sha256 79ae8660086bf92ffb0008b17566270e6477c8fa0daf9bb3ac29404fb5911bec  qtwebkit-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5webkit/qt5webkit.mk b/package/qt5/qt5webkit/qt5webkit.mk
+index 980d2aff01..244f78c401 100644
+--- a/package/qt5/qt5webkit/qt5webkit.mk
++++ b/package/qt5/qt5webkit/qt5webkit.mk
+@@ -5,7 +5,12 @@
+ ################################################################################
+ 
+ QT5WEBKIT_VERSION = $(QT5_VERSION)
++ifeq ($(BR2_PACKAGE_QT5_VERSION_LATEST),y)
+ QT5WEBKIT_SITE = $(QT5_SNAPSHOTS_SITE)
++else
++QT5WEBKIT_SITE = http://download.qt.io/community_releases/5.6/$(QT5_VERSION)
++endif
++
+ QT5WEBKIT_SOURCE = qtwebkit-opensource-src-$(QT5WEBKIT_VERSION).tar.xz
+ QT5WEBKIT_DEPENDENCIES = \
+ 	host-bison host-flex host-gperf host-python host-ruby \
+diff --git a/package/qt5/qt5websockets/qt5websockets.hash b/package/qt5/qt5websockets/qt5websockets.hash
+index a91e0842c7..f69c805447 100644
+--- a/package/qt5/qt5websockets/qt5websockets.hash
++++ b/package/qt5/qt5websockets/qt5websockets.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtwebsockets-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 3cd9d4bbff8e6be5e252f00fc9ecb9ac2d8a193020288c7d1e82583daeb5ba35 qtwebsockets-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtwebsockets-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 a2439045616c89dfe06333734ff4726075c92e01db6e6b6863bc138e39c028eb qtwebsockets-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtwebsockets-opensource-src-5.8.0.tar.xz
+ sha256 aa110af297d0d3239f346c3ee0cd43621adf463eb62a04941bbfe3fcccb845f5  qtwebsockets-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5x11extras/qt5x11extras.hash b/package/qt5/qt5x11extras/qt5x11extras.hash
+index eb0dc6c254..b251899226 100644
+--- a/package/qt5/qt5x11extras/qt5x11extras.hash
++++ b/package/qt5/qt5x11extras/qt5x11extras.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtx11extras-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 71ffde1cfaeec310677b69ecd16cb5992e8885cf3e73b4cec7d6e7a115b40ced qtx11extras-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtx11extras-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 1e7a8e96e0629f2b2b78de684b156b357210cf5df6b42f30789423f2cb07677f qtx11extras-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtx11extras-opensource-src-5.8.0.tar.xz
+ sha256 bed7f2b5123a9849ec94afa67db5f296e6f527c6330f47a680c83586d3a4280e  qtx11extras-opensource-src-5.8.0.tar.xz
+diff --git a/package/qt5/qt5xmlpatterns/qt5xmlpatterns.hash b/package/qt5/qt5xmlpatterns/qt5xmlpatterns.hash
+index c1bb6637db..f9db184bbe 100644
+--- a/package/qt5/qt5xmlpatterns/qt5xmlpatterns.hash
++++ b/package/qt5/qt5xmlpatterns/qt5xmlpatterns.hash
+@@ -1,5 +1,5 @@
+-# Hash from: http://download.qt.io/official_releases/qt/5.6/5.6.2/submodules/qtxmlpatterns-opensource-src-5.6.2.tar.xz.mirrorlist
+-sha256 7c6df3eebf188d8ce6822a22cebbc63da5ac27047cf1bd7236d5b988244782cc qtxmlpatterns-opensource-src-5.6.2.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtxmlpatterns-opensource-src-5.6.3.tar.xz.mirrorlist
++sha256 a461ff9f0d7310de9b9904ff9cd34919e958bf4071a6fc7096450b8990ab51f6 qtxmlpatterns-opensource-src-5.6.3.tar.xz
+ 
+ # Hash from: http://download.qt.io/official_releases/qt/5.8/5.8.0/submodules/qtxmlpatterns-opensource-src-5.8.0.tar.xz
+ sha256 7bffa65ea52e54fb1314b45222888612d55eaf51a936a6119b8756266439da04  qtxmlpatterns-opensource-src-5.8.0.tar.xz
+diff --git a/package/quagga/0004-bgpd-Fix-AS_PATH-size-calculation-for-long-paths.patch b/package/quagga/0004-bgpd-Fix-AS_PATH-size-calculation-for-long-paths.patch
+new file mode 100644
+index 0000000000..1425cf0426
+--- /dev/null
++++ b/package/quagga/0004-bgpd-Fix-AS_PATH-size-calculation-for-long-paths.patch
+@@ -0,0 +1,33 @@
++From 7a42b78be9a4108d98833069a88e6fddb9285008 Mon Sep 17 00:00:00 2001
++From: Andreas Jaggi <aj@open.ch>
++Date: Mon, 2 Oct 2017 19:38:43 +0530
++Subject: [PATCH] bgpd: Fix AS_PATH size calculation for long paths
++
++If you have an AS_PATH with more entries than
++what can be written into a single AS_SEGMENT_MAX
++it needs to be broken up.  The code that noticed
++that the AS_PATH needs to be broken up was not
++correctly calculating the size of the resulting
++message.  This patch addresses this issue.
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ bgpd/bgp_aspath.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/bgpd/bgp_aspath.c b/bgpd/bgp_aspath.c
++index b7af5e88..d813bfba 100644
++--- a/bgpd/bgp_aspath.c
+++++ b/bgpd/bgp_aspath.c
++@@ -903,7 +903,7 @@ aspath_put (struct stream *s, struct aspath *as, int use32bit )
++               assegment_header_put (s, seg->type, AS_SEGMENT_MAX);
++               assegment_data_put (s, seg->as, AS_SEGMENT_MAX, use32bit);
++               written += AS_SEGMENT_MAX;
++-              bytes += ASSEGMENT_SIZE (written, use32bit);
+++              bytes += ASSEGMENT_SIZE (AS_SEGMENT_MAX, use32bit);
++             }
++           
++           /* write the final segment, probably is also the first */
++-- 
++2.11.0
++
+diff --git a/package/ruby/0001-rubygems-2612-ruby24.patch b/package/ruby/0001-rubygems-2612-ruby24.patch
+deleted file mode 100644
+index ebbefffbed..0000000000
+--- a/package/ruby/0001-rubygems-2612-ruby24.patch
++++ /dev/null
+@@ -1,445 +0,0 @@
+-[PATCH] bump rubygems to 2.6.12
+-
+-Downloaded from upstream:
+-https://bugs.ruby-lang.org/attachments/download/6692/rubygems-2612-ruby24.patch
+-
+-And converted to patch-p1.
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+-diff --git a/lib/rubygems.rb b/lib/rubygems.rb
+-index 5cd1a4c47a..bc5bf9b4c2 100644
+---- a/lib/rubygems.rb
+-+++ b/lib/rubygems.rb
+-@@ -10,7 +10,7 @@
+- require 'thread'
+- 
+- module Gem
+--  VERSION = "2.6.11"
+-+  VERSION = "2.6.12"
+- end
+- 
+- # Must be first since it unloads the prelude from 1.9.2
+-@@ -234,6 +234,7 @@ def self.needs
+- 
+-   def self.finish_resolve(request_set=Gem::RequestSet.new)
+-     request_set.import Gem::Specification.unresolved_deps.values
+-+    request_set.import Gem.loaded_specs.values.map {|s| Gem::Dependency.new(s.name, s.version) }
+- 
+-     request_set.resolve_current.each do |s|
+-       s.full_spec.activate
+-diff --git a/lib/rubygems/commands/open_command.rb b/lib/rubygems/commands/open_command.rb
+-index a89b7421e3..059635e835 100644
+---- a/lib/rubygems/commands/open_command.rb
+-+++ b/lib/rubygems/commands/open_command.rb
+-@@ -72,7 +72,7 @@ def open_editor path
+-   end
+- 
+-   def spec_for name
+--    spec = Gem::Specification.find_all_by_name(name, @version).last
+-+    spec = Gem::Specification.find_all_by_name(name, @version).first
+- 
+-     return spec if spec
+- 
+-diff --git a/lib/rubygems/commands/query_command.rb b/lib/rubygems/commands/query_command.rb
+-index f25d120b88..70f8127292 100644
+---- a/lib/rubygems/commands/query_command.rb
+-+++ b/lib/rubygems/commands/query_command.rb
+-@@ -86,7 +86,7 @@ def execute
+-       name = Array(options[:name])
+-     else
+-       args = options[:args].to_a
+--      name = options[:exact] ? args : args.map{|arg| /#{arg}/i }
+-+      name = options[:exact] ? args.map{|arg| /\A#{Regexp.escape(arg)}\Z/ } : args.map{|arg| /#{arg}/i }
+-     end
+- 
+-     prerelease = options[:prerelease]
+-diff --git a/lib/rubygems/commands/sources_command.rb b/lib/rubygems/commands/sources_command.rb
+-index 9832afd214..7e46963a4c 100644
+---- a/lib/rubygems/commands/sources_command.rb
+-+++ b/lib/rubygems/commands/sources_command.rb
+-@@ -44,7 +44,7 @@ def add_source source_uri # :nodoc:
+-     source = Gem::Source.new source_uri
+- 
+-     begin
+--      if Gem.sources.include? source_uri then
+-+      if Gem.sources.include? source then
+-         say "source #{source_uri} already present in the cache"
+-       else
+-         source.load_specs :released
+-diff --git a/lib/rubygems/dependency_list.rb b/lib/rubygems/dependency_list.rb
+-index 35fe7c4c1a..d8314eaf60 100644
+---- a/lib/rubygems/dependency_list.rb
+-+++ b/lib/rubygems/dependency_list.rb
+-@@ -104,7 +104,7 @@ def find_name(full_name)
+-   end
+- 
+-   def inspect # :nodoc:
+--    "#<%s:0x%x %p>" % [self.class, object_id, map { |s| s.full_name }]
+-+    "%s %p>" % [super[0..-2], map { |s| s.full_name }]
+-   end
+- 
+-   ##
+-diff --git a/lib/rubygems/installer.rb b/lib/rubygems/installer.rb
+-index f4d3e728de..967543c2d1 100644
+---- a/lib/rubygems/installer.rb
+-+++ b/lib/rubygems/installer.rb
+-@@ -214,7 +214,7 @@ def check_executable_overwrite filename # :nodoc:
+- 
+-       ruby_executable = true
+-       existing = io.read.slice(%r{
+--          ^(
+-+          ^\s*(
+-             gem \s |
+-             load \s Gem\.bin_path\( |
+-             load \s Gem\.activate_bin_path\(
+-@@ -701,6 +701,8 @@ def verify_gem_home(unpack = false) # :nodoc:
+-   # Return the text for an application file.
+- 
+-   def app_script_text(bin_file_name)
+-+    # note that the `load` lines cannot be indented, as old RG versions match
+-+    # against the beginning of the line
+-     return <<-TEXT
+- #{shebang bin_file_name}
+- #
+-@@ -723,7 +725,12 @@ def app_script_text(bin_file_name)
+-   end
+- end
+- 
+-+if Gem.respond_to?(:activate_bin_path)
+- load Gem.activate_bin_path('#{spec.name}', '#{bin_file_name}', version)
+-+else
+-+gem #{spec.name.dump}, version
+-+load Gem.bin_path(#{spec.name.dump}, #{bin_file_name.dump}, version)
+-+end
+- TEXT
+-   end
+- 
+-diff --git a/lib/rubygems/platform.rb b/lib/rubygems/platform.rb
+-index d22d91ae54..2dd9ed5782 100644
+---- a/lib/rubygems/platform.rb
+-+++ b/lib/rubygems/platform.rb
+-@@ -112,7 +112,7 @@ def initialize(arch)
+-   end
+- 
+-   def inspect
+--    "#<%s:0x%x @cpu=%p, @os=%p, @version=%p>" % [self.class, object_id, *to_a]
+-+    "%s @cpu=%p, @os=%p, @version=%p>" % [super[0..-2], *to_a]
+-   end
+- 
+-   def to_a
+-diff --git a/lib/rubygems/security.rb b/lib/rubygems/security.rb
+-index 119d6d56f7..6963ca156f 100644
+---- a/lib/rubygems/security.rb
+-+++ b/lib/rubygems/security.rb
+-@@ -455,7 +455,7 @@ def self.create_cert_self_signed subject, key, age = ONE_YEAR,
+- 
+-   ##
+-   # Creates a new key pair of the specified +length+ and +algorithm+.  The
+--  # default is a 2048 bit RSA key.
+-+  # default is a 3072 bit RSA key.
+- 
+-   def self.create_key length = KEY_LENGTH, algorithm = KEY_ALGORITHM
+-     algorithm.new length
+-diff --git a/lib/rubygems/server.rb b/lib/rubygems/server.rb
+-index 81df0e608e..df4eb566d3 100644
+---- a/lib/rubygems/server.rb
+-+++ b/lib/rubygems/server.rb
+-@@ -657,7 +657,7 @@ def root(req, res)
+-       "only_one_executable" => true,
+-       "full_name" => "rubygems-#{Gem::VERSION}",
+-       "has_deps" => false,
+--      "homepage" => "http://docs.rubygems.org/",
+-+      "homepage" => "http://guides.rubygems.org/",
+-       "name" => 'rubygems',
+-       "ri_installed" => true,
+-       "summary" => "RubyGems itself",
+-diff --git a/lib/rubygems/specification.rb b/lib/rubygems/specification.rb
+-index a2f289d162..500f0af768 100644
+---- a/lib/rubygems/specification.rb
+-+++ b/lib/rubygems/specification.rb
+-@@ -2105,7 +2105,7 @@ def inspect # :nodoc:
+-     if $DEBUG
+-       super
+-     else
+--      "#<#{self.class}:0x#{__id__.to_s(16)} #{full_name}>"
+-+      "#{super[0..-2]} #{full_name}>"
+-     end
+-   end
+- 
+-diff --git a/lib/rubygems/test_case.rb b/lib/rubygems/test_case.rb
+-index 86b68e1efb..4e48f1eb4c 100644
+---- a/lib/rubygems/test_case.rb
+-+++ b/lib/rubygems/test_case.rb
+-@@ -484,7 +484,7 @@ def git_gem name = 'a', version = 1
+- 
+-       system @git, 'add', gemspec
+-       system @git, 'commit', '-a', '-m', 'a non-empty commit message', '--quiet'
+--      head = Gem::Util.popen('git', 'rev-parse', 'master').strip
+-+      head = Gem::Util.popen(@git, 'rev-parse', 'master').strip
+-     end
+- 
+-     return name, git_spec.version, directory, head
+-@@ -1498,6 +1498,8 @@ def self.key_path key_name
+- begin
+-   gem 'rdoc'
+-   require 'rdoc'
+-+
+-+  require 'rubygems/rdoc'
+- rescue LoadError, Gem::LoadError
+- end
+- 
+-@@ -1514,3 +1516,4 @@ def self.key_path key_name
+- pid = $$
+- END {tmpdirs.each {|dir| Dir.rmdir(dir)} if $$ == pid}
+- Gem.clear_paths
+-+Gem.loaded_specs.clear
+-diff --git a/test/rubygems/test_gem.rb b/test/rubygems/test_gem.rb
+-index a605f9cdfe..62b36dfd41 100644
+---- a/test/rubygems/test_gem.rb
+-+++ b/test/rubygems/test_gem.rb
+-@@ -75,6 +75,29 @@ def test_self_finish_resolve_wtf
+-     end
+-   end
+- 
+-+  def test_self_finish_resolve_respects_loaded_specs
+-+    save_loaded_features do
+-+      a1 = new_spec "a", "1", "b" => "> 0"
+-+      b1 = new_spec "b", "1", "c" => ">= 1"
+-+      b2 = new_spec "b", "2", "c" => ">= 2"
+-+      c1 = new_spec "c", "1"
+-+      c2 = new_spec "c", "2"
+-+
+-+      install_specs c1, c2, b1, b2, a1
+-+
+-+      a1.activate
+-+      c1.activate
+-+
+-+      assert_equal %w(a-1 c-1), loaded_spec_names
+-+      assert_equal ["b (> 0)"], unresolved_names
+-+
+-+      Gem.finish_resolve
+-+
+-+      assert_equal %w(a-1 b-1 c-1), loaded_spec_names
+-+      assert_equal [], unresolved_names
+-+    end
+-+  end
+-+
+-   def test_self_install
+-     spec_fetcher do |f|
+-       f.gem  'a', 1
+-@@ -492,7 +515,7 @@ def test_self_find_files_with_gemfile
+-     skip if RUBY_VERSION <= "1.8.7"
+- 
+-     cwd = File.expand_path("test/rubygems", @@project_dir)
+--    $LOAD_PATH.unshift cwd
+-+    actual_load_path = $LOAD_PATH.unshift(cwd).dup
+- 
+-     discover_path = File.join 'lib', 'sff', 'discover.rb'
+- 
+-@@ -518,12 +541,12 @@ def test_self_find_files_with_gemfile
+-     expected = [
+-       File.expand_path('test/rubygems/sff/discover.rb', @@project_dir),
+-       File.join(foo1.full_gem_path, discover_path)
+--    ]
+-+    ].sort
+- 
+--    assert_equal expected, Gem.find_files('sff/discover')
+--    assert_equal expected, Gem.find_files('sff/**.rb'), '[ruby-core:31730]'
+-+    assert_equal expected, Gem.find_files('sff/discover').sort
+-+    assert_equal expected, Gem.find_files('sff/**.rb').sort, '[ruby-core:31730]'
+-   ensure
+--    assert_equal cwd, $LOAD_PATH.shift unless RUBY_VERSION <= "1.8.7"
+-+    assert_equal cwd, actual_load_path.shift unless RUBY_VERSION <= "1.8.7"
+-   end
+- 
+-   def test_self_find_latest_files
+-diff --git a/test/rubygems/test_gem_commands_open_command.rb b/test/rubygems/test_gem_commands_open_command.rb
+-index 3ec38972e6..a96fa6ea23 100644
+---- a/test/rubygems/test_gem_commands_open_command.rb
+-+++ b/test/rubygems/test_gem_commands_open_command.rb
+-@@ -24,7 +24,8 @@ def test_execute
+-     @cmd.options[:args] = %w[foo]
+-     @cmd.options[:editor] = "#{Gem.ruby} -e0 --"
+- 
+--    spec = gem 'foo'
+-+    gem 'foo', '1.0.0'
+-+    spec = gem 'foo', '1.0.1'
+-     mock = MiniTest::Mock.new
+-     mock.expect(:call, true, [spec.full_gem_path])
+- 
+-diff --git a/test/rubygems/test_gem_commands_query_command.rb b/test/rubygems/test_gem_commands_query_command.rb
+-index 223f205b2d..d8d682b136 100644
+---- a/test/rubygems/test_gem_commands_query_command.rb
+-+++ b/test/rubygems/test_gem_commands_query_command.rb
+-@@ -642,7 +642,7 @@ def test_execute_local_details
+-     assert_equal expected, @ui.output
+-   end
+- 
+--  def test_execute_exact
+-+  def test_execute_exact_remote
+-     spec_fetcher do |fetcher|
+-       fetcher.spec 'coolgem-omg', 3
+-       fetcher.spec 'coolgem', '4.2.1'
+-@@ -665,6 +665,60 @@ def test_execute_exact
+-     assert_equal expected, @ui.output
+-   end
+- 
+-+  def test_execute_exact_local
+-+    spec_fetcher do |fetcher|
+-+      fetcher.spec 'coolgem-omg', 3
+-+      fetcher.spec 'coolgem', '4.2.1'
+-+      fetcher.spec 'wow_coolgem', 1
+-+    end
+-+
+-+    @cmd.handle_options %w[--exact coolgem]
+-+
+-+    use_ui @ui do
+-+      @cmd.execute
+-+    end
+-+
+-+    expected = <<-EOF
+-+
+-+*** LOCAL GEMS ***
+-+
+-+coolgem (4.2.1)
+-+    EOF
+-+
+-+    assert_equal expected, @ui.output
+-+  end
+-+
+-+  def test_execute_exact_multiple
+-+    spec_fetcher do |fetcher|
+-+      fetcher.spec 'coolgem-omg', 3
+-+      fetcher.spec 'coolgem', '4.2.1'
+-+      fetcher.spec 'wow_coolgem', 1
+-+
+-+      fetcher.spec 'othergem-omg', 3
+-+      fetcher.spec 'othergem', '1.2.3'
+-+      fetcher.spec 'wow_othergem', 1
+-+    end
+-+
+-+    @cmd.handle_options %w[--exact coolgem othergem]
+-+
+-+    use_ui @ui do
+-+      @cmd.execute
+-+    end
+-+
+-+    expected = <<-EOF
+-+
+-+*** LOCAL GEMS ***
+-+
+-+coolgem (4.2.1)
+-+
+-+*** LOCAL GEMS ***
+-+
+-+othergem (1.2.3)
+-+    EOF
+-+
+-+    assert_equal expected, @ui.output
+-+  end
+-+
+-   private
+- 
+-   def add_gems_to_fetcher
+-diff --git a/test/rubygems/test_gem_commands_sources_command.rb b/test/rubygems/test_gem_commands_sources_command.rb
+-index 014b4b4c12..d5b6d99419 100644
+---- a/test/rubygems/test_gem_commands_sources_command.rb
+-+++ b/test/rubygems/test_gem_commands_sources_command.rb
+-@@ -108,6 +108,58 @@ def test_execute_add_redundant_source
+-     assert_equal '', @ui.error
+-   end
+- 
+-+  def test_execute_add_redundant_source_trailing_slash
+-+    # Remove pre-existing gem source (w/ slash)
+-+    repo_with_slash = "http://gems.example.com/"
+-+    @cmd.handle_options %W[--remove #{repo_with_slash}]
+-+    use_ui @ui do
+-+      @cmd.execute
+-+    end
+-+    source = Gem::Source.new repo_with_slash
+-+    assert_equal false, Gem.sources.include?(source)
+-+
+-+    expected = <<-EOF
+-+#{repo_with_slash} removed from sources
+-+    EOF
+-+
+-+    assert_equal expected, @ui.output
+-+    assert_equal '', @ui.error
+-+
+-+    # Re-add pre-existing gem source (w/o slash)
+-+    repo_without_slash = "http://gems.example.com"
+-+    @cmd.handle_options %W[--add #{repo_without_slash}]
+-+    use_ui @ui do
+-+      @cmd.execute
+-+    end
+-+    source = Gem::Source.new repo_without_slash
+-+    assert_equal true, Gem.sources.include?(source)
+-+
+-+    expected = <<-EOF
+-+http://gems.example.com/ removed from sources
+-+http://gems.example.com added to sources
+-+    EOF
+-+
+-+    assert_equal expected, @ui.output
+-+    assert_equal '', @ui.error
+-+
+-+    # Re-add original gem source (w/ slash)
+-+    @cmd.handle_options %W[--add #{repo_with_slash}]
+-+    use_ui @ui do
+-+      @cmd.execute
+-+    end
+-+    source = Gem::Source.new repo_with_slash
+-+    assert_equal true, Gem.sources.include?(source)
+-+
+-+    expected = <<-EOF
+-+http://gems.example.com/ removed from sources
+-+http://gems.example.com added to sources
+-+source http://gems.example.com/ already present in the cache
+-+    EOF
+-+
+-+    assert_equal expected, @ui.output
+-+    assert_equal '', @ui.error 
+-+  end
+-+
+-   def test_execute_add_http_rubygems_org
+-     http_rubygems_org = 'http://rubygems.org'
+- 
+-diff --git a/test/rubygems/test_gem_installer.rb b/test/rubygems/test_gem_installer.rb
+-index 6ceb2c6dfc..882981d344 100644
+---- a/test/rubygems/test_gem_installer.rb
+-+++ b/test/rubygems/test_gem_installer.rb
+-@@ -62,7 +62,12 @@ def test_app_script_text
+-   end
+- end
+- 
+-+if Gem.respond_to?(:activate_bin_path)
+- load Gem.activate_bin_path('a', 'executable', version)
+-+else
+-+gem "a", version
+-+load Gem.bin_path("a", "executable", version)
+-+end
+-     EOF
+- 
+-     wrapper = @installer.app_script_text 'executable'
+-diff --git a/test/rubygems/test_require.rb b/test/rubygems/test_require.rb
+-index dd606e44d4..936f78fb2a 100644
+---- a/test/rubygems/test_require.rb
+-+++ b/test/rubygems/test_require.rb
+-@@ -301,6 +301,17 @@ def test_default_gem_only
+-     assert_equal %w(default-2.0.0.0), loaded_spec_names
+-   end
+- 
+-+  def test_realworld_default_gem
+-+    skip "no default gems on ruby < 2.0" unless RUBY_VERSION >= "2"
+-+    cmd = <<-RUBY
+-+      $stderr = $stdout
+-+      require "json"
+-+      puts Gem.loaded_specs["json"].default_gem?
+-+    RUBY
+-+    output = Gem::Util.popen(Gem.ruby, "-e", cmd).strip
+-+    assert_equal "true", output
+-+  end
+-+
+-   def test_default_gem_and_normal_gem
+-     default_gem_spec = new_default_spec("default", "2.0.0.0",
+-                                         nil, "default/gem.rb")
+diff --git a/package/ruby/0002-rubygems-2613-ruby24.patch b/package/ruby/0002-rubygems-2613-ruby24.patch
+deleted file mode 100644
+index ea25d90347..0000000000
+--- a/package/ruby/0002-rubygems-2613-ruby24.patch
++++ /dev/null
+@@ -1,364 +0,0 @@
+-[PATCH] bump rubygems to 2.6.12
+-
+-Downloaded from upstream:
+-https://bugs.ruby-lang.org/attachments/download/6693/rubygems-2613-ruby24.patch
+-
+-And converted to patch-p1.
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+-
+-diff --git a/lib/rubygems.rb b/lib/rubygems.rb
+-index bc5bf9b4c2..55aa85b8b2 100644
+---- a/lib/rubygems.rb
+-+++ b/lib/rubygems.rb
+-@@ -10,7 +10,7 @@
+- require 'thread'
+- 
+- module Gem
+--  VERSION = "2.6.12"
+-+  VERSION = "2.6.13"
+- end
+- 
+- # Must be first since it unloads the prelude from 1.9.2
+-diff --git a/lib/rubygems/commands/query_command.rb b/lib/rubygems/commands/query_command.rb
+-index 70f8127292..44144203e0 100644
+---- a/lib/rubygems/commands/query_command.rb
+-+++ b/lib/rubygems/commands/query_command.rb
+-@@ -226,7 +226,7 @@ def output_versions output, versions
+-         end
+-       end
+- 
+--      output << make_entry(matching_tuples, platforms)
+-+      output << clean_text(make_entry(matching_tuples, platforms))
+-     end
+-   end
+- 
+-@@ -353,7 +353,8 @@ def spec_platforms entry, platforms
+-   end
+- 
+-   def spec_summary entry, spec
+--    entry << "\n\n" << format_text(spec.summary, 68, 4)
+-+    summary = truncate_text(spec.summary, "the summary for #{spec.full_name}")
+-+    entry << "\n\n" << format_text(summary, 68, 4)
+-   end
+- 
+- end
+-diff --git a/lib/rubygems/installer.rb b/lib/rubygems/installer.rb
+-index 967543c2d1..6fd3399dd4 100644
+---- a/lib/rubygems/installer.rb
+-+++ b/lib/rubygems/installer.rb
+-@@ -697,6 +697,11 @@ def verify_gem_home(unpack = false) # :nodoc:
+-       unpack or File.writable?(gem_home)
+-   end
+- 
+-+  def verify_spec_name
+-+    return if spec.name =~ Gem::Specification::VALID_NAME_PATTERN
+-+    raise Gem::InstallError, "#{spec} has an invalid name"
+-+  end
+-+
+-   ##
+-   # Return the text for an application file.
+- 
+-@@ -823,6 +828,8 @@ def pre_install_checks
+- 
+-     ensure_loadable_spec
+- 
+-+    verify_spec_name
+-+
+-     if options[:install_as_default]
+-       Gem.ensure_default_gem_subdirectories gem_home
+-     else
+-diff --git a/lib/rubygems/remote_fetcher.rb b/lib/rubygems/remote_fetcher.rb
+-index e6a13d4b8c..8f0cf0b402 100644
+---- a/lib/rubygems/remote_fetcher.rb
+-+++ b/lib/rubygems/remote_fetcher.rb
+-@@ -110,7 +110,7 @@ def api_endpoint(uri)
+-     else
+-       target = res.target.to_s.strip
+- 
+--      if /\.#{Regexp.quote(host)}\z/ =~ target
+-+      if URI("http://" + target).host.end_with?(".#{host}")
+-         return URI.parse "#{uri.scheme}://#{target}#{uri.path}"
+-       end
+- 
+-diff --git a/lib/rubygems/specification.rb b/lib/rubygems/specification.rb
+-index 500f0af768..88e320c05a 100644
+---- a/lib/rubygems/specification.rb
+-+++ b/lib/rubygems/specification.rb
+-@@ -108,6 +108,8 @@ class Gem::Specification < Gem::BasicSpecification
+- 
+-   private_constant :LOAD_CACHE if defined? private_constant
+- 
+-+  VALID_NAME_PATTERN = /\A[a-zA-Z0-9\.\-\_]+\z/ # :nodoc:
+-+
+-   # :startdoc:
+- 
+-   ##
+-@@ -2671,9 +2673,15 @@ def validate packaging = true
+-       end
+-     end
+- 
+--    unless String === name then
+-+    if !name.is_a?(String) then
+-       raise Gem::InvalidSpecificationException,
+--            "invalid value for attribute name: \"#{name.inspect}\""
+-+            "invalid value for attribute name: \"#{name.inspect}\" must be a string"
+-+    elsif name !~ /[a-zA-Z]/ then
+-+      raise Gem::InvalidSpecificationException,
+-+            "invalid value for attribute name: #{name.dump} must include at least one letter"
+-+    elsif name !~ VALID_NAME_PATTERN then
+-+      raise Gem::InvalidSpecificationException,
+-+            "invalid value for attribute name: #{name.dump} can only include letters, numbers, dashes, and underscores"
+-     end
+- 
+-     if raw_require_paths.empty? then
+-diff --git a/lib/rubygems/text.rb b/lib/rubygems/text.rb
+-index 732f1b99f2..b944b62c27 100644
+---- a/lib/rubygems/text.rb
+-+++ b/lib/rubygems/text.rb
+-@@ -6,13 +6,26 @@
+- 
+- module Gem::Text
+- 
+-+  ##
+-+  # Remove any non-printable characters and make the text suitable for
+-+  # printing.
+-+  def clean_text(text)
+-+    text.gsub(/[\000-\b\v-\f\016-\037\177]/, ".".freeze)
+-+  end
+-+
+-+  def truncate_text(text, description, max_length = 100_000)
+-+    raise ArgumentError, "max_length must be positive" unless max_length > 0
+-+    return text if text.size <= max_length
+-+    "Truncating #{description} to #{max_length.to_s.reverse.gsub(/...(?=.)/,'\&,').reverse} characters:\n" + text[0, max_length]
+-+  end
+-+
+-   ##
+-   # Wraps +text+ to +wrap+ characters and optionally indents by +indent+
+-   # characters
+- 
+-   def format_text(text, wrap, indent=0)
+-     result = []
+--    work = text.dup
+-+    work = clean_text(text)
+- 
+-     while work.length > wrap do
+-       if work =~ /^(.{0,#{wrap}})[ \n]/ then
+-diff --git a/test/rubygems/test_gem_commands_query_command.rb b/test/rubygems/test_gem_commands_query_command.rb
+-index d8d682b136..469223c6c0 100644
+---- a/test/rubygems/test_gem_commands_query_command.rb
+-+++ b/test/rubygems/test_gem_commands_query_command.rb
+-@@ -116,6 +116,86 @@ def test_execute_details
+-     This is a lot of text. This is a lot of text. This is a lot of text.
+-     This is a lot of text.
+- 
+-+pl (1)
+-+    Platform: i386-linux
+-+    Author: A User
+-+    Homepage: http://example.com
+-+
+-+    this is a summary
+-+    EOF
+-+
+-+    assert_equal expected, @ui.output
+-+    assert_equal '', @ui.error
+-+  end
+-+
+-+  def test_execute_details_cleans_text
+-+    spec_fetcher do |fetcher|
+-+      fetcher.spec 'a', 2 do |s|
+-+        s.summary = 'This is a lot of text. ' * 4
+-+        s.authors = ["Abraham Lincoln \x01", "\x02 Hirohito"]
+-+        s.homepage = "http://a.example.com/\x03"
+-+      end
+-+
+-+      fetcher.legacy_platform
+-+    end
+-+
+-+    @cmd.handle_options %w[-r -d]
+-+
+-+    use_ui @ui do
+-+      @cmd.execute
+-+    end
+-+
+-+    expected = <<-EOF
+-+
+-+*** REMOTE GEMS ***
+-+
+-+a (2)
+-+    Authors: Abraham Lincoln ., . Hirohito
+-+    Homepage: http://a.example.com/.
+-+
+-+    This is a lot of text. This is a lot of text. This is a lot of text.
+-+    This is a lot of text.
+-+
+-+pl (1)
+-+    Platform: i386-linux
+-+    Author: A User
+-+    Homepage: http://example.com
+-+
+-+    this is a summary
+-+    EOF
+-+
+-+    assert_equal expected, @ui.output
+-+    assert_equal '', @ui.error
+-+  end
+-+
+-+  def test_execute_details_truncates_summary
+-+    spec_fetcher do |fetcher|
+-+      fetcher.spec 'a', 2 do |s|
+-+        s.summary = 'This is a lot of text. ' * 10_000
+-+        s.authors = ["Abraham Lincoln \x01", "\x02 Hirohito"]
+-+        s.homepage = "http://a.example.com/\x03"
+-+      end
+-+
+-+      fetcher.legacy_platform
+-+    end
+-+
+-+    @cmd.handle_options %w[-r -d]
+-+
+-+    use_ui @ui do
+-+      @cmd.execute
+-+    end
+-+
+-+    expected = <<-EOF
+-+
+-+*** REMOTE GEMS ***
+-+
+-+a (2)
+-+    Authors: Abraham Lincoln ., . Hirohito
+-+    Homepage: http://a.example.com/.
+-+
+-+    Truncating the summary for a-2 to 100,000 characters:
+-+#{"    This is a lot of text. This is a lot of text. This is a lot of text.\n" * 1449}    This is a lot of te
+-+
+- pl (1)
+-     Platform: i386-linux
+-     Author: A User
+-diff --git a/test/rubygems/test_gem_installer.rb b/test/rubygems/test_gem_installer.rb
+-index 882981d344..dd049214fb 100644
+---- a/test/rubygems/test_gem_installer.rb
+-+++ b/test/rubygems/test_gem_installer.rb
+-@@ -1448,6 +1448,26 @@ def test_pre_install_checks_wrong_rubygems_version
+-     end
+-   end
+- 
+-+  def test_pre_install_checks_malicious_name
+-+    spec = util_spec '../malicious', '1'
+-+    def spec.full_name # so the spec is buildable
+-+      "malicious-1"
+-+    end
+-+    def spec.validate; end
+-+
+-+    util_build_gem spec
+-+
+-+    gem = File.join(@gemhome, 'cache', spec.file_name)
+-+
+-+    use_ui @ui do
+-+      @installer = Gem::Installer.at gem
+-+      e = assert_raises Gem::InstallError do
+-+        @installer.pre_install_checks
+-+      end
+-+      assert_equal '#<Gem::Specification name=../malicious version=1> has an invalid name', e.message
+-+    end
+-+  end
+-+
+-   def test_shebang
+-     util_make_exec @spec, "#!/usr/bin/ruby"
+- 
+-diff --git a/test/rubygems/test_gem_remote_fetcher.rb b/test/rubygems/test_gem_remote_fetcher.rb
+-index cb994462cd..fbb7d89019 100644
+---- a/test/rubygems/test_gem_remote_fetcher.rb
+-+++ b/test/rubygems/test_gem_remote_fetcher.rb
+-@@ -241,6 +241,21 @@ def test_api_endpoint_ignores_trans_domain_values_that_end_with_original
+-     dns.verify
+-   end
+- 
+-+  def test_api_endpoint_ignores_trans_domain_values_that_end_with_original_in_path
+-+    uri = URI.parse "http://example.com/foo"
+-+    target = MiniTest::Mock.new
+-+    target.expect :target, "evil.com/a.example.com"
+-+
+-+    dns = MiniTest::Mock.new
+-+    dns.expect :getresource, target, [String, Object]
+-+
+-+    fetch = Gem::RemoteFetcher.new nil, dns
+-+    assert_equal URI.parse("http://example.com/foo"), fetch.api_endpoint(uri)
+-+
+-+    target.verify
+-+    dns.verify
+-+  end
+-+
+-   def test_api_endpoint_timeout_warning
+-     uri = URI.parse "http://gems.example.com/foo"
+- 
+-diff --git a/test/rubygems/test_gem_specification.rb b/test/rubygems/test_gem_specification.rb
+-index d43289d745..0fcc11e78f 100644
+---- a/test/rubygems/test_gem_specification.rb
+-+++ b/test/rubygems/test_gem_specification.rb
+-@@ -2985,7 +2985,37 @@ def test_validate_name
+-       @a1.validate
+-     end
+- 
+--    assert_equal 'invalid value for attribute name: ":json"', e.message
+-+    assert_equal 'invalid value for attribute name: ":json" must be a string', e.message
+-+
+-+    @a1.name = []
+-+    e = assert_raises Gem::InvalidSpecificationException do
+-+      @a1.validate
+-+    end
+-+    assert_equal "invalid value for attribute name: \"[]\" must be a string", e.message
+-+
+-+    @a1.name = ""
+-+    e = assert_raises Gem::InvalidSpecificationException do
+-+      @a1.validate
+-+    end
+-+    assert_equal "invalid value for attribute name: \"\" must include at least one letter", e.message
+-+
+-+    @a1.name = "12345"
+-+    e = assert_raises Gem::InvalidSpecificationException do
+-+      @a1.validate
+-+    end
+-+    assert_equal "invalid value for attribute name: \"12345\" must include at least one letter", e.message
+-+
+-+    @a1.name = "../malicious"
+-+    e = assert_raises Gem::InvalidSpecificationException do
+-+      @a1.validate
+-+    end
+-+    assert_equal "invalid value for attribute name: \"../malicious\" can only include letters, numbers, dashes, and underscores", e.message
+-+
+-+    @a1.name = "\ba\t"
+-+    e = assert_raises Gem::InvalidSpecificationException do
+-+      @a1.validate
+-+    end
+-+    assert_equal "invalid value for attribute name: \"\\ba\\t\" can only include letters, numbers, dashes, and underscores", e.message
+-   end
+- 
+-   def test_validate_non_nil
+-diff --git a/test/rubygems/test_gem_text.rb b/test/rubygems/test_gem_text.rb
+-index a6e22e04da..04f3f605e8 100644
+---- a/test/rubygems/test_gem_text.rb
+-+++ b/test/rubygems/test_gem_text.rb
+-@@ -36,6 +36,10 @@ def test_format_text_trailing # for two spaces after .
+-     assert_equal expected, format_text(text, 78)
+-   end
+- 
+-+  def test_format_removes_nonprintable_characters
+-+    assert_equal "text with weird .. stuff .", format_text("text with weird \x1b\x02 stuff \x7f", 40)
+-+  end
+-+
+-   def test_min3
+-     assert_equal 1, min3(1, 1, 1)
+-     assert_equal 1, min3(1, 1, 2)
+-@@ -74,4 +78,11 @@ def test_levenshtein_distance_replace
+-     assert_equal 7, levenshtein_distance("xxxxxxx", "ZenTest")
+-     assert_equal 7, levenshtein_distance("zentest", "xxxxxxx")
+-   end
+-+
+-+  def test_truncate_text
+-+    assert_equal "abc", truncate_text("abc", "desc")
+-+    assert_equal "Truncating desc to 2 characters:\nab", truncate_text("abc", "desc", 2)
+-+    s = "ab" * 500_001
+-+    assert_equal "Truncating desc to 1,000,000 characters:\n#{s[0, 1_000_000]}", truncate_text(s, "desc", 1_000_000)
+-+  end
+- end
+diff --git a/package/ruby/ruby.hash b/package/ruby/ruby.hash
+index 624ce40f57..d066186d56 100644
+--- a/package/ruby/ruby.hash
++++ b/package/ruby/ruby.hash
+@@ -1,2 +1,6 @@
+-# From https://www.ruby-lang.org/en/news/2017/03/22/ruby-2-4-1-released/
+-sha256 4fc8a9992de3e90191de369270ea4b6c1b171b7941743614cc50822ddc1fe654  ruby-2.4.1.tar.xz
++# From https://www.ruby-lang.org/en/news/2017/09/14/ruby-2-4-2-released/
++sha256 748a8980d30141bd1a4124e11745bb105b436fb1890826e0d2b9ea31af27f735  ruby-2.4.2.tar.xz
++# License files, Locally calculated
++sha256 5cda9584acd5e1096276a375085b7e659fa67a072fd69ec2c3931e54f7f563bb  LEGAL
++sha256 f5eb1b2956d5f7a67b2e5722a3749bc2fe86f9c580f2e3f5a08519cf073b5864  COPYING
++sha256 a5e3042dacb53eebda91f3b1caefbfec8307711df8c4ed1ed20e4e97c43307a4  BSDL
+diff --git a/package/ruby/ruby.mk b/package/ruby/ruby.mk
+index d0a81f1d3e..dd3b1d240e 100644
+--- a/package/ruby/ruby.mk
++++ b/package/ruby/ruby.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ RUBY_VERSION_MAJOR = 2.4
+-RUBY_VERSION = $(RUBY_VERSION_MAJOR).1
++RUBY_VERSION = $(RUBY_VERSION_MAJOR).2
+ RUBY_VERSION_EXT = 2.4.0
+ RUBY_SITE = http://cache.ruby-lang.org/pub/ruby/$(RUBY_VERSION_MAJOR)
+ RUBY_SOURCE = ruby-$(RUBY_VERSION).tar.xz
+diff --git a/package/samba4/samba4.hash b/package/samba4/samba4.hash
+index 847be87c1c..cddecd9f48 100644
+--- a/package/samba4/samba4.hash
++++ b/package/samba4/samba4.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated
+-sha256  15dc04fd2b19081daf1118318f43f88ef7260b3fc6e4f86ee7c7913bb7c92ed9 samba-4.5.14.tar.gz
++sha256  811bf727892a1e1e3d170eb72eb39c43d06ed8ff557e5e036a41aabc19008e94 samba-4.5.15.tar.gz
+diff --git a/package/samba4/samba4.mk b/package/samba4/samba4.mk
+index e4778d0a5d..c8b1e5add4 100644
+--- a/package/samba4/samba4.mk
++++ b/package/samba4/samba4.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SAMBA4_VERSION = 4.5.14
++SAMBA4_VERSION = 4.5.15
+ SAMBA4_SITE = https://download.samba.org/pub/samba/stable
+ SAMBA4_SOURCE = samba-$(SAMBA4_VERSION).tar.gz
+ SAMBA4_INSTALL_STAGING = YES
+diff --git a/package/snmppp/snmppp.hash b/package/snmppp/snmppp.hash
+index 75ecddade2..5c8feee152 100644
+--- a/package/snmppp/snmppp.hash
++++ b/package/snmppp/snmppp.hash
+@@ -1,2 +1,3 @@
+ # Locally computed:
+-sha256 2ef0cb20658c1eb9e053f8a7a9d5c8f5ebf2f734d37b692fdbf7163ea17dde6f  snmp++-3.3.9.tar.gz
++sha256 6827adb6a6a68a7f32c41fa12bdfd0aa48f4825b8773f63fc4d5c8482d4ed481	snmp++-3.3.10.tar.gz
++sha256 d00d5deb9ce44fa01ddf6f882de3ea8b9e8402f776b546dd982d55367ebbd392	src/v3.cpp
+diff --git a/package/snmppp/snmppp.mk b/package/snmppp/snmppp.mk
+index 67410d9e4d..4ceb61c9fc 100644
+--- a/package/snmppp/snmppp.mk
++++ b/package/snmppp/snmppp.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SNMPPP_VERSION = 3.3.9
++SNMPPP_VERSION = 3.3.10
+ SNMPPP_SOURCE = snmp++-$(SNMPPP_VERSION).tar.gz
+ SNMPPP_SITE = http://www.agentpp.com/download
+ SNMPPP_DEPENDENCIES = host-pkgconf
+diff --git a/package/ti-gfx/Config.in b/package/ti-gfx/Config.in
+index 6ec2f23117..dc49d822a2 100644
+--- a/package/ti-gfx/Config.in
++++ b/package/ti-gfx/Config.in
+@@ -1,6 +1,7 @@
+ config BR2_PACKAGE_TI_GFX
+ 	bool "ti-gfx"
+ 	depends on BR2_LINUX_KERNEL && BR2_TOOLCHAIN_USES_GLIBC && BR2_arm
++	depends on BR2_HOSTARCH = "x86_64" || BR2_HOSTARCH = "x86"
+ 	select BR2_HOSTARCH_NEEDS_IA32_LIBS
+ 	select BR2_PACKAGE_HAS_LIBEGL
+ 	select BR2_PACKAGE_HAS_LIBGLES
+diff --git a/package/vboot-utils/vboot-utils.mk b/package/vboot-utils/vboot-utils.mk
+index a7592d6a4e..a64e1d5435 100644
+--- a/package/vboot-utils/vboot-utils.mk
++++ b/package/vboot-utils/vboot-utils.mk
+@@ -21,12 +21,17 @@ HOST_VBOOT_UTILS_DEPENDENCIES = host-openssl host-util-linux host-pkgconf
+ # media partitioning.
+ #
+ # make target for futility is "futil".
++#
++# The value of ARCH is only relevant for crossystem (a target tool) and
++# does not affect futil or cgpt in any way as long as it is one of the
++# supported targets.
+ 
+ define HOST_VBOOT_UTILS_BUILD_CMDS
+ 	$(HOST_MAKE_ENV) $(MAKE) -C $(@D) \
+ 		CC="$(HOSTCC)" \
+ 		CFLAGS="$(HOST_CFLAGS) -D_LARGEFILE64_SOURCE -D_GNU_SOURCE" \
+ 		LDFLAGS="$(HOST_LDFLAGS)" \
++		ARCH=arm \
+ 		futil cgpt
+ endef
+ 
+diff --git a/package/webkitgtk/webkitgtk.hash b/package/webkitgtk/webkitgtk.hash
+index b1161157e7..669bb1cc62 100644
+--- a/package/webkitgtk/webkitgtk.hash
++++ b/package/webkitgtk/webkitgtk.hash
+@@ -1,4 +1,4 @@
+-# From https://webkitgtk.org/releases/webkitgtk-2.18.2.tar.xz.sums
+-md5 f63b3897d6fbf660bf72dfaca1fdea16 webkitgtk-2.18.2.tar.xz
+-sha1 75571807a1f8c9efdf62f1c37e9fadf52b73d367 webkitgtk-2.18.2.tar.xz
+-sha256 b14cb3f1b5321b1dc50abcc0445a97f8e2f8813562bca7ce4d2f8069f6fec8e7 webkitgtk-2.18.2.tar.xz
++# From https://webkitgtk.org/releases/webkitgtk-2.18.3.tar.xz.sums
++md5 264a22d7467deae606e42b6eb5dd65af webkitgtk-2.18.3.tar.xz
++sha1 164cad34281ef597a3d4ad214e8037c3ddef4d17 webkitgtk-2.18.3.tar.xz
++sha256 e15420e1616a6f70f321541d467af5ca285bff66b1e0fa68a01df3ccf1b18f9e webkitgtk-2.18.3.tar.xz
+diff --git a/package/webkitgtk/webkitgtk.mk b/package/webkitgtk/webkitgtk.mk
+index 092c24e028..43e9aa0598 100644
+--- a/package/webkitgtk/webkitgtk.mk
++++ b/package/webkitgtk/webkitgtk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WEBKITGTK_VERSION = 2.18.2
++WEBKITGTK_VERSION = 2.18.3
+ WEBKITGTK_SITE = http://www.webkitgtk.org/releases
+ WEBKITGTK_SOURCE = webkitgtk-$(WEBKITGTK_VERSION).tar.xz
+ WEBKITGTK_INSTALL_STAGING = YES
+diff --git a/package/wireshark/wireshark.hash b/package/wireshark/wireshark.hash
+index 09f6573a16..3494f2e5bf 100644
+--- a/package/wireshark/wireshark.hash
++++ b/package/wireshark/wireshark.hash
+@@ -1,2 +1,2 @@
+-# From: https://www.wireshark.org/download/src/all-versions/SIGNATURES-2.2.6.txt
+-sha256 f627d51eda85f5ae5f5c8c9fc1f6539ffc2a270dd7500dc7f67490a8534ca849  wireshark-2.2.6.tar.bz2
++# From: https://www.wireshark.org/download/src/all-versions/SIGNATURES-2.2.10.txt
++sha256 8574a5e1fdec7affae640924bd46c1aed1bd866e02632fa5625e1450e4a50707  wireshark-2.2.10.tar.bz2
+diff --git a/package/wireshark/wireshark.mk b/package/wireshark/wireshark.mk
+index fee6a81739..0b781a23ef 100644
+--- a/package/wireshark/wireshark.mk
++++ b/package/wireshark/wireshark.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WIRESHARK_VERSION = 2.2.6
++WIRESHARK_VERSION = 2.2.10
+ WIRESHARK_SOURCE = wireshark-$(WIRESHARK_VERSION).tar.bz2
+ WIRESHARK_SITE = https://www.wireshark.org/download/src/all-versions
+ WIRESHARK_LICENSE = wireshark license
+diff --git a/package/x11r7/xapp_xdriinfo/xapp_xdriinfo.mk b/package/x11r7/xapp_xdriinfo/xapp_xdriinfo.mk
+index bb00d3ba07..ffab5170dc 100644
+--- a/package/x11r7/xapp_xdriinfo/xapp_xdriinfo.mk
++++ b/package/x11r7/xapp_xdriinfo/xapp_xdriinfo.mk
+@@ -9,6 +9,6 @@ XAPP_XDRIINFO_SOURCE = xdriinfo-$(XAPP_XDRIINFO_VERSION).tar.bz2
+ XAPP_XDRIINFO_SITE = http://xorg.freedesktop.org/releases/individual/app
+ XAPP_XDRIINFO_LICENSE = MIT
+ XAPP_XDRIINFO_LICENSE_FILES = COPYING
+-XAPP_XDRIINFO_DEPENDENCIES = xlib_libX11 xproto_glproto mesa3d
++XAPP_XDRIINFO_DEPENDENCIES = libgl xlib_libX11 xproto_glproto
+ 
+ $(eval $(autotools-package))
+diff --git a/support/download/svn b/support/download/svn
+index 77abf3d02d..9f27d71f86 100755
+--- a/support/download/svn
++++ b/support/download/svn
+@@ -33,6 +33,6 @@ _svn() {
+     eval ${SVN} "${@}"
+ }
+ 
+-_svn export ${verbose} "${@}" "'${repo}@${rev}'" "'${basename}'"
++_svn --non-interactive export ${verbose} "${@}" "'${repo}@${rev}'" "'${basename}'"
+ 
+ tar czf "${output}" "${basename}"

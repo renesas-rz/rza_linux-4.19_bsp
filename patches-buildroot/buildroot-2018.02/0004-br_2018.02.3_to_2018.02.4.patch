@@ -1,0 +1,2308 @@
+diff --git a/CHANGES b/CHANGES
+index f98790154f..9acc9c2e9e 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,28 @@
++2018.02.4, Released July 21th, 2018
++
++	Important / security related fixes.
++
++	U-Boot: Ensure host version of ncurses is picked up and not
++	host-ncurses built by buildroot, as that otherwise causes
++	widechar/non-widechar conflicts and corrupted menuconfig
++	menus.
++
++	Linux: Enable CONFIG_PERF_EVENTS when perf is enabled.
++
++	Defconfigs: Raspberrypi3: Bump rootfs size, Minnowboard-max:
++	Support ethernet on Turbot variant.
++
++	Updated/fixed packages: bind, clamav, collectd, dos2unix,
++	edid-decode, gcc, gdb, heimdal, hidapi, imx-gpu-viv, libcurl,
++	libglib2, liblogging, libostree, libsoup, libv4l, lm-sensors,
++	ncurses, network-manager, patchelf, pinentry, procps-ng, qpdf,
++	qt5, qt53d, qt5base, qt5charts, qt5script, qt5serialport,
++	systemd, wireguard, wireless-regdb
++
++	Issues resolved (http://bugs.uclibc.org):
++
++	#11101: host-patchelf Endian Issue with relative RPATH
++
+ 2018.02.3, Released June 18th, 2018
+ 
+ 	Important / security related fixes.
+diff --git a/Makefile b/Makefile
+index c725f329d4..45194abf99 100644
+--- a/Makefile
++++ b/Makefile
+@@ -87,9 +87,9 @@ all:
+ .PHONY: all
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2018.02.3
++export BR2_VERSION := 2018.02.4
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1529344000
++BR2_VERSION_EPOCH = 1532126000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+diff --git a/board/minnowboard/linux.config b/board/minnowboard/linux.config
+index 03ffc5e371..27077dbcda 100644
+--- a/board/minnowboard/linux.config
++++ b/board/minnowboard/linux.config
+@@ -21,6 +21,7 @@ CONFIG_SATA_AHCI=y
+ CONFIG_ATA_PIIX=y
+ CONFIG_NETDEVICES=y
+ CONFIG_R8169=y
++CONFIG_IGB=y
+ CONFIG_INPUT_EVDEV=y
+ CONFIG_SERIAL_8250=y
+ CONFIG_SERIAL_8250_CONSOLE=y
+diff --git a/boot/uboot/uboot.mk b/boot/uboot/uboot.mk
+index b7032d5901..27946d99fe 100644
+--- a/boot/uboot/uboot.mk
++++ b/boot/uboot/uboot.mk
+@@ -215,7 +215,15 @@ endif # BR2_TARGET_UBOOT_USE_DEFCONFIG
+ 
+ UBOOT_KCONFIG_FRAGMENT_FILES = $(call qstrip,$(BR2_TARGET_UBOOT_CONFIG_FRAGMENT_FILES))
+ UBOOT_KCONFIG_EDITORS = menuconfig xconfig gconfig nconfig
+-UBOOT_KCONFIG_OPTS = $(UBOOT_MAKE_OPTS)
++
++# UBOOT_MAKE_OPTS overrides HOSTCC / HOSTLDFLAGS to allow the build to
++# find our host-openssl. However, this triggers a bug in the kconfig
++# build script that causes it to build with /usr/include/ncurses.h
++# (which is typically wchar) but link with
++# $(HOST_DIR)/lib/libncurses.so (which is not).  We don't actually
++# need any host-package for kconfig, so remove the HOSTCC/HOSTLDFLAGS
++# override again.
++UBOOT_KCONFIG_OPTS = $(UBOOT_MAKE_OPTS) HOSTCC="$(HOSTCC)" HOSTLDFLAGS=""
+ define UBOOT_HELP_CMDS
+ 	@echo '  uboot-menuconfig       - Run U-Boot menuconfig'
+ 	@echo '  uboot-savedefconfig    - Run U-Boot savedefconfig'
+diff --git a/configs/raspberrypi3_defconfig b/configs/raspberrypi3_defconfig
+index 9304f0cb74..359d549b70 100644
+--- a/configs/raspberrypi3_defconfig
++++ b/configs/raspberrypi3_defconfig
+@@ -29,6 +29,7 @@ BR2_PACKAGE_HOST_MTOOLS=y
+ # Filesystem / image
+ BR2_TARGET_ROOTFS_EXT2=y
+ BR2_TARGET_ROOTFS_EXT2_4=y
++BR2_TARGET_ROOTFS_EXT2_SIZE="120M"
+ # BR2_TARGET_ROOTFS_TAR is not set
+ BR2_ROOTFS_POST_BUILD_SCRIPT="board/raspberrypi3/post-build.sh"
+ BR2_ROOTFS_POST_IMAGE_SCRIPT="board/raspberrypi3/post-image.sh"
+diff --git a/linux/linux.mk b/linux/linux.mk
+index 701d7ee1ae..cc5aeb69cd 100644
+--- a/linux/linux.mk
++++ b/linux/linux.mk
+@@ -292,6 +292,8 @@ define LINUX_KCONFIG_FIXUP_CMDS
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_ENABLE_DEFAULT_TRACERS,$(@D)/.config)
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_PERF_EVENTS,$(@D)/.config)
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_FUNCTION_TRACER,$(@D)/.config))
++	$(if $(BR2_PACKAGE_LINUX_TOOLS_PERF),
++		$(call KCONFIG_ENABLE_OPT,CONFIG_PERF_EVENTS,$(@D)/.config))
+ 	$(if $(BR2_PACKAGE_SYSTEMD),
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_CGROUPS,$(@D)/.config)
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_INOTIFY_USER,$(@D)/.config)
+diff --git a/package/Makefile.in b/package/Makefile.in
+index 57fb47ea2e..58af2ef242 100644
+--- a/package/Makefile.in
++++ b/package/Makefile.in
+@@ -242,7 +242,7 @@ HOST_LDFLAGS  += -L$(HOST_DIR)/lib -Wl,-rpath,$(HOST_DIR)/lib
+ # Exit code chooses option. "$$TMP" is can be used as temporary file and
+ # is automatically cleaned up.
+ try-run = $(shell set -e;               \
+-	TMP="$$(tempfile)";             \
++	TMP="$$(mktemp)";               \
+ 	if ($(1)) >/dev/null 2>&1;      \
+ 	then echo "$(2)";               \
+ 	else echo "$(3)";               \
+diff --git a/package/bind/bind.hash b/package/bind/bind.hash
+index 199db704fe..78f8015521 100644
+--- a/package/bind/bind.hash
++++ b/package/bind/bind.hash
+@@ -1,3 +1,4 @@
+-# Verified from http://ftp.isc.org/isc/bind9/9.11.2-P1/bind-9.11.2-P1.tar.gz.sha256.asc
+-sha256 cec31548832fca3f85d95178d4019b7d702039e8595d4c93914feba337df1212 bind-9.11.2-P1.tar.gz
+-sha256 d3906dfe153e2c48440d3ca1d5319f5e89b4b820cdfc5d0779c23d7ac2b175e9 COPYRIGHT
++# Verified from https://ftp.isc.org/isc/bind9/9.11.4/bind-9.11.4.tar.gz.asc
++# with key BE0E9748B718253A28BB89FFF1B11BF05CF02E57
++sha256 595070b031f869f8939656b5a5d11b121211967f15f6afeafa895df745279617 bind-9.11.4.tar.gz
++sha256 336f3c40e37a1a13690efb4c63e20908faa4c40498cc02f3579fb67d3a1933a5 COPYRIGHT
+diff --git a/package/bind/bind.mk b/package/bind/bind.mk
+index bec902079c..4249291536 100644
+--- a/package/bind/bind.mk
++++ b/package/bind/bind.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-BIND_VERSION = 9.11.2-P1
++BIND_VERSION = 9.11.4
+ BIND_SITE = http://ftp.isc.org/isc/bind9/$(BIND_VERSION)
+ # bind does not support parallel builds.
+ BIND_MAKE = $(MAKE1)
+@@ -33,7 +33,7 @@ BIND_CONF_OPTS = \
+ 	--enable-filter-aaaa
+ 
+ ifeq ($(BR2_PACKAGE_ZLIB),y)
+-BIND_CONF_OPTS += --with-zlib=$(STAGING_DIR)/usr/include
++BIND_CONF_OPTS += --with-zlib=$(STAGING_DIR)/usr
+ BIND_DEPENDENCIES += zlib
+ else
+ BIND_CONF_OPTS += --without-zlib
+@@ -61,7 +61,9 @@ BIND_CONF_ENV += \
+ 	ac_cv_func_EVP_sha512=yes
+ BIND_CONF_OPTS += \
+ 	--with-openssl=$(STAGING_DIR)/usr LIBS="-lz" \
+-	--with-ecdsa=yes
++	--with-ecdsa=yes \
++	--with-eddsa=no \
++	--with-aes=yes
+ # GOST cipher support requires openssl extra engines
+ ifeq ($(BR2_PACKAGE_OPENSSL_ENGINES),y)
+ BIND_CONF_OPTS += --with-gost=yes
+diff --git a/package/clamav/0001-clamdscan-proto.c-fix-build-error-due-to-missing-soc.patch b/package/clamav/0001-clamdscan-proto.c-fix-build-error-due-to-missing-soc.patch
+new file mode 100644
+index 0000000000..daac677eaa
+--- /dev/null
++++ b/package/clamav/0001-clamdscan-proto.c-fix-build-error-due-to-missing-soc.patch
+@@ -0,0 +1,34 @@
++From 52fda6e6689e22866a39ec4273713fb6035c38b2 Mon Sep 17 00:00:00 2001
++From: Bernd Kuhls <bernd.kuhls@t-online.de>
++Date: Mon, 7 May 2018 23:14:46 +0200
++Subject: [PATCH] clamdscan/proto.c: fix build error due to missing sockaddr_un
++ definition
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++proto.c: In function ‘dconnect’:
++proto.c:86:67: error: invalid application of ‘sizeof’ to incomplete type ‘struct sockaddr_un’
++             if (connect(sockd, (struct sockaddr *)&nixsock, sizeof(nixsock)) == 0)
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++Upstream-status: http://lurker.clamav.net/message/20140928.130829.5494fd68.en.html
++---
++ clamdscan/proto.c | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/clamdscan/proto.c b/clamdscan/proto.c
++index 0205f6da0..d3396732f 100644
++--- a/clamdscan/proto.c
+++++ b/clamdscan/proto.c
++@@ -42,6 +42,7 @@
++ #include <sys/stat.h>
++ #include <fcntl.h>
++ #include <sys/types.h>
+++#include <sys/un.h>
++ #ifdef HAVE_SYS_SELECT_H
++ #include <sys/select.h>
++ #endif
++-- 
++2.14.3
++
+diff --git a/package/clamav/0001-clamdscan.patch b/package/clamav/0001-clamdscan.patch
+deleted file mode 100644
+index c395ae1600..0000000000
+--- a/package/clamav/0001-clamdscan.patch
++++ /dev/null
+@@ -1,21 +0,0 @@
+-Fixes build error
+-
+-proto.c: In function ‘dconnect’:
+-proto.c:86:67: error: invalid application of ‘sizeof’ to incomplete type ‘struct sockaddr_un’
+-             if (connect(sockd, (struct sockaddr *)&nixsock, sizeof(nixsock)) == 0)
+-
+-Patch sent upstream: http://lurker.clamav.net/message/20140928.130829.5494fd68.en.html
+-
+-Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+-
+-diff -uNr clamav-0.98.3.org/clamdscan/proto.c clamav-0.98.3/clamdscan/proto.c
+---- clamav-0.98.3.org/clamdscan/proto.c	2014-05-06 20:39:56.000000000 +0200
+-+++ clamav-0.98.3/clamdscan/proto.c	2014-05-10 10:41:44.000000000 +0200
+-@@ -35,6 +35,7 @@
+- #include <sys/stat.h>
+- #include <fcntl.h>
+- #include <sys/types.h>
+-+#include <sys/un.h>
+- #ifdef HAVE_SYS_SELECT_H
+- #include <sys/select.h>
+- #endif
+diff --git a/package/clamav/0002-backtrace-uClibc.patch b/package/clamav/0002-mbox-do-not-use-backtrace-if-using-uClibc-without-ba.patch
+similarity index 53%
+rename from package/clamav/0002-backtrace-uClibc.patch
+rename to package/clamav/0002-mbox-do-not-use-backtrace-if-using-uClibc-without-ba.patch
+index 82ad67307d..e99a9742ec 100644
+--- a/package/clamav/0002-backtrace-uClibc.patch
++++ b/package/clamav/0002-mbox-do-not-use-backtrace-if-using-uClibc-without-ba.patch
+@@ -1,4 +1,8 @@
+-mbox: do not use backtrace if using uClibc without backtrace support
++From 053bac34b9f0f947c58fcdf80ac03d5a6b05aa12 Mon Sep 17 00:00:00 2001
++From: "Yann E. MORIN" <yann.morin.1998@free.fr>
++Date: Mon, 7 May 2018 23:15:58 +0200
++Subject: [PATCH] mbox: do not use backtrace if using uClibc without backtrace
++ support
+ 
+ Since uClibc can be configured without support for backtrace, disable
+ the backtrace if we are building with a uClibc that was built without
+@@ -8,10 +12,15 @@ This is a bit hacky, and would greatly benefit from a test in ./configure
+ instead, but does nicely as a quick fix for now.
+ 
+ Signed-off-by: "Yann E. MORIN" <yann.morin.1998@free.fr>
+-diff -durN clamav-0.98.4.orig/libclamav/mbox.c clamav-0.98.4/libclamav/mbox.c
+---- clamav-0.98.4.orig/libclamav/mbox.c	2014-05-21 17:25:05.000000000 +0200
+-+++ clamav-0.98.4/libclamav/mbox.c	2014-11-16 17:21:04.885383286 +0100
+-@@ -83,7 +83,7 @@
++---
++ libclamav/mbox.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/libclamav/mbox.c b/libclamav/mbox.c
++index 71f540c0a..4851297a9 100644
++--- a/libclamav/mbox.c
+++++ b/libclamav/mbox.c
++@@ -98,7 +98,7 @@
+  #include <features.h>
+  #endif
+  
+@@ -20,3 +29,6 @@ diff -durN clamav-0.98.4.orig/libclamav/mbox.c clamav-0.98.4/libclamav/mbox.c
+  #define HAVE_BACKTRACE
+  #endif
+  #endif
++-- 
++2.14.3
++
+diff --git a/package/clamav/0003-m4-reorganization-libs-curl.m4-fix-curl-config-detec.patch b/package/clamav/0003-m4-reorganization-libs-curl.m4-fix-curl-config-detec.patch
+new file mode 100644
+index 0000000000..1d26b099b9
+--- /dev/null
++++ b/package/clamav/0003-m4-reorganization-libs-curl.m4-fix-curl-config-detec.patch
+@@ -0,0 +1,75 @@
++From 6b6ff53b5931c162be13504a1efc53fc5212f9d1 Mon Sep 17 00:00:00 2001
++From: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
++Date: Mon, 7 May 2018 22:57:34 +0200
++Subject: [PATCH] m4/reorganization/libs/curl.m4: fix curl-config detection
++ logic
++
++The current logic in curl.m4 doesn't behave properly when
++--without-libcurl is passed to the ./configure script.
++
++Indeed, in this case what happens is that:
++
++ (1) Since --without-libcurl is passed, LIBCURL_HOME is set to nothing
++
++ (2) find_curl is set to "no"
++
++ (3) Due to find_curl being "no", LIBCURL_HOME is not set to
++     /usr/local and remains empty
++
++ (4) We test if $LIBCURL_HOME/bin/curl_config exists, which is
++     equivalent to testing if /bin/curl-config exists. So curl.m4 is
++     looking at /bin/curl-config, which is irrelevant in a
++     cross-compilation context: it is not because the build machine
++     has libcurl installed that it is available for the target.
++
++     Due to this mistake, it sets have_curl="yes"
++
++Due to this, the ./configure script assumes it can build the
++clamsubmit program, which fails at build time because curl/curl.h
++doesn't exist.
++
++To fix this, this commit rewrites the curl-config detection logic with
++a simpler loop. If find_curl=yes, it means we have to find libcurl
++ourselves, so we iterate over /usr/local and /usr, and check if a
++bin/curl-config binary is available there. If so, we use this path as
++LIBCURL_HOME and set have_curl="yes".
++
++This preserves the existing behavior, while fixing the situation where
++--without-libcurl is passed, but /bin/curl-config exists.
++
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
++Upstream-status: https://github.com/Cisco-Talos/clamav-devel/pull/87
++---
++ m4/reorganization/libs/curl.m4 | 15 +++++----------
++ 1 file changed, 5 insertions(+), 10 deletions(-)
++
++diff --git a/m4/reorganization/libs/curl.m4 b/m4/reorganization/libs/curl.m4
++index 2a5966ee7..b6a9c2137 100644
++--- a/m4/reorganization/libs/curl.m4
+++++ b/m4/reorganization/libs/curl.m4
++@@ -19,17 +19,12 @@ fi
++ [find_curl="yes"])
++ 
++ if test "X$find_curl" = "Xyes"; then
++-    LIBCURL_HOME=/usr/local
++-fi
++-if test -f "$LIBCURL_HOME/bin/curl-config"; then
++-    have_curl="yes"
++-else
++-    if test "X$find_curl" = "Xyes"; then
++-        LIBCURL_HOME=/usr
++-        if test -f "$LIBCURL_HOME/bin/curl-config"; then
++-            have_curl="yes"
+++    for p in /usr/local /usr ; do
+++        if test -f "${p}/bin/curl-config"; then
+++           LIBCURL_HOME=$p
+++           have_curl="yes"
++         fi
++-    fi
+++    done
++ fi
++ 
++ if test "X$have_curl" = "Xyes"; then
++-- 
++2.14.3
++
+diff --git a/package/clamav/clamav.hash b/package/clamav/clamav.hash
+index 76c633f979..0cb8f51d87 100644
+--- a/package/clamav/clamav.hash
++++ b/package/clamav/clamav.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated
+-sha256 d72ac3273bde8d2e5e28ec9978373ee3ab4529fd868bc3fc4d2d2671228f2461  clamav-0.99.4.tar.gz
++sha256 84e026655152247de7237184ee13003701c40be030dd68e0316111049f58a59f  clamav-0.100.1.tar.gz
+ sha256 0c4fd2fa9733fc9122503797648710851e4ee6d9e4969dd33fcbd8c63cd2f584  COPYING
+ sha256 d72a145c90918184a05ef65a04c9e6f7466faa59bc1b82c8f6a8ddc7ddcb9bed  COPYING.bzip2
+ sha256 dfb818a0d41411c6fb1c193c68b73018ceadd1994bda41ad541cbff292894bc6  COPYING.file
+diff --git a/package/clamav/clamav.mk b/package/clamav/clamav.mk
+index 4c4fc395c2..9db90bddea 100644
+--- a/package/clamav/clamav.mk
++++ b/package/clamav/clamav.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-CLAMAV_VERSION = 0.99.4
++CLAMAV_VERSION = 0.100.1
+ CLAMAV_SITE = https://www.clamav.net/downloads/production
+ CLAMAV_LICENSE = GPL-2.0
+ CLAMAV_LICENSE_FILES = COPYING COPYING.bzip2 COPYING.file COPYING.getopt \
+@@ -16,6 +16,8 @@ CLAMAV_DEPENDENCIES = \
+ 	openssl \
+ 	zlib \
+ 	$(TARGET_NLS_DEPENDENCIES)
++# 0003-m4-reorganization-libs-curl.m4-fix-curl-config-detec.patch
++CLAMAV_AUTORECONF = YES
+ 
+ # mmap cannot be detected when cross-compiling, needed for mempool support
+ CLAMAV_CONF_ENV = \
+diff --git a/package/collectd/collectd.hash b/package/collectd/collectd.hash
+index be2f646c9c..cf7e0b83f9 100644
+--- a/package/collectd/collectd.hash
++++ b/package/collectd/collectd.hash
+@@ -1,2 +1,6 @@
+ # From https://collectd.org/files/SHA256SUM
+ sha256	7edd3643c0842215553b2421d5456f4e9a8a58b07e216b40a7e8e91026d8e501	collectd-5.7.1.tar.bz2
++
++# Hash for license files
++sha256	ed0409b2b1c30566dab5fcdaf46ee70e140c99788e22f0267645a9357b476ae4	COPYING
++sha256	f18a0811fa0e220ccbc42f661545e77f0388631e209585ed582a1c693029c6aa	libltdl/COPYING.LIB
+diff --git a/package/collectd/collectd.mk b/package/collectd/collectd.mk
+index 6c987b2e36..ef45f342ae 100644
+--- a/package/collectd/collectd.mk
++++ b/package/collectd/collectd.mk
+@@ -9,8 +9,8 @@ COLLECTD_SITE = http://collectd.org/files
+ COLLECTD_SOURCE = collectd-$(COLLECTD_VERSION).tar.bz2
+ COLLECTD_CONF_ENV = ac_cv_lib_yajl_yajl_alloc=yes
+ COLLECTD_INSTALL_STAGING = YES
+-COLLECTD_LICENSE = GPL-2.0, LGPL-2.1
+-COLLECTD_LICENSE_FILES = COPYING
++COLLECTD_LICENSE = MIT (daemon, plugins), GPL-2.0 (plugins), LGPL-2.1 (plugins)
++COLLECTD_LICENSE_FILES = COPYING libltdl/COPYING.LIB
+ 
+ # These require unmet dependencies, are fringe, pointless or deprecated
+ COLLECTD_PLUGINS_DISABLE = \
+diff --git a/package/dos2unix/dos2unix.mk b/package/dos2unix/dos2unix.mk
+index 9b82340590..5001397f05 100644
+--- a/package/dos2unix/dos2unix.mk
++++ b/package/dos2unix/dos2unix.mk
+@@ -24,6 +24,10 @@ ifeq ($(BR2_USE_WCHAR),)
+ DOS2UNIX_MAKE_OPTS += UCS=
+ endif
+ 
++ifeq ($(BR2_STATIC_LIBS),y)
++DOS2UNIX_MAKE_OPTS += LDFLAGS_USER=-static
++endif
++
+ define DOS2UNIX_BUILD_CMDS
+ 	$(TARGET_CONFIGURE_OPTS) $(MAKE) -C $(@D) $(DOS2UNIX_MAKE_OPTS)
+ endef
+diff --git a/package/edid-decode/Config.in b/package/edid-decode/Config.in
+index 64297b494d..701c70031f 100644
+--- a/package/edid-decode/Config.in
++++ b/package/edid-decode/Config.in
+@@ -3,4 +3,4 @@ config BR2_PACKAGE_EDID_DECODE
+ 	help
+ 	  Decode EDID data in human-readable format.
+ 
+-	  http://cgit.freedesktop.org/xorg/app/edid-decode/
++	  https://git.linuxtv.org/edid-decode.git/
+diff --git a/package/edid-decode/edid-decode.mk b/package/edid-decode/edid-decode.mk
+index a4141b899b..b412a77a13 100644
+--- a/package/edid-decode/edid-decode.mk
++++ b/package/edid-decode/edid-decode.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ EDID_DECODE_VERSION = f56f329ed23a25d002352dedba1e8f092a47286f
+-EDID_DECODE_SITE = git://anongit.freedesktop.org/git/xorg/app/edid-decode.git
++EDID_DECODE_SITE = git://linuxtv.org/edid-decode.git
+ EDID_DECODE_LICENSE = MIT
+ EDID_DECODE_LICENSE_FILES = edid-decode.c
+ 
+diff --git a/package/freescale-imx/imx-gpu-viv/imx-gpu-viv.mk b/package/freescale-imx/imx-gpu-viv/imx-gpu-viv.mk
+index a9f8b9d9bd..9104750c3c 100644
+--- a/package/freescale-imx/imx-gpu-viv/imx-gpu-viv.mk
++++ b/package/freescale-imx/imx-gpu-viv/imx-gpu-viv.mk
+@@ -65,7 +65,7 @@ endif
+ ifeq ($(IMX_GPU_VIV_LIB_TARGET),x11)
+ define IMX_GPU_VIV_FIXUP_PKGCONFIG
+ 	for lib in egl gbm glesv1_cm glesv2 vg; do \
+-		ln -sf $${lib}_x11.pc $(@D)/gpu-core/usr/lib/pkgconfig/$${lib}.pc
++		ln -sf $${lib}_x11.pc $(@D)/gpu-core/usr/lib/pkgconfig/$${lib}.pc || exit 1; \
+ 	done
+ endef
+ endif
+diff --git a/package/gcc/6.4.0/871-xtensa-fix-PR-target-65416.patch b/package/gcc/6.4.0/871-xtensa-fix-PR-target-65416.patch
+new file mode 100644
+index 0000000000..7ead575439
+--- /dev/null
++++ b/package/gcc/6.4.0/871-xtensa-fix-PR-target-65416.patch
+@@ -0,0 +1,101 @@
++From 87fda0741d210727672cba5e54a37a189e8ac04e Mon Sep 17 00:00:00 2001
++From: Max Filippov <jcmvbkbc@gmail.com>
++Date: Sun, 17 Jun 2018 21:18:39 -0700
++Subject: [PATCH] xtensa: fix PR target/65416
++
++The issue is caused by reordering of stack pointer update after stack
++space allocation with instructions that write to the allocated stack
++space. In windowed ABI register spill area for the previous call frame
++is located just below the stack pointer and may be reloaded back into
++the register file on movsp.
++Implement allocate_stack pattern for windowed ABI configuration and
++insert an instruction that prevents reordering of frame memory access
++and stack pointer update.
++
++gcc/
++2018-06-19  Max Filippov  <jcmvbkbc@gmail.com>
++
++	* config/xtensa/xtensa.md (UNSPEC_FRAME_BLOCKAGE): New unspec
++	constant.
++	(allocate_stack, frame_blockage, *frame_blockage): New patterns.
++
++Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
++Backported from: r261755
++---
++ gcc/config/xtensa/xtensa.md | 46 +++++++++++++++++++++++++++++++++++++++++++++
++ 1 file changed, 46 insertions(+)
++
++diff --git a/gcc/config/xtensa/xtensa.md b/gcc/config/xtensa/xtensa.md
++index 84967dbedc08..209f839cfb0f 100644
++--- a/gcc/config/xtensa/xtensa.md
+++++ b/gcc/config/xtensa/xtensa.md
++@@ -38,6 +38,7 @@
++   (UNSPEC_MEMW		11)
++   (UNSPEC_LSETUP_START  12)
++   (UNSPEC_LSETUP_END    13)
+++  (UNSPEC_FRAME_BLOCKAGE 14)
++ 
++   (UNSPECV_SET_FP	1)
++   (UNSPECV_ENTRY	2)
++@@ -1676,6 +1677,32 @@
++ 
++ ;; Miscellaneous instructions.
++ 
+++;; In windowed ABI stack pointer adjustment must happen before any access
+++;; to the space allocated on stack is allowed, otherwise register spill
+++;; area may be clobbered.  That's what frame blockage is supposed to enforce.
+++
+++(define_expand "allocate_stack"
+++  [(set (match_operand 0 "nonimmed_operand")
+++        (minus (reg A1_REG) (match_operand 1 "add_operand")))
+++   (set (reg A1_REG)
+++        (minus (reg A1_REG) (match_dup 1)))]
+++  "TARGET_WINDOWED_ABI"
+++{
+++  if (CONST_INT_P (operands[1]))
+++    {
+++      rtx neg_op0 = GEN_INT (-INTVAL (operands[1]));
+++      emit_insn (gen_addsi3 (stack_pointer_rtx, stack_pointer_rtx, neg_op0));
+++    }
+++  else
+++    {
+++      emit_insn (gen_subsi3 (stack_pointer_rtx, stack_pointer_rtx,
+++			     operands[1]));
+++    }
+++  emit_move_insn (operands[0], virtual_stack_dynamic_rtx);
+++  emit_insn (gen_frame_blockage ());
+++  DONE;
+++})
+++
++ (define_expand "prologue"
++   [(const_int 0)]
++   ""
++@@ -1767,6 +1794,25 @@
++   [(set_attr "length" "0")
++    (set_attr "type" "nop")])
++ 
+++;; Do not schedule instructions accessing memory before this point.
+++
+++(define_expand "frame_blockage"
+++  [(set (match_dup 0)
+++        (unspec:BLK [(match_dup 1)] UNSPEC_FRAME_BLOCKAGE))]
+++  ""
+++{
+++  operands[0] = gen_rtx_MEM (BLKmode, gen_rtx_SCRATCH (Pmode));
+++  MEM_VOLATILE_P (operands[0]) = 1;
+++  operands[1] = stack_pointer_rtx;
+++})
+++
+++(define_insn "*frame_blockage"
+++  [(set (match_operand:BLK 0 "" "")
+++        (unspec:BLK [(match_operand:SI 1 "" "")] UNSPEC_FRAME_BLOCKAGE))]
+++  ""
+++  ""
+++  [(set_attr "length" "0")])
+++
++ (define_insn "trap"
++   [(trap_if (const_int 1) (const_int 0))]
++   ""
++-- 
++2.11.0
++
+diff --git a/package/gcc/7.3.0/0002-xtensa-fix-PR-target-65416.patch b/package/gcc/7.3.0/0002-xtensa-fix-PR-target-65416.patch
+new file mode 100644
+index 0000000000..7ead575439
+--- /dev/null
++++ b/package/gcc/7.3.0/0002-xtensa-fix-PR-target-65416.patch
+@@ -0,0 +1,101 @@
++From 87fda0741d210727672cba5e54a37a189e8ac04e Mon Sep 17 00:00:00 2001
++From: Max Filippov <jcmvbkbc@gmail.com>
++Date: Sun, 17 Jun 2018 21:18:39 -0700
++Subject: [PATCH] xtensa: fix PR target/65416
++
++The issue is caused by reordering of stack pointer update after stack
++space allocation with instructions that write to the allocated stack
++space. In windowed ABI register spill area for the previous call frame
++is located just below the stack pointer and may be reloaded back into
++the register file on movsp.
++Implement allocate_stack pattern for windowed ABI configuration and
++insert an instruction that prevents reordering of frame memory access
++and stack pointer update.
++
++gcc/
++2018-06-19  Max Filippov  <jcmvbkbc@gmail.com>
++
++	* config/xtensa/xtensa.md (UNSPEC_FRAME_BLOCKAGE): New unspec
++	constant.
++	(allocate_stack, frame_blockage, *frame_blockage): New patterns.
++
++Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
++Backported from: r261755
++---
++ gcc/config/xtensa/xtensa.md | 46 +++++++++++++++++++++++++++++++++++++++++++++
++ 1 file changed, 46 insertions(+)
++
++diff --git a/gcc/config/xtensa/xtensa.md b/gcc/config/xtensa/xtensa.md
++index 84967dbedc08..209f839cfb0f 100644
++--- a/gcc/config/xtensa/xtensa.md
+++++ b/gcc/config/xtensa/xtensa.md
++@@ -38,6 +38,7 @@
++   (UNSPEC_MEMW		11)
++   (UNSPEC_LSETUP_START  12)
++   (UNSPEC_LSETUP_END    13)
+++  (UNSPEC_FRAME_BLOCKAGE 14)
++ 
++   (UNSPECV_SET_FP	1)
++   (UNSPECV_ENTRY	2)
++@@ -1676,6 +1677,32 @@
++ 
++ ;; Miscellaneous instructions.
++ 
+++;; In windowed ABI stack pointer adjustment must happen before any access
+++;; to the space allocated on stack is allowed, otherwise register spill
+++;; area may be clobbered.  That's what frame blockage is supposed to enforce.
+++
+++(define_expand "allocate_stack"
+++  [(set (match_operand 0 "nonimmed_operand")
+++        (minus (reg A1_REG) (match_operand 1 "add_operand")))
+++   (set (reg A1_REG)
+++        (minus (reg A1_REG) (match_dup 1)))]
+++  "TARGET_WINDOWED_ABI"
+++{
+++  if (CONST_INT_P (operands[1]))
+++    {
+++      rtx neg_op0 = GEN_INT (-INTVAL (operands[1]));
+++      emit_insn (gen_addsi3 (stack_pointer_rtx, stack_pointer_rtx, neg_op0));
+++    }
+++  else
+++    {
+++      emit_insn (gen_subsi3 (stack_pointer_rtx, stack_pointer_rtx,
+++			     operands[1]));
+++    }
+++  emit_move_insn (operands[0], virtual_stack_dynamic_rtx);
+++  emit_insn (gen_frame_blockage ());
+++  DONE;
+++})
+++
++ (define_expand "prologue"
++   [(const_int 0)]
++   ""
++@@ -1767,6 +1794,25 @@
++   [(set_attr "length" "0")
++    (set_attr "type" "nop")])
++ 
+++;; Do not schedule instructions accessing memory before this point.
+++
+++(define_expand "frame_blockage"
+++  [(set (match_dup 0)
+++        (unspec:BLK [(match_dup 1)] UNSPEC_FRAME_BLOCKAGE))]
+++  ""
+++{
+++  operands[0] = gen_rtx_MEM (BLKmode, gen_rtx_SCRATCH (Pmode));
+++  MEM_VOLATILE_P (operands[0]) = 1;
+++  operands[1] = stack_pointer_rtx;
+++})
+++
+++(define_insn "*frame_blockage"
+++  [(set (match_operand:BLK 0 "" "")
+++        (unspec:BLK [(match_operand:SI 1 "" "")] UNSPEC_FRAME_BLOCKAGE))]
+++  ""
+++  ""
+++  [(set_attr "length" "0")])
+++
++ (define_insn "trap"
++   [(trap_if (const_int 1) (const_int 0))]
++   ""
++-- 
++2.11.0
++
+diff --git a/package/gcc/7.3.0/1000-arm-PR-target-81497-Fix-arm_acle.h-for-C.patch b/package/gcc/7.3.0/1000-arm-PR-target-81497-Fix-arm_acle.h-for-C.patch
+new file mode 100644
+index 0000000000..37acc8b651
+--- /dev/null
++++ b/package/gcc/7.3.0/1000-arm-PR-target-81497-Fix-arm_acle.h-for-C.patch
+@@ -0,0 +1,324 @@
++From 1a259ac3e39bf87e6e6a5eface8b0ebc6b2a0dfe Mon Sep 17 00:00:00 2001
++From: ktkachov <ktkachov@138bc75d-0d04-0410-961f-82ee72b054a4>
++Date: Tue, 5 Jun 2018 09:50:16 +0000
++Subject: [PATCH] [arm] PR target/81497: Fix arm_acle.h for C++
++MIME-Version: 1.0
++Content-Type: text/plain; charset=utf-8
++Content-Transfer-Encoding: 8bit
++
++When trying to compile something with arm_acle.h using G++ we get a number of nasty errors:
++arm_acle.h:48:49: error: invalid conversion from ‘const void*’ to ‘const int*’ [-fpermissive]
++    return __builtin_arm_ldc (__coproc, __CRd, __p);
++
++This is because the intrinsics that are supposed to be void return the "result" of their builtin,
++which is void. C lets that slide but C++ complains.
++
++After fixing that we run into further errors:
++arm_acle.h:48:46: error: invalid conversion from 'const void*' to 'const int*' [-fpermissive]
++    return __builtin_arm_ldc (__coproc, __CRd, __p);
++                                               ^~~
++Because the pointer arguments in these intrinsics are void pointers but the builtin
++expects int pointers. So this patch introduces new qualifiers for void pointers and their
++const-qualified versions and uses that in the specification of these intrinsics.
++
++This gives us the opportunity of creating an arm subdirectory in g++.dg and inaugurates it
++with the first arm-specific C++ tests (in that directory).
++
++
++	PR target/81497
++	* config/arm/arm-builtins.c (arm_type_qualifiers): Add
++	qualifier_void_pointer and qualifier_const_void_pointer.
++	(arm_ldc_qualifiers, arm_stc_qualifiers): Use the above.
++	(arm_init_builtins): Handle the above.
++	* config/arm/arm_acle.h (__arm_cdp, __arm_ldc, __arm_ldcl, __arm_stc,
++	__arm_stcl, __arm_mcr, __arm_cdp2, __arm_ldc2, __arm_ldcl2, __arm_stc2,
++	__arm_stcl2,__arm_mcr2, __arm_mcrr, __arm_mcrr2): Remove return for
++	void intrinsics.
++
++	* g++.target/arm/arm.exp: New file.
++	* g++.target/arm/pr81497.C: Likewise.
++
++
++git-svn-id: svn+ssh://gcc.gnu.org/svn/gcc/trunk@261191 138bc75d-0d04-0410-961f-82ee72b054a4
++Upstream-Status: Merged (gcc-8-branch)
++Signed-off-by: Gaël PORTAY <gael.portay@savoirfairelinux.com>
++[gportay: drop gcc/{,testsuite/}ChangeLog changes]
++---
++ gcc/config/arm/arm-builtins.c          | 42 +++++++++++++---------
++ gcc/config/arm/arm_acle.h              | 28 +++++++--------
++ gcc/testsuite/g++.target/arm/arm.exp   | 50 ++++++++++++++++++++++++++
++ gcc/testsuite/g++.target/arm/pr81497.C |  9 +++++
++ 4 files changed, 99 insertions(+), 30 deletions(-)
++ create mode 100644 gcc/testsuite/g++.target/arm/arm.exp
++ create mode 100644 gcc/testsuite/g++.target/arm/pr81497.C
++
++diff --git a/gcc/config/arm/arm-builtins.c b/gcc/config/arm/arm-builtins.c
++index 7fde7a04672..183a7b907f6 100644
++--- a/gcc/config/arm/arm-builtins.c
+++++ b/gcc/config/arm/arm-builtins.c
++@@ -78,7 +78,11 @@ enum arm_type_qualifiers
++   /* Lane indices - must be within range of previous argument = a vector.  */
++   qualifier_lane_index = 0x200,
++   /* Lane indices for single lane structure loads and stores.  */
++-  qualifier_struct_load_store_lane_index = 0x400
+++  qualifier_struct_load_store_lane_index = 0x400,
+++  /* A void pointer.  */
+++  qualifier_void_pointer = 0x800,
+++  /* A const void pointer.  */
+++  qualifier_const_void_pointer = 0x802
++ };
++ 
++ /*  The qualifier_internal allows generation of a unary builtin from
++@@ -202,7 +206,7 @@ arm_cdp_qualifiers[SIMD_MAX_BUILTIN_ARGS]
++ static enum arm_type_qualifiers
++ arm_ldc_qualifiers[SIMD_MAX_BUILTIN_ARGS]
++   = { qualifier_void, qualifier_unsigned_immediate,
++-      qualifier_unsigned_immediate, qualifier_const_pointer };
+++      qualifier_unsigned_immediate, qualifier_const_void_pointer };
++ #define LDC_QUALIFIERS \
++   (arm_ldc_qualifiers)
++ 
++@@ -210,7 +214,7 @@ arm_ldc_qualifiers[SIMD_MAX_BUILTIN_ARGS]
++ static enum arm_type_qualifiers
++ arm_stc_qualifiers[SIMD_MAX_BUILTIN_ARGS]
++   = { qualifier_void, qualifier_unsigned_immediate,
++-      qualifier_unsigned_immediate, qualifier_pointer };
+++      qualifier_unsigned_immediate, qualifier_void_pointer };
++ #define STC_QUALIFIERS \
++   (arm_stc_qualifiers)
++ 
++@@ -1095,19 +1099,25 @@ arm_init_builtin (unsigned int fcode, arm_builtin_datum *d,
++       if (qualifiers & qualifier_pointer && VECTOR_MODE_P (op_mode))
++ 	op_mode = GET_MODE_INNER (op_mode);
++ 
++-      eltype = arm_simd_builtin_type
++-	(op_mode,
++-	 (qualifiers & qualifier_unsigned) != 0,
++-	 (qualifiers & qualifier_poly) != 0);
++-      gcc_assert (eltype != NULL);
++-
++-      /* Add qualifiers.  */
++-      if (qualifiers & qualifier_const)
++-	eltype = build_qualified_type (eltype, TYPE_QUAL_CONST);
++-
++-      if (qualifiers & qualifier_pointer)
++-	eltype = build_pointer_type (eltype);
++-
+++      /* For void pointers we already have nodes constructed by the midend.  */
+++      if (qualifiers & qualifier_void_pointer)
+++	eltype = qualifiers & qualifier_const
+++		 ? const_ptr_type_node : ptr_type_node;
+++      else
+++	{
+++	  eltype
+++	    = arm_simd_builtin_type (op_mode,
+++				     (qualifiers & qualifier_unsigned) != 0,
+++				     (qualifiers & qualifier_poly) != 0);
+++	  gcc_assert (eltype != NULL);
+++
+++	  /* Add qualifiers.  */
+++	  if (qualifiers & qualifier_const)
+++	    eltype = build_qualified_type (eltype, TYPE_QUAL_CONST);
+++
+++	  if (qualifiers & qualifier_pointer)
+++	    eltype = build_pointer_type (eltype);
+++	}
++       /* If we have reached arg_num == 0, we are at a non-void
++ 	 return type.  Otherwise, we are still processing
++ 	 arguments.  */
++diff --git a/gcc/config/arm/arm_acle.h b/gcc/config/arm/arm_acle.h
++index 9a2f0ba30dc..c0f6ea2d156 100644
++--- a/gcc/config/arm/arm_acle.h
+++++ b/gcc/config/arm/arm_acle.h
++@@ -38,35 +38,35 @@ __arm_cdp (const unsigned int __coproc, const unsigned int __opc1,
++ 	   const unsigned int __CRd, const unsigned int __CRn,
++ 	   const unsigned int __CRm, const unsigned int __opc2)
++ {
++-  return __builtin_arm_cdp (__coproc, __opc1, __CRd, __CRn, __CRm, __opc2);
+++  __builtin_arm_cdp (__coproc, __opc1, __CRd, __CRn, __CRm, __opc2);
++ }
++ 
++ __extension__ static __inline void __attribute__ ((__always_inline__))
++ __arm_ldc (const unsigned int __coproc, const unsigned int __CRd,
++ 	   const void * __p)
++ {
++-  return __builtin_arm_ldc (__coproc, __CRd, __p);
+++  __builtin_arm_ldc (__coproc, __CRd, __p);
++ }
++ 
++ __extension__ static __inline void __attribute__ ((__always_inline__))
++ __arm_ldcl (const unsigned int __coproc, const unsigned int __CRd,
++ 	    const void * __p)
++ {
++-  return __builtin_arm_ldcl (__coproc, __CRd, __p);
+++  __builtin_arm_ldcl (__coproc, __CRd, __p);
++ }
++ 
++ __extension__ static __inline void __attribute__ ((__always_inline__))
++ __arm_stc (const unsigned int __coproc, const unsigned int __CRd,
++ 	   void * __p)
++ {
++-  return __builtin_arm_stc (__coproc, __CRd, __p);
+++  __builtin_arm_stc (__coproc, __CRd, __p);
++ }
++ 
++ __extension__ static __inline void __attribute__ ((__always_inline__))
++ __arm_stcl (const unsigned int __coproc, const unsigned int __CRd,
++ 	    void * __p)
++ {
++-  return __builtin_arm_stcl (__coproc, __CRd, __p);
+++  __builtin_arm_stcl (__coproc, __CRd, __p);
++ }
++ 
++ __extension__ static __inline void __attribute__ ((__always_inline__))
++@@ -74,7 +74,7 @@ __arm_mcr (const unsigned int __coproc, const unsigned int __opc1,
++ 	   uint32_t __value, const unsigned int __CRn, const unsigned int __CRm,
++ 	   const unsigned int __opc2)
++ {
++-  return __builtin_arm_mcr (__coproc, __opc1, __value, __CRn, __CRm, __opc2);
+++  __builtin_arm_mcr (__coproc, __opc1, __value, __CRn, __CRm, __opc2);
++ }
++ 
++ __extension__ static __inline uint32_t __attribute__ ((__always_inline__))
++@@ -90,35 +90,35 @@ __arm_cdp2 (const unsigned int __coproc, const unsigned int __opc1,
++ 	    const unsigned int __CRd, const unsigned int __CRn,
++ 	    const unsigned int __CRm, const unsigned int __opc2)
++ {
++-  return __builtin_arm_cdp2 (__coproc, __opc1, __CRd, __CRn, __CRm, __opc2);
+++  __builtin_arm_cdp2 (__coproc, __opc1, __CRd, __CRn, __CRm, __opc2);
++ }
++ 
++ __extension__ static __inline void __attribute__ ((__always_inline__))
++ __arm_ldc2 (const unsigned int __coproc, const unsigned int __CRd,
++ 	    const void * __p)
++ {
++-  return __builtin_arm_ldc2 (__coproc, __CRd, __p);
+++  __builtin_arm_ldc2 (__coproc, __CRd, __p);
++ }
++ 
++ __extension__ static __inline void __attribute__ ((__always_inline__))
++ __arm_ldc2l (const unsigned int __coproc, const unsigned int __CRd,
++ 	     const void * __p)
++ {
++-  return __builtin_arm_ldc2l (__coproc, __CRd, __p);
+++  __builtin_arm_ldc2l (__coproc, __CRd, __p);
++ }
++ 
++ __extension__ static __inline void __attribute__ ((__always_inline__))
++ __arm_stc2 (const unsigned int __coproc, const unsigned int __CRd,
++ 	    void * __p)
++ {
++-  return __builtin_arm_stc2 (__coproc, __CRd, __p);
+++  __builtin_arm_stc2 (__coproc, __CRd, __p);
++ }
++ 
++ __extension__ static __inline void __attribute__ ((__always_inline__))
++ __arm_stc2l (const unsigned int __coproc, const unsigned int __CRd,
++ 	     void * __p)
++ {
++-  return __builtin_arm_stc2l (__coproc, __CRd, __p);
+++  __builtin_arm_stc2l (__coproc, __CRd, __p);
++ }
++ 
++ __extension__ static __inline void __attribute__ ((__always_inline__))
++@@ -126,7 +126,7 @@ __arm_mcr2 (const unsigned int __coproc, const unsigned int __opc1,
++ 	    uint32_t __value, const unsigned int __CRn,
++ 	    const unsigned int __CRm, const unsigned int __opc2)
++ {
++-  return __builtin_arm_mcr2 (__coproc, __opc1, __value, __CRn, __CRm, __opc2);
+++  __builtin_arm_mcr2 (__coproc, __opc1, __value, __CRn, __CRm, __opc2);
++ }
++ 
++ __extension__ static __inline uint32_t __attribute__ ((__always_inline__))
++@@ -143,7 +143,7 @@ __extension__ static __inline void __attribute__ ((__always_inline__))
++ __arm_mcrr (const unsigned int __coproc, const unsigned int __opc1,
++ 	    uint64_t __value, const unsigned int __CRm)
++ {
++-  return __builtin_arm_mcrr (__coproc, __opc1, __value, __CRm);
+++  __builtin_arm_mcrr (__coproc, __opc1, __value, __CRm);
++ }
++ 
++ __extension__ static __inline uint64_t __attribute__ ((__always_inline__))
++@@ -159,7 +159,7 @@ __extension__ static __inline void __attribute__ ((__always_inline__))
++ __arm_mcrr2 (const unsigned int __coproc, const unsigned int __opc1,
++ 	    uint64_t __value, const unsigned int __CRm)
++ {
++-  return __builtin_arm_mcrr2 (__coproc, __opc1, __value, __CRm);
+++  __builtin_arm_mcrr2 (__coproc, __opc1, __value, __CRm);
++ }
++ 
++ __extension__ static __inline uint64_t __attribute__ ((__always_inline__))
++diff --git a/gcc/testsuite/g++.target/arm/arm.exp b/gcc/testsuite/g++.target/arm/arm.exp
++new file mode 100644
++index 00000000000..1a169d2f220
++--- /dev/null
+++++ b/gcc/testsuite/g++.target/arm/arm.exp
++@@ -0,0 +1,50 @@
+++#  Specific regression driver for arm.
+++#  Copyright (C) 2009-2018 Free Software Foundation, Inc.
+++#
+++#  This file is part of GCC.
+++#
+++#  GCC is free software; you can redistribute it and/or modify it
+++#  under the terms of the GNU General Public License as published by
+++#  the Free Software Foundation; either version 3, or (at your option)
+++#  any later version.
+++#
+++#  GCC is distributed in the hope that it will be useful, but
+++#  WITHOUT ANY WARRANTY; without even the implied warranty of
+++#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+++#  General Public License for more details.
+++#
+++#  You should have received a copy of the GNU General Public License
+++#  along with GCC; see the file COPYING3.  If not see
+++#  <http://www.gnu.org/licenses/>.  */
+++
+++# GCC testsuite that uses the `dg.exp' driver.
+++
+++# Exit immediately if this isn't an arm target.
+++if {![istarget arm*-*-*] } then {
+++  return
+++}
+++
+++# Load support procs.
+++load_lib g++-dg.exp
+++
+++global DEFAULT_CXXFLAGS
+++if ![info exists DEFAULT_CXXFLAGS] then {
+++    set DEFAULT_CXXFLAGS " -pedantic-errors"
+++}
+++
+++
+++global dg_runtest_extra_prunes
+++set dg_runtest_extra_prunes ""
+++lappend dg_runtest_extra_prunes "warning: switch -m(cpu|arch)=.* conflicts with -m(cpu|arch)=.* switch"
+++
+++# Initialize `dg'.
+++dg-init
+++
+++# Main loop.
+++dg-runtest [lsort [glob -nocomplain $srcdir/$subdir/*.C]] \
+++        "" $DEFAULT_CXXFLAGS
+++
+++# All done.
+++set dg_runtest_extra_prunes ""
+++dg-finish
+++
++diff --git a/gcc/testsuite/g++.target/arm/pr81497.C b/gcc/testsuite/g++.target/arm/pr81497.C
++new file mode 100644
++index 00000000000..0519a3a3045
++--- /dev/null
+++++ b/gcc/testsuite/g++.target/arm/pr81497.C
++@@ -0,0 +1,9 @@
+++/* { dg-do compile } */
+++/* { dg-require-effective-target arm_thumb2_ok } */
+++
+++#include <arm_acle.h>
+++
+++int main ()
+++{
+++  return 0;
+++}
++-- 
++2.17.1
++
+diff --git a/package/gdb/7.12.1/0007-gdbserver-fix-build-for-m68k.patch b/package/gdb/7.12.1/0007-gdbserver-fix-build-for-m68k.patch
+new file mode 100644
+index 0000000000..451bed312c
+--- /dev/null
++++ b/package/gdb/7.12.1/0007-gdbserver-fix-build-for-m68k.patch
+@@ -0,0 +1,62 @@
++From 80c60ea9fb3634272a98ec526eabff25f5255bae Mon Sep 17 00:00:00 2001
++From: Romain Naour <romain.naour@gmail.com>
++Date: Fri, 22 Jun 2018 22:40:26 +0200
++Subject: [PATCH] gdbserver: fix build for m68k
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++As for strace [1], when <sys/reg.h> is included after <linux/ptrace.h>,
++the build fails on m68k with the following diagnostics:
++
++In file included from ./../nat/linux-ptrace.h:28:0,
++                 from linux-low.h:27,
++                 from linux-m68k-low.c:20:
++[...]/usr/include/sys/reg.h:26:3: error: expected identifier before numeric constant
++   PT_D1 = 0,
++   ^
++[...]usr/include/sys/reg.h:26:3: error: expected « } » before numeric constant
++[...]usr/include/sys/reg.h:26:3: error: expected unqualified-id before numeric constant
++In file included from linux-m68k-low.c:27:0:
++[...]usr/include/sys/reg.h:99:1: error: expected declaration before « } » token
++ };
++ ^
++
++Fix this by moving <sys/reg.h> on top of "linux-low.h".
++
++[1] https://github.com/strace/strace/commit/6ebf6c4f9e5ebca123a5b5f24afe67cf0473cf92
++
++Signed-off-by: Romain Naour <romain.naour@gmail.com>
++---
++ gdb/gdbserver/linux-m68k-low.c | 9 +++++----
++ 1 file changed, 5 insertions(+), 4 deletions(-)
++
++diff --git a/gdb/gdbserver/linux-m68k-low.c b/gdb/gdbserver/linux-m68k-low.c
++index 5594f10f927..19b4ef7b259 100644
++--- a/gdb/gdbserver/linux-m68k-low.c
+++++ b/gdb/gdbserver/linux-m68k-low.c
++@@ -17,16 +17,17 @@
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++ 
++ #include "server.h"
+++
+++#ifdef HAVE_SYS_REG_H
+++#include <sys/reg.h>
+++#endif
+++
++ #include "linux-low.h"
++ 
++ /* Defined in auto-generated file reg-m68k.c.  */
++ void init_registers_m68k (void);
++ extern const struct target_desc *tdesc_m68k;
++ 
++-#ifdef HAVE_SYS_REG_H
++-#include <sys/reg.h>
++-#endif
++-
++ #define m68k_num_regs 29
++ #define m68k_num_gregs 18
++ 
++-- 
++2.14.4
++
+diff --git a/package/gdb/8.0.1/0005-gdbserver-fix-build-for-m68k.patch b/package/gdb/8.0.1/0005-gdbserver-fix-build-for-m68k.patch
+new file mode 100644
+index 0000000000..451bed312c
+--- /dev/null
++++ b/package/gdb/8.0.1/0005-gdbserver-fix-build-for-m68k.patch
+@@ -0,0 +1,62 @@
++From 80c60ea9fb3634272a98ec526eabff25f5255bae Mon Sep 17 00:00:00 2001
++From: Romain Naour <romain.naour@gmail.com>
++Date: Fri, 22 Jun 2018 22:40:26 +0200
++Subject: [PATCH] gdbserver: fix build for m68k
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++As for strace [1], when <sys/reg.h> is included after <linux/ptrace.h>,
++the build fails on m68k with the following diagnostics:
++
++In file included from ./../nat/linux-ptrace.h:28:0,
++                 from linux-low.h:27,
++                 from linux-m68k-low.c:20:
++[...]/usr/include/sys/reg.h:26:3: error: expected identifier before numeric constant
++   PT_D1 = 0,
++   ^
++[...]usr/include/sys/reg.h:26:3: error: expected « } » before numeric constant
++[...]usr/include/sys/reg.h:26:3: error: expected unqualified-id before numeric constant
++In file included from linux-m68k-low.c:27:0:
++[...]usr/include/sys/reg.h:99:1: error: expected declaration before « } » token
++ };
++ ^
++
++Fix this by moving <sys/reg.h> on top of "linux-low.h".
++
++[1] https://github.com/strace/strace/commit/6ebf6c4f9e5ebca123a5b5f24afe67cf0473cf92
++
++Signed-off-by: Romain Naour <romain.naour@gmail.com>
++---
++ gdb/gdbserver/linux-m68k-low.c | 9 +++++----
++ 1 file changed, 5 insertions(+), 4 deletions(-)
++
++diff --git a/gdb/gdbserver/linux-m68k-low.c b/gdb/gdbserver/linux-m68k-low.c
++index 5594f10f927..19b4ef7b259 100644
++--- a/gdb/gdbserver/linux-m68k-low.c
+++++ b/gdb/gdbserver/linux-m68k-low.c
++@@ -17,16 +17,17 @@
++    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
++ 
++ #include "server.h"
+++
+++#ifdef HAVE_SYS_REG_H
+++#include <sys/reg.h>
+++#endif
+++
++ #include "linux-low.h"
++ 
++ /* Defined in auto-generated file reg-m68k.c.  */
++ void init_registers_m68k (void);
++ extern const struct target_desc *tdesc_m68k;
++ 
++-#ifdef HAVE_SYS_REG_H
++-#include <sys/reg.h>
++-#endif
++-
++ #define m68k_num_regs 29
++ #define m68k_num_gregs 18
++ 
++-- 
++2.14.4
++
+diff --git a/package/heimdal/heimdal.mk b/package/heimdal/heimdal.mk
+index 79aaacbd30..5f7b6c6853 100644
+--- a/package/heimdal/heimdal.mk
++++ b/package/heimdal/heimdal.mk
+@@ -24,7 +24,10 @@ HOST_HEIMDAL_CONF_OPTS = \
+ 	--without-libedit \
+ 	--without-hesiod \
+ 	--without-x \
++	--disable-mdb-db \
++	--disable-ndbm-db \
+ 	--disable-heimdal-documentation
++
+ HOST_HEIMDAL_CONF_ENV = MAKEINFO=true
+ HEIMDAL_LICENSE = BSD-3-Clause
+ HEIMDAL_LICENSE_FILES = LICENSE
+diff --git a/package/hidapi/Config.in b/package/hidapi/Config.in
+index f6a31bacd3..b98c2db91c 100644
+--- a/package/hidapi/Config.in
++++ b/package/hidapi/Config.in
+@@ -5,6 +5,8 @@ config BR2_PACKAGE_HIDAPI
+ 	select BR2_PACKAGE_LIBUSB
+ 	select BR2_PACKAGE_LIBGUDEV
+ 	select BR2_PACKAGE_LIBICONV if !BR2_ENABLE_LOCALE
++	# runtime UTF conversion support
++	select BR2_TOOLCHAIN_GLIBC_GCONV_LIBS_COPY if BR2_TOOLCHAIN_USES_GLIBC
+ 	help
+ 	  HIDAPI is a multi-platform library which allows an application
+ 	  to interface with USB and Bluetooth HID-Class devices on
+diff --git a/package/libcurl/0001-Fix-link-with-ssh2-built-with-a-static-mbedtls.patch b/package/libcurl/0001-Fix-link-with-ssh2-built-with-a-static-mbedtls.patch
+deleted file mode 100644
+index 9107fa7c8c..0000000000
+--- a/package/libcurl/0001-Fix-link-with-ssh2-built-with-a-static-mbedtls.patch
++++ /dev/null
+@@ -1,40 +0,0 @@
+-From b5fbc486e805805efb8400373ccec2a3dee1c81b Mon Sep 17 00:00:00 2001
+-From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
+-Date: Mon, 21 May 2018 12:07:00 +0200
+-Subject: [PATCH 1/1] Fix link with ssh2 built with a static mbedtls
+-
+-The ssh2 pkg-config file could contain the following lines when build
+-with a static version of mbedtls:
+-   Libs: -L${libdir} -lssh2 /xxx/libmbedcrypto.a
+-   Libs.private: /xxx/libmbedcrypto.a
+-
+-This static mbedtls library must be used to correctly detect ssh2
+-support and this library must be copied in libcurl.pc otherwise
+-compilation of any application (such as upmpdcli) with libcurl will fail
+-when trying to found mbedtls functions included in libssh2.
+-So, replace pkg-config --libs-only-l by pkg-config --libs.
+-
+-Fixes:
+- - http://autobuild.buildroot.net/results/43e24b22a77f616d6198c10435dcc23cc3b9088a
+-
+-Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
+----
+- configure.ac | 2 +-
+- 1 file changed, 1 insertion(+), 1 deletion(-)
+-
+-diff --git a/configure.ac b/configure.ac
+-index 5569a26b4..9e2606885 100755
+---- a/configure.ac
+-+++ b/configure.ac
+-@@ -2766,7 +2766,7 @@ if test X"$OPT_LIBSSH2" != Xno; then
+-     CURL_CHECK_PKGCONFIG(libssh2)
+- 
+-     if test "$PKGCONFIG" != "no" ; then
+--      LIB_SSH2=`$PKGCONFIG --libs-only-l libssh2`
+-+      LIB_SSH2=`$PKGCONFIG --libs libssh2`
+-       LD_SSH2=`$PKGCONFIG --libs-only-L libssh2`
+-       CPP_SSH2=`$PKGCONFIG --cflags-only-I libssh2`
+-       version=`$PKGCONFIG --modversion libssh2`
+--- 
+-2.14.1
+-
+diff --git a/package/libcurl/libcurl.hash b/package/libcurl/libcurl.hash
+index cb1e6e72f2..9a57153d2b 100644
+--- a/package/libcurl/libcurl.hash
++++ b/package/libcurl/libcurl.hash
+@@ -1,4 +1,5 @@
+ # Locally calculated after checking pgp signature
+-# https://curl.haxx.se/download/curl-7.60.0.tar.xz.asc
+-sha256 8736ff8ded89ddf7e926eec7b16f82597d029fc1469f3a551f1fafaac164e6a0  curl-7.60.0.tar.xz
++# https://curl.haxx.se/download/curl-7.61.0.tar.xz.asc
++# with key 27EDEAF22F3ABCEB50DB9A125CC908FDB71E12C2
++sha256 ef6e55192d04713673b4409ccbcb4cb6cd723137d6e10ca45b0c593a454e1720  curl-7.61.0.tar.xz
+ sha256 5f3849ec38ddb927e79f514bf948890c41b8d1407286a49609b8fb1585931095  COPYING
+diff --git a/package/libcurl/libcurl.mk b/package/libcurl/libcurl.mk
+index c77ce79e58..f07a53757c 100644
+--- a/package/libcurl/libcurl.mk
++++ b/package/libcurl/libcurl.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBCURL_VERSION = 7.60.0
++LIBCURL_VERSION = 7.61.0
+ LIBCURL_SOURCE = curl-$(LIBCURL_VERSION).tar.xz
+ LIBCURL_SITE = https://curl.haxx.se/download
+ LIBCURL_DEPENDENCIES = host-pkgconf \
+@@ -14,8 +14,6 @@ LIBCURL_DEPENDENCIES = host-pkgconf \
+ LIBCURL_LICENSE = curl
+ LIBCURL_LICENSE_FILES = COPYING
+ LIBCURL_INSTALL_STAGING = YES
+-# We're patching configure.ac
+-LIBCURL_AUTORECONF = YES
+ 
+ # We disable NTLM support because it uses fork(), which doesn't work
+ # on non-MMU platforms. Moreover, this authentication method is
+@@ -40,7 +38,6 @@ LIBCURL_CONFIG_SCRIPTS = curl-config
+ 
+ ifeq ($(BR2_PACKAGE_OPENSSL),y)
+ LIBCURL_DEPENDENCIES += openssl
+-LIBCURL_CONF_ENV += ac_cv_lib_crypto_CRYPTO_lock=yes
+ # configure adds the cross openssl dir to LD_LIBRARY_PATH which screws up
+ # native stuff during the rest of configure when target == host.
+ # Fix it by setting LD_LIBRARY_PATH to something sensible so those libs
+diff --git a/package/libglib2/0004-Do-not-hardcode-python-path-into-various-tools.patch b/package/libglib2/0004-Do-not-hardcode-python-path-into-various-tools.patch
+new file mode 100644
+index 0000000000..fa558e6dbf
+--- /dev/null
++++ b/package/libglib2/0004-Do-not-hardcode-python-path-into-various-tools.patch
+@@ -0,0 +1,48 @@
++From b9160d951b9af647b97766c57295ca4f45cf9521 Mon Sep 17 00:00:00 2001
++From: Alexander Kanavin <alex.kanavin@gmail.com>
++Date: Tue, 3 Oct 2017 10:45:55 +0300
++Subject: [PATCH] Do not hardcode python path into various tools
++
++Upstream-Status: Inappropriate [oe-core specific]
++Signed-off-by: Alexander Kanavin <alex.kanavin@gmail.com>
++Fetch from: http://cgit.openembedded.org/openembedded-core/tree/meta/recipes-core/glib-2.0/glib-2.0/0010-Do-not-hardcode-python-path-into-various-tools.patch?id=eef7883587acc933d6f34b559ec03ff84d18573b
++Signed-off-by: David Owens <david.owens@rockwellcollins.com>
++---
++ gio/gdbus-2.0/codegen/gdbus-codegen.in | 2 +-
++ gobject/glib-genmarshal.in             | 2 +-
++ gobject/glib-mkenums.in                | 2 +-
++ 3 files changed, 3 insertions(+), 3 deletions(-)
++
++diff --git a/gio/gdbus-2.0/codegen/gdbus-codegen.in b/gio/gdbus-2.0/codegen/gdbus-codegen.in
++index 8050981..e693ef3 100644
++--- a/gio/gdbus-2.0/codegen/gdbus-codegen.in
+++++ b/gio/gdbus-2.0/codegen/gdbus-codegen.in
++@@ -1,4 +1,4 @@
++-#!/usr/bin/env @PYTHON@
+++#!/usr/bin/env python
++ 
++ # GDBus - GLib D-Bus Library
++ #
++diff --git a/gobject/glib-genmarshal.in b/gobject/glib-genmarshal.in
++index 09e8408..b2f9d99 100755
++--- a/gobject/glib-genmarshal.in
+++++ b/gobject/glib-genmarshal.in
++@@ -1,4 +1,4 @@
++-#!/usr/bin/env @PYTHON@
+++#!/usr/bin/env python
++ 
++ # pylint: disable=too-many-lines, missing-docstring, invalid-name
++ 
++diff --git a/gobject/glib-mkenums.in b/gobject/glib-mkenums.in
++index d4bfd11..051fce4 100755
++--- a/gobject/glib-mkenums.in
+++++ b/gobject/glib-mkenums.in
++@@ -1,4 +1,4 @@
++-#!/usr/bin/env @PYTHON@
+++#!/usr/bin/env python
++ 
++ # If the code below looks horrible and unpythonic, do not panic.
++ #
++-- 
++2.14.1
++
+diff --git a/package/liblogging/Config.in b/package/liblogging/Config.in
+index 23c3c1ad2d..a39fdf8ddc 100644
+--- a/package/liblogging/Config.in
++++ b/package/liblogging/Config.in
+@@ -5,4 +5,4 @@ config BR2_PACKAGE_LIBLOGGING
+ 	  logging. It offers an enhanced replacement
+ 	  for the syslog() call, but retains its ease of use.
+ 
+-	  http://www.liblogging.org/
++	  https://www.rsyslog.com/liblogging/
+diff --git a/package/libostree/libostree.mk b/package/libostree/libostree.mk
+index 336d11a978..f3e79c8436 100644
+--- a/package/libostree/libostree.mk
++++ b/package/libostree/libostree.mk
+@@ -40,7 +40,7 @@ endif
+ 
+ #cURL support depends on libsoup
+ ifeq ($(BR2_PACKAGE_LIBSOUP),y)
+-LIBOSTREE_CONF_OPTS += --with-libsoup
++LIBOSTREE_CONF_OPTS += --with-soup
+ LIBOSTREE_DEPENDENCIES += libsoup
+ ifeq ($(BR2_PACKAGE_LIBCURL),y)
+ LIBOSTREE_CONF_OPTS += --with-curl
+@@ -49,7 +49,7 @@ else
+ LIBOSTREE_CONF_OPTS += --without-curl
+ endif
+ else
+-LIBOSTREE_CONF_OPTS += --without-libsoup --without-curl
++LIBOSTREE_CONF_OPTS += --without-soup --without-curl
+ endif
+ 
+ ifeq ($(BR2_PACKAGE_LIBARCHIVE),y)
+diff --git a/package/libsoup/Config.in b/package/libsoup/Config.in
+index 236d3c428a..599f9594d9 100644
+--- a/package/libsoup/Config.in
++++ b/package/libsoup/Config.in
+@@ -11,7 +11,7 @@ config BR2_PACKAGE_LIBSOUP
+ 	  and the GLib main loop, to integrate well with GNOME
+ 	  applications.
+ 
+-	  http://live.gnome.org/LibSoup
++	  https://wiki.gnome.org/Projects/libsoup
+ 
+ if BR2_PACKAGE_LIBSOUP
+ 
+diff --git a/package/libv4l/0004-Build-sdlcam-only-if-jpeg-is-enabled.patch b/package/libv4l/0004-Build-sdlcam-only-if-jpeg-is-enabled.patch
+new file mode 100644
+index 0000000000..4c4365f907
+--- /dev/null
++++ b/package/libv4l/0004-Build-sdlcam-only-if-jpeg-is-enabled.patch
+@@ -0,0 +1,31 @@
++From 5c407e130f8d0416f91f5a12bcdc2709f00dda65 Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Fri, 29 Jun 2018 21:15:10 +0200
++Subject: [PATCH] Build sdlcam only if jpeg is enabled
++
++Fixes:
++ - http://autobuild.buildroot.net/results/1eded8b44cc369550566c6ce0b3c042f1aec8d44
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++---
++ contrib/test/Makefile.am | 2 ++
++ 1 file changed, 2 insertions(+)
++
++diff --git a/contrib/test/Makefile.am b/contrib/test/Makefile.am
++index 0188fe21..c7c38e7a 100644
++--- a/contrib/test/Makefile.am
+++++ b/contrib/test/Makefile.am
++@@ -17,8 +17,10 @@ noinst_PROGRAMS += v4l2gl
++ endif
++ 
++ if HAVE_SDL
+++if HAVE_JPEG
++ noinst_PROGRAMS += sdlcam
++ endif
+++endif
++ 
++ driver_test_SOURCES = driver-test.c
++ driver_test_LDADD = ../../utils/libv4l2util/libv4l2util.la
++-- 
++2.14.1
++
+diff --git a/package/libv4l/libv4l.mk b/package/libv4l/libv4l.mk
+index 11061306c7..c95b2778cd 100644
+--- a/package/libv4l/libv4l.mk
++++ b/package/libv4l/libv4l.mk
+@@ -10,6 +10,10 @@ LIBV4L_SITE = https://linuxtv.org/downloads/v4l-utils
+ LIBV4L_INSTALL_STAGING = YES
+ LIBV4L_DEPENDENCIES = host-pkgconf
+ LIBV4L_CONF_OPTS = --disable-doxygen-doc
++# We're patching contrib/test/Makefile.am
++LIBV4L_AUTORECONF = YES
++# add host-gettext for AM_ICONV macro
++LIBV4L_DEPENDENCIES += host-gettext
+ 
+ # fix uclibc-ng configure/compile
+ LIBV4L_CONF_ENV = ac_cv_prog_cc_c99='-std=gnu99'
+@@ -73,6 +77,10 @@ else
+ LIBV4L_CONF_OPTS += --disable-v4l-utils
+ endif
+ 
++ifeq ($(BR2_PACKAGE_SDL2_IMAGE),y)
++LIBV4L_DEPENDENCIES += sdl2_image
++endif
++
+ LIBV4L_CONF_ENV += LIBS="$(LIBV4L_LIBS)"
+ 
+ $(eval $(autotools-package))
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index 982e24fff8..b042a01590 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -242,12 +242,12 @@ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+ 	default "3.2.102"	if BR2_KERNEL_HEADERS_3_2
+ 	default "4.1.52"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.138"	if BR2_KERNEL_HEADERS_4_4
+-	default "4.9.109"	if BR2_KERNEL_HEADERS_4_9
++	default "4.4.142"	if BR2_KERNEL_HEADERS_4_4
++	default "4.9.113"	if BR2_KERNEL_HEADERS_4_9
+ 	default "4.10.17"	if BR2_KERNEL_HEADERS_4_10
+ 	default "4.11.12"	if BR2_KERNEL_HEADERS_4_11
+ 	default "4.12.14"	if BR2_KERNEL_HEADERS_4_12
+ 	default "4.13.16"	if BR2_KERNEL_HEADERS_4_13
+-	default "4.14.50"	if BR2_KERNEL_HEADERS_4_14
++	default "4.14.56"	if BR2_KERNEL_HEADERS_4_14
+ 	default "4.15.18"	if BR2_KERNEL_HEADERS_4_15
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/linux-tools/Config.in b/package/linux-tools/Config.in
+index e3ccd850f9..fd496bba06 100644
+--- a/package/linux-tools/Config.in
++++ b/package/linux-tools/Config.in
+@@ -48,9 +48,11 @@ config BR2_PACKAGE_LINUX_TOOLS_PERF
+ 	  code), single CPU or severals threads.
+ 
+ 	  This will build and install the userspace 'perf'
+-	  command. It is up to the user to ensure that the kernel
+-	  configuration has all the suitable options enabled to allow a
+-	  proper operation of 'perf'.
++	  command.
++
++	  Your kernel must have CONFIG_PERF_EVENTS enabled to use perf
++	  profiling. Buildroot automatically enables this in the kernel
++	  configuration.
+ 
+ 	  https://perf.wiki.kernel.org/
+ 
+diff --git a/package/lm-sensors/lm-sensors.mk b/package/lm-sensors/lm-sensors.mk
+index f581b5cd8f..6fc7ce4981 100644
+--- a/package/lm-sensors/lm-sensors.mk
++++ b/package/lm-sensors/lm-sensors.mk
+@@ -26,7 +26,7 @@ LM_SENSORS_MAKE_OPTS = \
+ 	PREFIX=/usr
+ 
+ ifeq ($(BR2_STATIC_LIBS),y)
+-LM_SENSORS_MAKE_OPTS += BUILD_SHARED_LIB=0
++LM_SENSORS_MAKE_OPTS += BUILD_SHARED_LIB=0 EXLDFLAGS=-static
+ else
+ LM_SENSORS_MAKE_OPTS += BUILD_SHARED_LIB=1
+ endif
+diff --git a/package/ncurses/ncurses.mk b/package/ncurses/ncurses.mk
+index e63b6e4aed..8d0eb1e086 100644
+--- a/package/ncurses/ncurses.mk
++++ b/package/ncurses/ncurses.mk
+@@ -151,6 +151,7 @@ HOST_NCURSES_CONF_OPTS = \
+ 	--without-cxx \
+ 	--without-cxx-binding \
+ 	--without-ada \
++	--with-default-terminfo-dir=/usr/share/terminfo \
+ 	--without-normal
+ 
+ $(eval $(autotools-package))
+diff --git a/package/network-manager/Config.in b/package/network-manager/Config.in
+index 9602cc4a1a..ca508185f0 100644
+--- a/package/network-manager/Config.in
++++ b/package/network-manager/Config.in
+@@ -64,8 +64,8 @@ config BR2_PACKAGE_NETWORK_MANAGER_OVS
+ 
+ endif
+ 
+-comment "NetworkManager needs udev /dev management and a glibc toolchain w/ headers >= 3.7, dynamic library"
++comment "NetworkManager needs udev /dev management and a glibc toolchain w/ headers >= 3.2, dynamic library"
+ 	depends on BR2_USE_MMU
+ 	depends on !BR2_PACKAGE_HAS_UDEV || \
+-		!BR2_TOOLCHAIN_HEADERS_AT_LEAST_3_7 || \
++		!BR2_TOOLCHAIN_HEADERS_AT_LEAST_3_2 || \
+ 		!BR2_TOOLCHAIN_USES_GLIBC || BR2_STATIC_LIBS
+diff --git a/package/openvmtools/Config.in b/package/openvmtools/Config.in
+index 72c0293de7..66d4f1b158 100644
+--- a/package/openvmtools/Config.in
++++ b/package/openvmtools/Config.in
+@@ -6,7 +6,7 @@ config BR2_PACKAGE_OPENVMTOOLS
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS # libglib2
+ 	depends on BR2_TOOLCHAIN_HAS_NATIVE_RPC
+ 	depends on BR2_ENABLE_LOCALE
+-	depends on !BR2_TOOLCHAIN_USES_UCLIBC
++	depends on BR2_TOOLCHAIN_USES_GLIBC
+ 	select BR2_PACKAGE_LIBGLIB2
+ 	select BR2_PACKAGE_LIBDNET
+ 	help
+@@ -47,9 +47,9 @@ comment "PAM support needs a glibc toolchain w/ dynamic library"
+ 
+ endif
+ 
+-comment "openvmtools needs a glibc or musl toolchain w/ wchar, threads, RPC, locale"
++comment "openvmtools needs a glibc toolchain w/ wchar, threads, RPC, locale"
+ 	depends on BR2_i386 || BR2_x86_64
+ 	depends on BR2_USE_MMU
+ 	depends on !BR2_USE_WCHAR || !BR2_TOOLCHAIN_HAS_THREADS || \
+ 		!BR2_TOOLCHAIN_HAS_NATIVE_RPC || !BR2_ENABLE_LOCALE || \
+-		BR2_TOOLCHAIN_USES_UCLIBC
++		!BR2_TOOLCHAIN_USES_GLIBC
+diff --git a/package/patchelf/0004-patchelf-Check-ELF-endianness-before-writing-new-run.patch b/package/patchelf/0004-patchelf-Check-ELF-endianness-before-writing-new-run.patch
+new file mode 100644
+index 0000000000..8a89d3a631
+--- /dev/null
++++ b/package/patchelf/0004-patchelf-Check-ELF-endianness-before-writing-new-run.patch
+@@ -0,0 +1,40 @@
++From 8c75599b674c73fbfe9c15afeccad54ae88243f5 Mon Sep 17 00:00:00 2001
++From: Bryce Ferguson <bryce.ferguson@rockwellcollins.com>
++Date: Mon, 25 Jun 2018 13:05:07 -0500
++Subject: [PATCH] patchelf: Check ELF endianness before writing new runpath
++
++This commit modifies the way fields are written in the dynamic
++section in order to account the architecture of the target ELF
++file. Instead of copying the raw data, use the helper functions
++to convert endianness.
++
++Link to upstream PR: https://github.com/NixOS/patchelf/pull/151
++
++Signed-off-by: Bryce Ferguson <bryce.ferguson@rockwellcollins.com>
++---
++ src/patchelf.cc | 4 ++--
++ 1 file changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/src/patchelf.cc b/src/patchelf.cc
++index 35b4a33..a33f644 100644
++--- a/src/patchelf.cc
+++++ b/src/patchelf.cc
++@@ -1315,13 +1315,13 @@ void ElfFile<ElfFileParamNames>::modifyRPath(RPathOp op, string rootDir, string
++     debug("new rpath is `%s'\n", newRPath.c_str());
++ 
++     if (!forceRPath && dynRPath && !dynRunPath) { /* convert DT_RPATH to DT_RUNPATH */
++-        dynRPath->d_tag = DT_RUNPATH;
+++        wri(dynRPath->d_tag, DT_RUNPATH);
++         dynRunPath = dynRPath;
++         dynRPath = 0;
++     }
++ 
++     if (forceRPath && dynRPath && dynRunPath) { /* convert DT_RUNPATH to DT_RPATH */
++-        dynRunPath->d_tag = DT_IGNORE;
+++        wri(dynRunPath->d_tag, DT_IGNORE);
++     }
++ 
++     if (newRPath.size() <= rpathSize) {
++-- 
++2.17.0
++
+diff --git a/package/pinentry/pinentry.mk b/package/pinentry/pinentry.mk
+index 4081a8a5d6..d0179728bd 100644
+--- a/package/pinentry/pinentry.mk
++++ b/package/pinentry/pinentry.mk
+@@ -18,6 +18,10 @@ PINENTRY_CONF_OPTS += \
+ 	--with-libgpg-error-prefix=$(STAGING_DIR)/usr \
+ 	--without-libcap       # requires PAM
+ 
++ifeq ($(BR2_TOOLCHAIN_HAS_LIBATOMIC),y)
++PINENTRY_CONF_ENV += LIBS=-latomic
++endif
++
+ # build with X if available
+ ifeq ($(BR2_PACKAGE_XORG7),y)
+ PINENTRY_CONF_OPTS += --with-x
+diff --git a/package/procps-ng/Config.in b/package/procps-ng/Config.in
+index 6ff8983202..d9e884faee 100644
+--- a/package/procps-ng/Config.in
++++ b/package/procps-ng/Config.in
+@@ -2,9 +2,14 @@ config BR2_PACKAGE_PROCPS_NG
+ 	bool "procps-ng"
+ 	depends on BR2_USE_MMU # fork()
+ 	depends on BR2_PACKAGE_BUSYBOX_SHOW_OTHERS
++	depends on !BR2_TOOLCHAIN_USES_MUSL # fopencookie()
+ 	select BR2_PACKAGE_NCURSES
+ 	help
+ 	  Standard informational utilities and process-handling tools.
+ 	  Provides things like kill, ps, uptime, free, top, etc...
+ 
+ 	  http://sourceforge.net/projects/procps-ng/
++
++comment "procps-ng needs a glibc or uclibc toolchain"
++	depends on BR2_USE_MMU
++	depends on BR2_TOOLCHAIN_USES_MUSL
+diff --git a/package/qpdf/qpdf.hash b/package/qpdf/qpdf.hash
+index 1fbef66e6f..d27c9834b9 100644
+--- a/package/qpdf/qpdf.hash
++++ b/package/qpdf/qpdf.hash
+@@ -1,4 +1,2 @@
+-# From https://sourceforge.net/projects/qpdf/files/qpdf/7.0.0/qpdf-7.0.0.sha512/download
+-sha512	7b52d67b4d2c428a7b0c1cd03b03a23f05d38d7e3c81041079a137919019ea5158f12bf95fdcfcff6b43ffdefe93a85127ced2a363a6b4b380cbaa02a3840256  qpdf-7.0.0.tar.gz
+-# Locally computed
+-sha256	fed08de14caad0fe5efd148d9eca886d812588b2cbb35d13e61993ee8eb8c65f  qpdf-7.0.0.tar.gz
++# From https://sourceforge.net/projects/qpdf/files/qpdf/8.1.0/qpdf-8.1.0.sha512/download
++sha512	1831bcaaed87dae268db5d61805d1483ec5c101f6ce594be660664c119597ae67cf011c2b50092964d785a814d5f6c780935127a89401fe37a1026ae4d3af15c  qpdf-8.1.0.tar.gz
+diff --git a/package/qpdf/qpdf.mk b/package/qpdf/qpdf.mk
+index 27e4d09978..4776d22b16 100644
+--- a/package/qpdf/qpdf.mk
++++ b/package/qpdf/qpdf.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-QPDF_VERSION = 7.0.0
++QPDF_VERSION = 8.1.0
+ QPDF_SITE = http://downloads.sourceforge.net/project/qpdf/qpdf/$(QPDF_VERSION)
+ QPDF_INSTALL_STAGING = YES
+ QPDF_LICENSE = Artistic-2.0
+diff --git a/package/qt5/qt5.mk b/package/qt5/qt5.mk
+index 3c03c10066..84b7a4a469 100644
+--- a/package/qt5/qt5.mk
++++ b/package/qt5/qt5.mk
+@@ -6,7 +6,7 @@
+ 
+ ifeq ($(BR2_PACKAGE_QT5_VERSION_LATEST),y)
+ QT5_VERSION_MAJOR = 5.9
+-QT5_VERSION = $(QT5_VERSION_MAJOR).4
++QT5_VERSION = $(QT5_VERSION_MAJOR).6
+ else
+ QT5_VERSION_MAJOR = 5.6
+ QT5_VERSION = $(QT5_VERSION_MAJOR).3
+diff --git a/package/qt5/qt53d/qt53d.hash b/package/qt5/qt53d/qt53d.hash
+index 9d629eb540..dfa595dcc4 100644
+--- a/package/qt5/qt53d/qt53d.hash
++++ b/package/qt5/qt53d/qt53d.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qt3d-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 10d05a30e925fcad971126c7f47a5e32c39f007dab96b298b2094501f9607ffe qt3d-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qt3d-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 ad18b1c98a100025a96d600008c9478f646432c9e8cf11fb9a405c55f1970550 qt3d-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qt3d-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 c89cbc12fde5a279e5b127651a194cae75003ba8113f9e7e7b24e67495ecff09  qt3d-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 edfe70e99be2a7c109d860b19204609e582720b211c50caedac729da372a1253 LICENSE.GPL
+diff --git a/package/qt5/qt53d/qt53d.mk b/package/qt5/qt53d/qt53d.mk
+index bdcc665b94..557f643a63 100644
+--- a/package/qt5/qt53d/qt53d.mk
++++ b/package/qt5/qt53d/qt53d.mk
+@@ -37,13 +37,19 @@ endef
+ endif
+ 
+ ifeq ($(BR2_STATIC_LIBS),)
+-define QT53D_INSTALL_TARGET_CMDS
+-	cp -dpf $(STAGING_DIR)/usr/lib/libQt53D*.so.* $(TARGET_DIR)/usr/lib
++ifeq ($(BR2_PACKAGE_QT5_VERSION_LATEST),y)
++# Available since 5.9
++define QT53D_INSTALL_TARGET_LATEST
+ 	cp -dpfr $(STAGING_DIR)/usr/lib/qt/plugins/geometryloaders $(TARGET_DIR)/usr/lib/qt/plugins
+ 	cp -dpfr $(STAGING_DIR)/usr/lib/qt/plugins/renderplugins $(TARGET_DIR)/usr/lib/qt/plugins
++endef
++endif
++define QT53D_INSTALL_TARGET_CMDS
++	cp -dpf $(STAGING_DIR)/usr/lib/libQt53D*.so.* $(TARGET_DIR)/usr/lib
+ 	cp -dpfr $(STAGING_DIR)/usr/lib/qt/plugins/sceneparsers $(TARGET_DIR)/usr/lib/qt/plugins
+ 	cp -dpfr $(STAGING_DIR)/usr/qml/Qt3D $(TARGET_DIR)/usr/qml
+ 	cp -dpfr $(STAGING_DIR)/usr/qml/QtQuick $(TARGET_DIR)/usr/qml
++	$(QT53D_INSTALL_TARGET_LATEST)
+ 	$(QT53D_INSTALL_TARGET_EXAMPLES)
+ endef
+ endif
+diff --git a/package/qt5/qt5base/qmake.conf.in b/package/qt5/qt5base/qmake.conf.in
+index d62ee7cebe..f14527aa7f 100644
+--- a/package/qt5/qt5base/qmake.conf.in
++++ b/package/qt5/qt5base/qmake.conf.in
+@@ -21,7 +21,7 @@ CONFIG                 += nostrip
+ QMAKE_LIBS             += -lrt -lpthread -ldl
+ QMAKE_CFLAGS_ISYSTEM   =
+ 
+-# Architecturespecific configuration
++# Architecture specific configuration
+ include(arch.conf)
+ 
+ @EGLFS_DEVICE@
+diff --git a/package/qt5/qt5base/qt5base.hash b/package/qt5/qt5base/qt5base.hash
+index a72d8cd4da..950785c0de 100644
+--- a/package/qt5/qt5base/qt5base.hash
++++ b/package/qt5/qt5base/qt5base.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtbase-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 fef48529a6fc2617a30d75d952cb327c6be341fd104154993922184b3b3b4da1 qtbase-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtbase-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 69e6bde3ab00673a77e1506173551fec7d0cd899fcbf9b1260517db1b61004cf qtbase-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtbase-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 eed620cb268b199bd83b3fc6a471c51d51e1dc2dbb5374fc97a0cc75facbe36f  qtbase-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 LICENSE.GPL2
+diff --git a/package/qt5/qt5base/qt5base.mk b/package/qt5/qt5base/qt5base.mk
+index 957cdf57b7..53c98ce490 100644
+--- a/package/qt5/qt5base/qt5base.mk
++++ b/package/qt5/qt5base/qt5base.mk
+@@ -264,7 +264,6 @@ define QT5BASE_CONFIGURE_CMDS
+ 	sed 's/@EGLFS_DEVICE@/$(QT5BASE_EGLFS_DEVICE)/g' \
+ 		$(QT5BASE_PKGDIR)/qmake.conf.in > \
+ 		$(@D)/mkspecs/devices/linux-buildroot-g++/qmake.conf
+-	$(QT5BASE_CONFIGURE_QMAKE_CONFIG)
+ 	$(INSTALL) -m 0644 -D $(QT5BASE_PKGDIR)/qplatformdefs.h \
+ 		$(@D)/mkspecs/devices/linux-buildroot-g++/qplatformdefs.h
+ 	$(QT5BASE_CONFIGURE_CONFIG_FILE)
+diff --git a/package/qt5/qt5canvas3d/qt5canvas3d.hash b/package/qt5/qt5canvas3d/qt5canvas3d.hash
+index 68d1691d3d..be353fbc4e 100644
+--- a/package/qt5/qt5canvas3d/qt5canvas3d.hash
++++ b/package/qt5/qt5canvas3d/qt5canvas3d.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtcanvas3d-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 e99e0e159f2fba539b7947a1921072f6807f20958d32809edbf12aac571f56ff qtcanvas3d-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtcanvas3d-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 ef358503e2f243c2e162c3fef2181707ff3485376198d8e4fcc6d979e6ebed29 qtcanvas3d-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtcanvas3d-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 9da45991f62152c2c76931aed8a6059375fdce441b38752991e1ad2c77507c22  qtcanvas3d-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 edfe70e99be2a7c109d860b19204609e582720b211c50caedac729da372a1253 LICENSE.GPLv2
+diff --git a/package/qt5/qt5charts/qt5charts.hash b/package/qt5/qt5charts/qt5charts.hash
+index a0c2d0d739..84e8959178 100644
+--- a/package/qt5/qt5charts/qt5charts.hash
++++ b/package/qt5/qt5charts/qt5charts.hash
+@@ -1,5 +1,5 @@
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtcharts-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 75f72983fde6720a093d5f065d33f47e77a4bd2188ae9d41ebb9a4fcc459d3e7 qtcharts-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtcharts-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 5fd60f08b1815b0e7b813c75a0ec726bffc7cc686b160bebf1e710e882ceadab  qtcharts-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903 LICENSE.GPL3
+diff --git a/package/qt5/qt5charts/qt5charts.mk b/package/qt5/qt5charts/qt5charts.mk
+index 17fdd96702..c15e4e02df 100644
+--- a/package/qt5/qt5charts/qt5charts.mk
++++ b/package/qt5/qt5charts/qt5charts.mk
+@@ -11,7 +11,9 @@ QT5CHARTS_DEPENDENCIES = qt5base
+ QT5CHARTS_INSTALL_STAGING = YES
+ 
+ QT5CHARTS_LICENSE = GPL-3.0
++ifeq ($(BR2_PACKAGE_QT5_VERSION_LATEST),y)
+ QT5CHARTS_LICENSE_FILES = LICENSE.GPL3
++endif
+ 
+ ifeq ($(BR2_PACKAGE_QT5DECLARATIVE),y)
+ QT5CHARTS_DEPENDENCIES += qt5declarative
+diff --git a/package/qt5/qt5connectivity/qt5connectivity.hash b/package/qt5/qt5connectivity/qt5connectivity.hash
+index 21d0ded4e0..1da448ad5e 100644
+--- a/package/qt5/qt5connectivity/qt5connectivity.hash
++++ b/package/qt5/qt5connectivity/qt5connectivity.hash
+@@ -1,5 +1,5 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtconnectivity-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 fa406e3d63fa4a2acc8ecae6d110f20c766f19a21c7061a12f3c167deb07ccde qtconnectivity-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtconnectivity-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 dba750363bf55648a08bc44372f423d31f405f6deac5393f0b76376a3e9e0c8b qtconnectivity-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtconnectivity-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 6c696855c2d4e63709ba81d22c85cab30f66418eac2fb2810a02a4b47a531c57  qtconnectivity-opensource-src-5.9.6.tar.xz
+diff --git a/package/qt5/qt5declarative/qt5declarative.hash b/package/qt5/qt5declarative/qt5declarative.hash
+index 308a4f0f56..9bbda42210 100644
+--- a/package/qt5/qt5declarative/qt5declarative.hash
++++ b/package/qt5/qt5declarative/qt5declarative.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtdeclarative-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 f63fc053d0d16b8a9ca9308f8ead77874b470ae31b66057e2bd336bf648191fc qtdeclarative-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtdeclarative-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 dc638a3b207dd2c6607a21415f6dd8d760568535dfe4b485fdb4576c98832d65 qtdeclarative-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtdeclarative-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 058fd99a779a753fc5f5e887f1afb799aa53b9f010faa06374b1cfb6fc8bad8a  qtdeclarative-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 LICENSE.GPL2
+diff --git a/package/qt5/qt5graphicaleffects/qt5graphicaleffects.hash b/package/qt5/qt5graphicaleffects/qt5graphicaleffects.hash
+index 9a1bbdac32..c7f9312938 100644
+--- a/package/qt5/qt5graphicaleffects/qt5graphicaleffects.hash
++++ b/package/qt5/qt5graphicaleffects/qt5graphicaleffects.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtgraphicaleffects-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 c742592d5e45b122b29df60b69be23ba7c817f2dc471db86e054f6ea24a999ed qtgraphicaleffects-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtgraphicaleffects-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 97f75327d7d20ec02e920f1c86ee2bc4063396833d93215e509e95c58e24b8ef qtgraphicaleffects-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtgraphicaleffects-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 5f98bc62e8f27bd13853e90306e7e10f47fb06d7cd38f2e7be76bd907ef37154  qtgraphicaleffects-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 LICENSE.GPL2
+diff --git a/package/qt5/qt5imageformats/qt5imageformats.hash b/package/qt5/qt5imageformats/qt5imageformats.hash
+index 37d0519ed4..d24e550514 100644
+--- a/package/qt5/qt5imageformats/qt5imageformats.hash
++++ b/package/qt5/qt5imageformats/qt5imageformats.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtimageformats-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 efe4da3c90c976c9b9a2eb6b081d2b8e1435935695104456276ce98e8a5848c3 qtimageformats-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtimageformats-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 69e17081a8649b7db138073942d07d2e99f78f4b954ccd6aab3a406e92dbddd9 qtimageformats-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtimageformats-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 158272da5e49a388b43423399592372968984323bfd543a5a992bbd466ff4060  qtimageformats-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 edfe70e99be2a7c109d860b19204609e582720b211c50caedac729da372a1253 LICENSE.GPLv2
+diff --git a/package/qt5/qt5location/qt5location.hash b/package/qt5/qt5location/qt5location.hash
+index 3f9ba667c1..a21e707763 100644
+--- a/package/qt5/qt5location/qt5location.hash
++++ b/package/qt5/qt5location/qt5location.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtlocation-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 b7a81c58cc331fb15bea8fba21d3c9a59f6dc6ad2e4855e30a14ce59a2af1466 qtlocation-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtlocation-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 37ed68b0243a30b836cda79802e3f33404b1792f7b845a25b2e4989dc2fed2a0 qtlocation-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtlocation-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 7d65c8e155c617719e2fb56d39f11cf2bc911a43cf6667c124d86cc1a12619c9  qtlocation-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 edfe70e99be2a7c109d860b19204609e582720b211c50caedac729da372a1253 LICENSE.GPLv2
+diff --git a/package/qt5/qt5multimedia/qt5multimedia.hash b/package/qt5/qt5multimedia/qt5multimedia.hash
+index 5cb253790a..69a378f409 100644
+--- a/package/qt5/qt5multimedia/qt5multimedia.hash
++++ b/package/qt5/qt5multimedia/qt5multimedia.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtmultimedia-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 ae36039ea8037742342f1615687e0ca2188f3ed0d700627a5e5be546c15e1b46 qtmultimedia-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtmultimedia-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 4952a00712e209ad34241b22cb338bad2f44c42a77316b3b05389faeee1e4e74 qtmultimedia-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtmultimedia-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 9edc11d74e10e4ef857ab38a66700259829e6b5baa4ab0b30655f549d8939fff  qtmultimedia-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 LICENSE.GPL2
+diff --git a/package/qt5/qt5quickcontrols/qt5quickcontrols.hash b/package/qt5/qt5quickcontrols/qt5quickcontrols.hash
+index ca1e217d83..c437073de0 100644
+--- a/package/qt5/qt5quickcontrols/qt5quickcontrols.hash
++++ b/package/qt5/qt5quickcontrols/qt5quickcontrols.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtquickcontrols-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 31bb0fc8f21b855af6ff02c415be3246128b523d0ef7c05e248e92281ab0db8e qtquickcontrols-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtquickcontrols-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 16a205a09bfe9d54c38e9ef555e6f1ecd082576ef2a33cb80b6d49a7ccaed98b qtquickcontrols-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtquickcontrols-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 da4dd353802197c2bb53c92a36cf7749c7d9dc29b4acc919b692683e9c1c3313  qtquickcontrols-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 edfe70e99be2a7c109d860b19204609e582720b211c50caedac729da372a1253 LICENSE.GPLv2
+diff --git a/package/qt5/qt5quickcontrols2/qt5quickcontrols2.hash b/package/qt5/qt5quickcontrols2/qt5quickcontrols2.hash
+index 15f23b5e4b..ae6fb01f58 100644
+--- a/package/qt5/qt5quickcontrols2/qt5quickcontrols2.hash
++++ b/package/qt5/qt5quickcontrols2/qt5quickcontrols2.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtquickcontrols2-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 ec5078470abe2da888c2be5d1749b5961ef5132487c180ce4d4aa19ea7ff81cb qtquickcontrols2-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtquickcontrols2-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 1528a7a356e7073f5eeca93ba6e3330ba708d31c3a8f10dc1ce4546d9557640c qtquickcontrols2-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtquickcontrols2-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 24b41ae6acec9372190147736ba31bf0b4467c71cc4b14817e3a82a750481679  qtquickcontrols2-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 d2cfc059acb4abd8e513cd0a73cd8489f34cbafa7bc34d5d31fb3210821cf8ca LICENSE.GPLv3
+diff --git a/package/qt5/qt5script/0001-Detect-32-bits-armv8-a-architecture.patch b/package/qt5/qt5script/0001-Detect-32-bits-armv8-a-architecture.patch
+new file mode 100644
+index 0000000000..7e4e524dc9
+--- /dev/null
++++ b/package/qt5/qt5script/0001-Detect-32-bits-armv8-a-architecture.patch
+@@ -0,0 +1,49 @@
++From daf2e222903bacf85f27dfb0fffc4459bbf58b77 Mon Sep 17 00:00:00 2001
++From: =?utf-8?q?Ga=C3=ABl=20PORTAY?= <gael.portay@savoirfairelinux.com>
++Date: Sun, 10 Jun 2018 08:23:50 -0400
++Subject: [PATCH] Detect 32-bits armv8-a architecture
++MIME-Version: 1.0
++Content-Type: text/plain; charset=utf-8
++Content-Transfer-Encoding: 8bit
++
++These toolchains define __ARM_ARCH_8A__ (for ARM architecture version)
++and __arm__ (for 32-bits word-size; __aarch64__ for 64-bits).
++
++This commit catches this new architecture (armv8a) within a #ifdef/#endif
++inside the if statement dedicated for 32-bits ARM detection. See commit
++from WebKit [1] and [2].
++
++Fixes:
++
++	In file included from ../3rdparty/javascriptcore/JavaScriptCore/config.h:26,
++	                 from ../3rdparty/javascriptcore/JavaScriptCore/pcre/pcre_compile.cpp:44:
++	../3rdparty/javascriptcore/JavaScriptCore/wtf/Platform.h:370:6: error: #error "Not supported ARM architecture"
++	 #    error "Not supported ARM architecture"
++	      ^~~~~
++
++[1]: https://github.com/WebKit/webkit/commit/313d9fc4bdd2f020a5d0cf834c3c61982f161ebb
++[2]: https://github.com/WebKit/webkit/commit/98f0de0709786f5d9b09dfd5908266990eb909d6
++
++Signed-off-by: Gaël PORTAY <gael.portay@savoirfairelinux.com>
++---
++ src/3rdparty/javascriptcore/JavaScriptCore/wtf/Platform.h | 4 ++++
++ 1 file changed, 4 insertions(+)
++
++diff --git a/src/3rdparty/javascriptcore/JavaScriptCore/wtf/Platform.h b/src/3rdparty/javascriptcore/JavaScriptCore/wtf/Platform.h
++index 00caa6d..c4b758e 100644
++--- a/src/3rdparty/javascriptcore/JavaScriptCore/wtf/Platform.h
+++++ b/src/3rdparty/javascriptcore/JavaScriptCore/wtf/Platform.h
++@@ -306,6 +306,10 @@
++     || defined(__ARM_ARCH_7R__)
++ #define WTF_ARM_ARCH_VERSION 7
++ 
+++#elif defined(__ARM_ARCH_8__) \
+++    || defined(__ARM_ARCH_8A__)
+++#define WTF_ARM_ARCH_VERSION 8
+++
++ /* RVCT sets _TARGET_ARCH_ARM */
++ #elif defined(__TARGET_ARCH_ARM)
++ #define WTF_ARM_ARCH_VERSION __TARGET_ARCH_ARM
++-- 
++2.17.1
++
+diff --git a/package/qt5/qt5script/qt5script.hash b/package/qt5/qt5script/qt5script.hash
+index 9b43e5fd65..acbd3dfab4 100644
+--- a/package/qt5/qt5script/qt5script.hash
++++ b/package/qt5/qt5script/qt5script.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtscript-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 f08720dd0e3a70377c1cb7fa3b129e24f4cdedade279e51b67c9271ab470b389 qtscript-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtscript-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 4045da078600b5928f8206341c442cc7f5eec8c51f477f7367072ab5c28ee053 qtscript-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtscript-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 8dbf41abee35be4eb34a56ca3276fac83f3b8671db54c3c7e91c877225727220  qtscript-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 245248009fd0af1725d183248380e476c1283383909358a13686606352bf2a17 LICENSE.GPLv3
+diff --git a/package/qt5/qt5scxml/qt5scxml.hash b/package/qt5/qt5scxml/qt5scxml.hash
+index dbe81ecbb6..4a1b3833bb 100644
+--- a/package/qt5/qt5scxml/qt5scxml.hash
++++ b/package/qt5/qt5scxml/qt5scxml.hash
+@@ -1,5 +1,5 @@
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtscxml-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 1decc54e157a1492066fe0e7d534c6a9888c096731af7cac9b64c52fd3950b75 qtscxml-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtscxml-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 33947621fd6675c68d67ba11325746a82e7d582599ca0f04e03da4f60d82339a  qtscxml-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ 
+diff --git a/package/qt5/qt5sensors/qt5sensors.hash b/package/qt5/qt5sensors/qt5sensors.hash
+index 1a78d46770..cf26d8f212 100644
+--- a/package/qt5/qt5sensors/qt5sensors.hash
++++ b/package/qt5/qt5sensors/qt5sensors.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtsensors-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 7502d4dc5571865a7eea2a4180c3be396dfb8ce22df4c4f3d7e9ff32ab334973 qtsensors-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtsensors-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 793f3aa056b7ce9ae91acb599eab80525983e5e973bb4a2fdba82776ec9cd458 qtsensors-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtsensors-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 047fac53c555e685c346be53faacf581cb98d9e2a3193cb55f4e7e81fc51de27  qtsensors-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 LICENSE.GPL2
+diff --git a/package/qt5/qt5serialbus/qt5serialbus.hash b/package/qt5/qt5serialbus/qt5serialbus.hash
+index 005fd0b5dc..8a77ab4dc5 100644
+--- a/package/qt5/qt5serialbus/qt5serialbus.hash
++++ b/package/qt5/qt5serialbus/qt5serialbus.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtserialbus-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 71c89be3879414e2a11cad93a4882758f9259b1c0aec980560309192c99f9a9e qtserialbus-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtserialbus-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 ce91402e9781ef6ff37e313ce504b7f6fecb74e83d57d640fcbf82f1133fcbc4 qtserialbus-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtserialbus-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 f3e8d0e6ff836198c9fc5b9a2a89dea3c5d604c63a62126fab6d11c2763f172a  qtserialbus-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 edfe70e99be2a7c109d860b19204609e582720b211c50caedac729da372a1253 LICENSE.GPLv2
+diff --git a/package/qt5/qt5serialport/qt5serialport.hash b/package/qt5/qt5serialport/qt5serialport.hash
+index 04122ef804..21519d8329 100644
+--- a/package/qt5/qt5serialport/qt5serialport.hash
++++ b/package/qt5/qt5serialport/qt5serialport.hash
+@@ -1,13 +1,16 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtserialport-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 082d1fee2703aed19f840c4e4031e37c9b929e5bd8ebef2ebac4b28c509bae1a qtserialport-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtserialport-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 0c3d8e2908743c167113ce27be7b685e6f5c827c108107411d0c4c8b2f2b519c qtserialport-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtserialport-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 741dfe9d132aed411ad163304fd4485df2da0b40fe57ebce2f6ed4b4043dfcb9  qtserialport-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
++sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 LICENSE.GPL2
+ sha256 edfe70e99be2a7c109d860b19204609e582720b211c50caedac729da372a1253 LICENSE.GPLv2
++sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903 LICENSE.GPL3
+ sha256 245248009fd0af1725d183248380e476c1283383909358a13686606352bf2a17 LICENSE.GPLv3
+ sha256 0dbe024961f6ab5c52689cbd036c977975d0d0f6a67ff97762d96cb819dd5652 LICENSE.GPL3-EXCEPT
++sha256 da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768 LICENSE.LGPL3
+ sha256 5ceb37d1c7c1d92878b82af3c0fd5558087f3d5a08a3a4d43850bad4ad265a52 LICENSE.LGPLv3
+ sha256 e1251235ce9853eecfecfa905da9ee29e9b76e4db2a1c9c4a20699f460419b08 LICENSE.FDL
+ sha256 1996a36160b2158c2be264d2ddfa6148ebe0f1ececff55aca8d754a1ddcc7bb8 LICENSE.LGPLv21
+diff --git a/package/qt5/qt5serialport/qt5serialport.mk b/package/qt5/qt5serialport/qt5serialport.mk
+index 479870b16e..05442375e7 100644
+--- a/package/qt5/qt5serialport/qt5serialport.mk
++++ b/package/qt5/qt5serialport/qt5serialport.mk
+@@ -12,7 +12,7 @@ QT5SERIALPORT_INSTALL_STAGING = YES
+ 
+ ifeq ($(BR2_PACKAGE_QT5_VERSION_LATEST),y)
+ QT5SERIALPORT_LICENSE = GPL-2.0+ or LGPL-3.0, GPL-3.0 with exception(tools), GFDL-1.3 (docs)
+-QT5SERIALPORT_LICENSE_FILES = LICENSE.GPLv2 LICENSE.GPLv3 LICENSE.GPL3-EXCEPT LICENSE.LGPLv3 LICENSE.FDL
++QT5SERIALPORT_LICENSE_FILES = LICENSE.GPL2 LICENSE.GPL3 LICENSE.GPL3-EXCEPT LICENSE.LGPL3 LICENSE.FDL
+ else
+ QT5SERIALPORT_LICENSE = GPL-2.0 or GPL-3.0 or LGPL-2.1 with exception or LGPL-3.0, GFDL-1.3 (docs)
+ QT5SERIALPORT_LICENSE_FILES = LICENSE.GPLv2 LICENSE.GPLv3 LICENSE.LGPLv21 LGPL_EXCEPTION.txt LICENSE.LGPLv3 LICENSE.FDL
+diff --git a/package/qt5/qt5svg/qt5svg.hash b/package/qt5/qt5svg/qt5svg.hash
+index a94082c4bf..ee2a77ffc2 100644
+--- a/package/qt5/qt5svg/qt5svg.hash
++++ b/package/qt5/qt5svg/qt5svg.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtsvg-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 100f183517b46554079beabd8d2cabe3070a74dd0a2e64b6a304eac71cfadcec qtsvg-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtsvg-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 a2f22732bfd4f0f0204443daaa59448298ab5018750dce4600d01d969355037a qtsvg-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtsvg-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 4318ce3c1f94ca865e3405aefb927f257ca824c5adc482302f1449ed34dbd8b8  qtsvg-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 LICENSE.GPL2
+diff --git a/package/qt5/qt5tools/qt5tools.hash b/package/qt5/qt5tools/qt5tools.hash
+index 40176e6aee..f3030b1326 100644
+--- a/package/qt5/qt5tools/qt5tools.hash
++++ b/package/qt5/qt5tools/qt5tools.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qttools-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 1a63ba838058d73cb540040589b235ded77f76402693decfd6d4d3c75ea67926 qttools-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qttools-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 95aa5782d5a79be22fba36cea4dc2319cf2a2060a3cc1e24e6585b8d98996e87 qttools-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qttools-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 50e75417ec0c74bb8b1989d1d8e981ee83690dce7dfc0c2169f7c00f397e5117  qttools-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 LICENSE.GPL2
+diff --git a/package/qt5/qt5virtualkeyboard/qt5virtualkeyboard.hash b/package/qt5/qt5virtualkeyboard/qt5virtualkeyboard.hash
+index 81c81edff1..f31129b463 100644
+--- a/package/qt5/qt5virtualkeyboard/qt5virtualkeyboard.hash
++++ b/package/qt5/qt5virtualkeyboard/qt5virtualkeyboard.hash
+@@ -1,5 +1,5 @@
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtvirtualkeyboard-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 bf742a886054f12a73621952879cf7a2182304c498bc31ec8a61ef376b07e1ee qtvirtualkeyboard-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtvirtualkeyboard-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 217d8502f3f53b62e6e9108e0afb3694cf1d8ae8a6348d3625e3192fc126128c  qtvirtualkeyboard-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903 LICENSE.GPL3
+diff --git a/package/qt5/qt5wayland/qt5wayland.hash b/package/qt5/qt5wayland/qt5wayland.hash
+index 86dc65179f..6e9079b90f 100644
+--- a/package/qt5/qt5wayland/qt5wayland.hash
++++ b/package/qt5/qt5wayland/qt5wayland.hash
+@@ -1,8 +1,8 @@
+ # hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtwayland-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 5a475278b2db73aa7fa7f3ba6d98d8d72774f5c77e172495007d79f91d09daa3 qtwayland-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtwayland-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 3f7496522013e6122bb8dc00d0c3cc7753a44dca94fa3b22096eaa21e6099874 qtwayland-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtwayland-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 6dd066b1ab518b16dc2bebc4b3629528a30161cfce48ce5d8482c67a570667d8  qtwayland-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 LICENSE.GPL2
+diff --git a/package/qt5/qt5webchannel/qt5webchannel.hash b/package/qt5/qt5webchannel/qt5webchannel.hash
+index f1b69438d8..b78f9172ab 100644
+--- a/package/qt5/qt5webchannel/qt5webchannel.hash
++++ b/package/qt5/qt5webchannel/qt5webchannel.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtwebchannel-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 8eb1b0ac2286653c7932758c21e7760788a5d7cfd6162da09afa926d5be50713 qtwebchannel-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtwebchannel-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 90303a72da63f250b6d6731b74827b0a1764904aac790a7264a3f65c94039aa9 qtwebchannel-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtwebchannel-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 222df712c661d4003eebf28806cfd25047721e1c21b70ca320c5978c4a2c7ba5  qtwebchannel-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 LICENSE.GPL2
+diff --git a/package/qt5/qt5webengine/qt5webengine.hash b/package/qt5/qt5webengine/qt5webengine.hash
+index 9195c7f3b6..27ce589803 100644
+--- a/package/qt5/qt5webengine/qt5webengine.hash
++++ b/package/qt5/qt5webengine/qt5webengine.hash
+@@ -1,5 +1,5 @@
+ # Hash from https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtwebengine-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 009d69fb39f6c0e2b0cd89a7e9302cd0ae1872d02c787d3a37f2cacca5ddb7a7 qtwebengine-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtwebengine-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 04b4305489b326bbbfe32b5f1da4a33ae034e54130776e3616b9e6d45a5a8271 qtwebengine-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtwebengine-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 4766707f5d8c174a284c0ed813bc6163db0220d69736424d3370b44b640443a1  qtwebengine-opensource-src-5.9.6.tar.xz
+diff --git a/package/qt5/qt5websockets/qt5websockets.hash b/package/qt5/qt5websockets/qt5websockets.hash
+index 368be9b497..28f0f89a5a 100644
+--- a/package/qt5/qt5websockets/qt5websockets.hash
++++ b/package/qt5/qt5websockets/qt5websockets.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtwebsockets-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 a2439045616c89dfe06333734ff4726075c92e01db6e6b6863bc138e39c028eb qtwebsockets-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtwebsockets-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 72970209f0d4260d11688d3d38d9e953d7fa4309a8a55e2c32726a545333e800 qtwebsockets-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtwebsockets-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 7609eba33ebc9c6954644470ebbb1292cdae50f36d0c8ff5ab068b249e4a3c8e  qtwebsockets-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 LICENSE.GPL2
+diff --git a/package/qt5/qt5x11extras/qt5x11extras.hash b/package/qt5/qt5x11extras/qt5x11extras.hash
+index 943577bbd6..b52d2da5bc 100644
+--- a/package/qt5/qt5x11extras/qt5x11extras.hash
++++ b/package/qt5/qt5x11extras/qt5x11extras.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtx11extras-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 1e7a8e96e0629f2b2b78de684b156b357210cf5df6b42f30789423f2cb07677f qtx11extras-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtx11extras-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 879b18c44550e1be86c29adcca555c92915aab9222c40384beae2f7aa22b22a8 qtx11extras-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtx11extras-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 65b83df79d87043d63808e709778b3c6fddaafa3c7864d7104ee9a9da5909493  qtx11extras-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 edfe70e99be2a7c109d860b19204609e582720b211c50caedac729da372a1253 LICENSE.GPLv2
+diff --git a/package/qt5/qt5xmlpatterns/qt5xmlpatterns.hash b/package/qt5/qt5xmlpatterns/qt5xmlpatterns.hash
+index 9c68eae1d8..108d6e346b 100644
+--- a/package/qt5/qt5xmlpatterns/qt5xmlpatterns.hash
++++ b/package/qt5/qt5xmlpatterns/qt5xmlpatterns.hash
+@@ -1,8 +1,8 @@
+ # Hash from: https://download.qt.io/official_releases/qt/5.6/5.6.3/submodules/qtxmlpatterns-opensource-src-5.6.3.tar.xz.mirrorlist
+ sha256 a461ff9f0d7310de9b9904ff9cd34919e958bf4071a6fc7096450b8990ab51f6 qtxmlpatterns-opensource-src-5.6.3.tar.xz
+ 
+-# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.4/submodules/qtxmlpatterns-opensource-src-5.9.4.tar.xz.mirrorlist
+-sha256 faf51ad39e5c2b856b38989c79d69253ad74d4b8d3278d4aaa79d3c547047f79 qtxmlpatterns-opensource-src-5.9.4.tar.xz
++# Hash from: https://download.qt.io/official_releases/qt/5.9/5.9.6/submodules/qtxmlpatterns-opensource-src-5.9.6.tar.xz.mirrorlist
++sha256 6a435b14b85e17268b7acf764e7ed92430045a7bb6eb741a1ea200d2df0986dc  qtxmlpatterns-opensource-src-5.9.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 LICENSE.GPL2
+diff --git a/package/systemd/systemd.mk b/package/systemd/systemd.mk
+index 9600fe9eb0..4dea7d340d 100644
+--- a/package/systemd/systemd.mk
++++ b/package/systemd/systemd.mk
+@@ -48,7 +48,8 @@ SYSTEMD_CONF_OPTS += \
+ 	-Dkexec-path=/usr/sbin/kexec \
+ 	-Dsulogin-path=/usr/sbin/sulogin \
+ 	-Dmount-path=/usr/bin/mount \
+-	-Dumount-path=/usr/bin/umount
++	-Dumount-path=/usr/bin/umount \
++	-Dnobody-group=nogroup
+ 
+ ifeq ($(BR2_PACKAGE_ACL),y)
+ SYSTEMD_DEPENDENCIES += acl
+@@ -265,6 +266,7 @@ endif
+ 
+ ifeq ($(BR2_PACKAGE_SYSTEMD_POLKIT),y)
+ SYSTEMD_CONF_OPTS += -Dpolkit=true
++SYSTEMD_DEPENDENCIES += polkit
+ else
+ SYSTEMD_CONF_OPTS += -Dpolkit=false
+ endif
+diff --git a/package/tovid/Config.in b/package/tovid/Config.in
+index d8052ea334..a22dca8e1e 100644
+--- a/package/tovid/Config.in
++++ b/package/tovid/Config.in
+@@ -8,6 +8,7 @@ config BR2_PACKAGE_TOVID
+ 	depends on BR2_PACKAGE_FFMPEG_ARCH_SUPPORTS
+ 	depends on BR2_PACKAGE_MPLAYER_ARCH_SUPPORTS
+ 	depends on BR2_TOOLCHAIN_HAS_SYNC_4 # mplayer
++	depends on !BR2_TOOLCHAIN_USES_MUSL # procps-ng
+ 	# The below dependencies are runtime dependencies only
+ 	select BR2_PACKAGE_BUSYBOX_SHOW_OTHERS # procps_ng
+ 	select BR2_PACKAGE_DVDAUTHOR
+@@ -27,14 +28,15 @@ config BR2_PACKAGE_TOVID
+ 
+ 	  http://tovid.wikia.com/wiki/Installing_tovid
+ 
+-comment "tovid needs a toolchain w/ threads, C++, wchar"
++comment "tovid needs a glibc or uclibc toolchain w/ threads, C++, wchar"
+ 	depends on BR2_USE_MMU
+ 	depends on BR2_PACKAGE_FFMPEG_ARCH_SUPPORTS
+ 	depends on BR2_PACKAGE_MPLAYER_ARCH_SUPPORTS
+ 	depends on BR2_TOOLCHAIN_HAS_SYNC_4
+ 	depends on !BR2_TOOLCHAIN_HAS_THREADS \
+ 		|| !BR2_INSTALL_LIBSTDCPP \
+-		|| !BR2_USE_WCHAR
++		|| !BR2_USE_WCHAR \
++		|| BR2_TOOLCHAIN_USES_MUSL
+ 
+ comment "tovid depends on python or python3"
+ 	depends on !BR2_PACKAGE_PYTHON && !BR2_PACKAGE_PYTHON3
+diff --git a/package/wireguard/wireguard.hash b/package/wireguard/wireguard.hash
+index 6cfc7bb9f0..d0cd65ad4f 100644
+--- a/package/wireguard/wireguard.hash
++++ b/package/wireguard/wireguard.hash
+@@ -1,4 +1,4 @@
+-# From https://lists.zx2c4.com/pipermail/wireguard/2018-April/002697.html
+-sha256 b58cd2acf9e8d3fe9044c06c0056bd74da1f5673a456f011d36eee3f6fb1da16  WireGuard-0.0.20180420.tar.xz
++# From https://lists.zx2c4.com/pipermail/wireguard/2018-July/003112.html
++sha256 5e38d554f7d1e3a64e3a5319ca1a3b790c84ed89c896586c490a93ac1f953a91  WireGuard-0.0.20180708.tar.xz
+ # Locally calculated
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  COPYING
+diff --git a/package/wireguard/wireguard.mk b/package/wireguard/wireguard.mk
+index 20162e1d0f..cc8ad7c4cc 100644
+--- a/package/wireguard/wireguard.mk
++++ b/package/wireguard/wireguard.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WIREGUARD_VERSION = 0.0.20180420
++WIREGUARD_VERSION = 0.0.20180708
+ WIREGUARD_SITE = https://git.zx2c4.com/WireGuard/snapshot
+ WIREGUARD_SOURCE = WireGuard-$(WIREGUARD_VERSION).tar.xz
+ WIREGUARD_LICENSE = GPL-2.0
+diff --git a/package/wireless-regdb/Config.in b/package/wireless-regdb/Config.in
+index d9c7b8d2d1..0c9896deb9 100644
+--- a/package/wireless-regdb/Config.in
++++ b/package/wireless-regdb/Config.in
+@@ -6,4 +6,4 @@ config BR2_PACKAGE_WIRELESS_REGDB
+ 	  Wireless regulatory database for CRDA. The database lists the
+ 	  allowed radio frequencies for each local jurisdiction.
+ 
+-	  http://linuxwireless.org/en/developers/Regulatory
++	  https://wireless.wiki.kernel.org/en/developers/regulatory/wireless-regdb
+diff --git a/package/wireless-regdb/wireless-regdb.hash b/package/wireless-regdb/wireless-regdb.hash
+index 4163609d17..65ae735cb5 100644
+--- a/package/wireless-regdb/wireless-regdb.hash
++++ b/package/wireless-regdb/wireless-regdb.hash
+@@ -1,2 +1,4 @@
+ # From https://www.kernel.org/pub/software/network/wireless-regdb/sha256sums.asc
+-sha256	371eafa3b26ece916ef83aca02c4bed2e54099eb5b8c6d22d3a4358dce6535b9	wireless-regdb-2017.03.07.tar.xz
++sha256 e1dfbc3b97771373077f430c3c05082fae883145b37db5b2cfd12c56676fbe7b  wireless-regdb-2018.05.31.tar.xz
++# Locally computed
++sha256 678b0df753c86198fc496d1f1033429bbd57f101472132ee7eaaf9f5e0a7fae1  LICENSE
+diff --git a/package/wireless-regdb/wireless-regdb.mk b/package/wireless-regdb/wireless-regdb.mk
+index 9d7a375461..829374edcf 100644
+--- a/package/wireless-regdb/wireless-regdb.mk
++++ b/package/wireless-regdb/wireless-regdb.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WIRELESS_REGDB_VERSION = 2017.03.07
++WIRELESS_REGDB_VERSION = 2018.05.31
+ WIRELESS_REGDB_SOURCE = wireless-regdb-$(WIRELESS_REGDB_VERSION).tar.xz
+ WIRELESS_REGDB_SITE = http://kernel.org/pub/software/network/wireless-regdb
+ WIRELESS_REGDB_LICENSE = ISC
+@@ -15,6 +15,10 @@ define WIRELESS_REGDB_INSTALL_TARGET_CMDS
+ 		$(TARGET_DIR)/usr/lib/crda/regulatory.bin
+ 	$(INSTALL) -m 644 -D -T $(@D)/sforshee.key.pub.pem \
+ 		$(TARGET_DIR)/etc/wireless-regdb/pubkeys/sforshee.key.pub.pem
++	$(INSTALL) -m 644 -D -T $(@D)/regulatory.db \
++		$(TARGET_DIR)/lib/firmware/regulatory.db
++	$(INSTALL) -m 644 -D -T $(@D)/regulatory.db.p7s \
++		$(TARGET_DIR)/lib/firmware/regulatory.db.p7s
+ endef
+ 
+ $(eval $(generic-package))
+diff --git a/support/dependencies/dependencies.sh b/support/dependencies/dependencies.sh
+index f98678973b..c5f29d32f4 100755
+--- a/support/dependencies/dependencies.sh
++++ b/support/dependencies/dependencies.sh
+@@ -222,6 +222,8 @@ if grep -q ^BR2_HOSTARCH_NEEDS_IA32_LIBS=y $BR2_CONFIG ; then
+ 		echo "If you're running a Debian/Ubuntu distribution, install the libc6-i386,"
+ 		echo "lib32stdc++6, and lib32z1 packages (or alternatively libc6:i386,"
+ 		echo "libstdc++6:i386, and zlib1g:i386)."
++		echo "If you're running a RedHat/Fedora distribution, install the glibc.i686 and"
++		echo "zlib.i686 packages."
+ 		echo "For other distributions, refer to the documentation on how to install the 32 bits"
+ 		echo "compatibility libraries."
+ 		exit 1
+diff --git a/utils/test-pkg b/utils/test-pkg
+index cd7b9dad7b..17d3756d75 100755
+--- a/utils/test-pkg
++++ b/utils/test-pkg
+@@ -100,7 +100,7 @@ build_one() {
+ 
+     support/kconfig/merge_config.sh -O "${dir}" \
+         "${toolchainconfig}" "support/config-fragments/minimal.config" "${cfg}" \
+-        > /dev/null
++        >> "${dir}/logfile" 2>&1
+     # We want all the options from the snippet to be present as-is (set
+     # or not set) in the actual .config; if one of them is not, it means
+     # some dependency from the toolchain or arch is not available, in

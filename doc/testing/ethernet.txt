@@ -1,0 +1,9 @@
+        Board HW: Ethernet Connector
+
+
+NOTES:
+
+TESTS:
+Booted system with NFS rootfs.
+
+

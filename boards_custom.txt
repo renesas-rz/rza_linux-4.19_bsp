@@ -1,0 +1,55 @@
+#
+# Edit this file in order to add build support for your board.
+# This file assumes you have already used the add_new_board.sh scripts in u-boot and kernel.
+# See the BSP Porting Guide for more details.
+#
+# Note that board name must be the same for both u-boot and kernel.
+#
+# For example, if you used the name "rztoaster", we will assume the follow
+# files exist for your board:
+#
+# u-boot default configuration
+#   u-boot-2017.05/configs/rztoaster_defconfig
+#
+# Kernel default configuration (uImage)
+#  linux-4.9/arch/arm/configs/rztoaster_defconfig
+#
+# XIP Kernel default configuration (xipImage)
+#  linux-4.9/arch/arm/configs/rztoaster_xip_defconfig
+#
+# Device Tree
+#   linux-4.9/arch/arm/boot/dts/r7s72100-rztoaster.dts
+#
+#
+# Steps to add a new board:
+#
+# 1. Add the name of your board (lower case) to CUSTOM_BOARDS
+#    Separate each board with a space. For example: CUSTOM_BOARDS = "rzdog rzcat rztoaster"
+#
+# 2. Copy the TEMPLATE below and replace "xxxx" on each line with your board name. Remember to
+#    remove the '#' from the beginning of each line.
+#
+#    You can refer to the 'boards_renesas.txt' file for examples, but do not edit that file.
+#
+
+### TEMPLATE TO COPY ###
+# xxxx
+#    BRD_DESC_xxxx="My board"    # A simple description of your board. Only use letters and numbers.
+#     BRD_SOC_xxxx=RZA1H         # The type of RZ/A device: RZA1H, RZA1M, RZA1L, RZA1LU, RZA2M
+#   BRD_DLRAM_xxxx=0x0C000000    # Download RAM address: The beginning of external SDRAM. If no SDRAM, then beginning of internal RAM.
+# BRD_DLRAMSZ_xxxx=0x02000000    # Size of the Download RAM: The amount of RAM avaible to hold download images
+#   BRD_UBOOT_xxxx=0x18000000    # u-boot Flash address: The address of u-boot in Flash (basically always 0x18000000)
+#     BRD_DTB_xxxx=0x180C0000    # Device Tree Blob Flash address: The address of dtb file in Flash.
+#  BRD_KERNEL_xxxx=0x18200000    # Kernel Flash address: The address of the kernel (uImage or xipImage) in Flash
+#  BRD_ROOTFS_xxxx=0x18800000    # Root File System address in flash: The address of your rootfs.
+#    BRD_QSPI_xxxx=DUAL          # Either "SINGLE" or "DUAL" QSPI flash. If "DUAL", this assumes only kernel and rootfs are stored in dual flash.
+
+
+# Enter you board names here:
+CUSTOM_BOARDS=" "
+
+# Please place your board definitions below here:
+
+
+
+

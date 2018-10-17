@@ -1,0 +1,1343 @@
+diff --git a/CHANGES b/CHANGES
+index 6387435016..a632a93675 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,18 @@
++2017.02.9, Released January 1st, 2018
++
++	Important / security related fixes.
++
++	Fix divide by zero issue in size-stats script.
++
++	Fix makefile include ordering issue with certain make versions
++	in the external toolchain handling.
++
++	Updated/fixed packages: dhcp, exim, flann, gdb, heimdal,
++	libcue, libcurl, libevent, libpqxx, libsoxr, linphone, lldpd,
++	mariadb, mfgtools, mtools, nodejs, nut, openssl, rsync,
++	samba4, tor, vlc, webkitgtk, wireshark, xfsprogs,
++	xlib_libXcursor, xlib_libXfont, xlib_libXfont2
++
+ 2017.02.8, Released November 27th, 2017
+ 
+ 	Important / security related fixes.
+diff --git a/Makefile b/Makefile
+index 6136593c98..f35b0a0acd 100644
+--- a/Makefile
++++ b/Makefile
+@@ -86,9 +86,9 @@ else # umask / $(CURDIR) / $(O)
+ all:
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2017.02.8
++export BR2_VERSION := 2017.02.9
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1511823000
++BR2_VERSION_EPOCH = 1514805000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+@@ -483,8 +483,8 @@ include support/dependencies/dependencies.mk
+ 
+ PACKAGES += $(DEPENDENCIES_HOST_PREREQ)
+ 
+-include toolchain/*.mk
+-include toolchain/*/*.mk
++include $(sort $(wildcard toolchain/*.mk))
++include $(sort $(wildcard toolchain/*/*.mk))
+ 
+ # Include the package override file if one has been provided in the
+ # configuration.
+@@ -1071,7 +1071,7 @@ print-version:
+ 	@echo $(BR2_VERSION_FULL)
+ 
+ include docs/manual/manual.mk
+--include $(foreach dir,$(BR2_EXTERNAL_DIRS),$(dir)/docs/*/*.mk)
++-include $(foreach dir,$(BR2_EXTERNAL_DIRS),$(sort $(wildcard $(dir)/docs/*/*.mk)))
+ 
+ .PHONY: $(noconfig_targets)
+ 
+diff --git a/package/dhcp/0002-bind-cross-compile.patch b/package/dhcp/0001-bind-cross-compile.patch
+similarity index 100%
+rename from package/dhcp/0002-bind-cross-compile.patch
+rename to package/dhcp/0001-bind-cross-compile.patch
+diff --git a/package/dhcp/0002-v4_3-Plugs-a-socket-descriptor-leak-in-OMAPI.patch b/package/dhcp/0002-v4_3-Plugs-a-socket-descriptor-leak-in-OMAPI.patch
+new file mode 100644
+index 0000000000..df294651fb
+--- /dev/null
++++ b/package/dhcp/0002-v4_3-Plugs-a-socket-descriptor-leak-in-OMAPI.patch
+@@ -0,0 +1,51 @@
++From 5097bc0559f592683faac1f67bf350e1bddf6ed4 Mon Sep 17 00:00:00 2001
++From: Thomas Markwalder <tmark@isc.org>
++Date: Thu, 7 Dec 2017 11:39:30 -0500
++Subject: [PATCH] [v4_3] Plugs a socket descriptor leak in OMAPI
++
++        Merges in rt46767.
++
++[baruch: drop RELNOTES hunk]
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Patch status: upstream commit 5097bc0559f
++
++ omapip/buffer.c  | 9 +++++++++
++ omapip/message.c | 2 +-
++
++diff --git a/omapip/buffer.c b/omapip/buffer.c
++index f7fdc3250e82..809034d1317b 100644
++--- a/omapip/buffer.c
+++++ b/omapip/buffer.c
++@@ -566,6 +566,15 @@ isc_result_t omapi_connection_writer (omapi_object_t *h)
++ 			omapi_buffer_dereference (&buffer, MDL);
++ 		}
++ 	}
+++
+++	/* If we had data left to write when we're told to disconnect,
+++	* we need recall disconnect, now that we're done writing.
+++	* See rt46767. */
+++	if (c->out_bytes == 0 && c->state == omapi_connection_disconnecting) {
+++		omapi_disconnect (h, 1);
+++		return ISC_R_SHUTTINGDOWN;
+++	}
+++
++ 	return ISC_R_SUCCESS;
++ }
++ 
++diff --git a/omapip/message.c b/omapip/message.c
++index 59ccdc2c05cf..21bcfc3822e7 100644
++--- a/omapip/message.c
+++++ b/omapip/message.c
++@@ -339,7 +339,7 @@ isc_result_t omapi_message_unregister (omapi_object_t *mo)
++ }
++ 
++ #ifdef DEBUG_PROTOCOL
++-static const char *omapi_message_op_name(int op) {
+++const char *omapi_message_op_name(int op) {
++ 	switch (op) {
++ 	case OMAPI_OP_OPEN:    return "OMAPI_OP_OPEN";
++ 	case OMAPI_OP_REFRESH: return "OMAPI_OP_REFRESH";
++-- 
++2.15.1
++
+diff --git a/package/dhcp/dhcp.hash b/package/dhcp/dhcp.hash
+index 7898aa45d3..ce5f995a55 100644
+--- a/package/dhcp/dhcp.hash
++++ b/package/dhcp/dhcp.hash
+@@ -1,2 +1,4 @@
+-# Verified from https://ftp.isc.org/isc/dhcp/4.3.5/dhcp-4.3.5.tar.gz.sha256.asc
+-sha256 eb95936bf15d2393c55dd505bc527d1d4408289cec5a9fa8abb99f7577e7f954  dhcp-4.3.5.tar.gz
++# Verified from https://ftp.isc.org/isc/dhcp/4.3.6/dhcp-4.3.6.tar.gz.sha256.asc
++sha256 a41eaf6364f1377fe065d35671d9cf82bbbc8f21207819b2b9f33f652aec6f1b  dhcp-4.3.6.tar.gz
++# Locally calculated
++sha256 dd7ae2201c0c11c3c1e2510d731c67b2f4bc8ba735707d7348ddd65f7b598562  LICENSE
+diff --git a/package/dhcp/dhcp.mk b/package/dhcp/dhcp.mk
+index 45cae087aa..4e1b24b700 100644
+--- a/package/dhcp/dhcp.mk
++++ b/package/dhcp/dhcp.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-DHCP_VERSION = 4.3.5
++DHCP_VERSION = 4.3.6
+ DHCP_SITE = http://ftp.isc.org/isc/dhcp/$(DHCP_VERSION)
+ DHCP_INSTALL_STAGING = YES
+ DHCP_LICENSE = ISC
+diff --git a/package/exim/0003-Skip-version-check-and-symlink-installation.patch b/package/exim/0003-Skip-version-check-and-symlink-installation.patch
+index 94d21ae114..a342d6ed34 100644
+--- a/package/exim/0003-Skip-version-check-and-symlink-installation.patch
++++ b/package/exim/0003-Skip-version-check-and-symlink-installation.patch
+@@ -9,6 +9,8 @@ Inspired by:
+ http://patch-tracker.debian.org/patch/series/view/exim4/4.76-2/35_install.dpatch
+ 
+ Signed-off-by: Luca Ceresoli <luca@lucaceresoli.net>
++(rebased against exim 4.89)
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+ ---
+  scripts/exim_install |    7 +++++--
+  1 files changed, 5 insertions(+), 2 deletions(-)
+@@ -17,7 +19,7 @@ diff --git a/scripts/exim_install b/scripts/exim_install
+ index e68e7d5..487a4e1 100755
+ --- a/scripts/exim_install
+ +++ b/scripts/exim_install
+-@@ -59,6 +59,8 @@ while [ $# -gt 0 ] ; do
++@@ -58,6 +58,8 @@
+    shift
+  done
+  
+@@ -26,15 +28,14 @@ index e68e7d5..487a4e1 100755
+  # Get the values of BIN_DIRECTORY, CONFIGURE_FILE, INFO_DIRECTORY, NO_SYMLINK,
+  # SYSTEM_ALIASES_FILE, and EXE from the global Makefile (in the build
+  # directory). EXE is empty except in the Cygwin environment. In each case, keep
+-@@ -218,8 +220,9 @@ while [ $# -gt 0 ]; do
++@@ -217,9 +219,7 @@
+    # The exim binary is handled specially
+  
+    if [ $name = exim${EXE} ]; then
+--    version=exim-`./exim -bV -C /dev/null | \
++-    exim="./exim -bV -C /dev/null"
++-    version=exim-`$exim 2>/dev/null | \
+ -      awk '/Exim version/ { OFS=""; print $3,"-",substr($4,2,length($4)-1) }'`${EXE}
+ +    version=exim
+-+#    version=exim-`./exim -bV -C /dev/null | \
+-+#      awk '/Exim version/ { OFS=""; print $3,"-",substr($4,2,length($4)-1) }'`${EXE}
+  
+      if [ "${version}" = "exim-${EXE}" ]; then
+        echo $com ""
+diff --git a/package/exim/0004-glibc.patch b/package/exim/0004-glibc.patch
+new file mode 100644
+index 0000000000..7ae2ef8c70
+--- /dev/null
++++ b/package/exim/0004-glibc.patch
+@@ -0,0 +1,27 @@
++uClibc does not contain gnu/libc-version.h
++
++Patch sent upstream: https://bugs.exim.org/show_bug.cgi?id=2070
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++
++diff -uNr exim-4.88.org/src/exim.c exim-4.88/src/exim.c
++--- exim-4.88.org/src/exim.c	2016-12-18 15:02:28.000000000 +0100
+++++ exim-4.88/src/exim.c	2016-12-26 12:12:57.000000000 +0100
++@@ -12,7 +12,7 @@
++ 
++ #include "exim.h"
++ 
++-#ifdef __GLIBC__
+++#if defined(__GLIBC__) && !defined(__UCLIBC__)
++ # include <gnu/libc-version.h>
++ #endif
++ 
++@@ -1044,7 +1044,7 @@
++   fprintf(f, "Compiler: <unknown>\n");
++ #endif
++ 
++-#ifdef __GLIBC__
+++#if defined(__GLIBC__) && !defined(__UCLIBC__)
++   fprintf(f, "Library version: Glibc: Compile: %d.%d\n",
++ 	       	__GLIBC__, __GLIBC_MINOR__);
++   if (__GLIBC_PREREQ(2, 1))
+diff --git a/package/exim/exim.hash b/package/exim/exim.hash
+index ef2d03ba21..41f51b15eb 100644
+--- a/package/exim/exim.hash
++++ b/package/exim/exim.hash
+@@ -1,2 +1,2 @@
+-# Locally calculated
+-sha256	d4b7994c89240d2f9a9fcd7a2dffa4b72f14379001a24266f4dbb0fbe5131514	exim-4.87.1.tar.bz2
++# Locally calculated after checking pgp signature
++sha256 1a21322a10e2da9c0bd6a2a483b6e7ef8fa7f16efcab4c450fd73e7188f5fa94  exim-4.89.1.tar.xz
+diff --git a/package/exim/exim.mk b/package/exim/exim.mk
+index a9f4685eb9..7cba8f3d90 100644
+--- a/package/exim/exim.mk
++++ b/package/exim/exim.mk
+@@ -4,9 +4,9 @@
+ #
+ ################################################################################
+ 
+-EXIM_VERSION = 4.87.1
+-EXIM_SOURCE = exim-$(EXIM_VERSION).tar.bz2
+-EXIM_SITE = ftp://ftp.exim.org/pub/exim/exim4/old
++EXIM_VERSION = 4.89.1
++EXIM_SOURCE = exim-$(EXIM_VERSION).tar.xz
++EXIM_SITE = ftp://ftp.exim.org/pub/exim/exim4
+ EXIM_LICENSE = GPLv2+
+ EXIM_LICENSE_FILES = LICENCE
+ EXIM_DEPENDENCIES = pcre berkeleydb host-pkgconf
+diff --git a/package/flann/flann.mk b/package/flann/flann.mk
+index af86a02f04..90d2ddcbb7 100644
+--- a/package/flann/flann.mk
++++ b/package/flann/flann.mk
+@@ -15,6 +15,7 @@ FLANN_CONF_OPTS = \
+ 	-DBUILD_MATLAB_BINDINGS=OFF \
+ 	-DBUILD_EXAMPLES=$(if $(BR2_PACKAGE_FLANN_EXAMPLES),ON,OFF) \
+ 	-DUSE_OPENMP=$(if $(BR2_GCC_ENABLE_OPENMP),ON,OFF) \
+-	-DPYTHON_EXECUTABLE=OFF
++	-DPYTHON_EXECUTABLE=OFF \
++	-DCMAKE_DISABLE_FIND_PACKAGE_HDF5=TRUE
+ 
+ $(eval $(cmake-package))
+diff --git a/package/gdb/gdb.mk b/package/gdb/gdb.mk
+index 618111dda8..e52f42b0cd 100644
+--- a/package/gdb/gdb.mk
++++ b/package/gdb/gdb.mk
+@@ -61,9 +61,11 @@ endif
+ 
+ # When gdb sources are fetched from the binutils-gdb repository, they
+ # also contain the binutils sources, but binutils shouldn't be built,
+-# so we disable it.
++# so we disable it (additionally the option --disable-install-libbfd
++# prevents the un-wanted installation of libobcodes.so and libbfd.so).
+ GDB_DISABLE_BINUTILS_CONF_OPTS = \
+ 	--disable-binutils \
++	--disable-install-libbfd \
+ 	--disable-ld \
+ 	--disable-gas
+ 
+diff --git a/package/gstreamer/gstreamer.mk b/package/gstreamer/gstreamer.mk
+index bc886c78a2..22240bceea 100644
+--- a/package/gstreamer/gstreamer.mk
++++ b/package/gstreamer/gstreamer.mk
+@@ -1 +1 @@
+-include package/gstreamer/*/*.mk
++include $(sort $(wildcard package/gstreamer/*/*.mk))
+diff --git a/package/gstreamer1/gstreamer1.mk b/package/gstreamer1/gstreamer1.mk
+index 5b748e33fb..8530ff027a 100644
+--- a/package/gstreamer1/gstreamer1.mk
++++ b/package/gstreamer1/gstreamer1.mk
+@@ -1 +1 @@
+-include package/gstreamer1/*/*.mk
++include $(sort $(wildcard package/gstreamer1/*/*.mk))
+diff --git a/package/heimdal/heimdal.hash b/package/heimdal/heimdal.hash
+index a0e0f3f1ba..ac26aa60e5 100644
+--- a/package/heimdal/heimdal.hash
++++ b/package/heimdal/heimdal.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated
+-sha256 3de14ecd36ad21c1694a13da347512b047f4010d176fe412820664cb5d1429ad  heimdal-7.4.0.tar.gz
++sha256 c5a2a0030fcc728022fa2332bad85569084d1c3b9a59587b7ebe141b0532acad  heimdal-7.5.0.tar.gz
+diff --git a/package/heimdal/heimdal.mk b/package/heimdal/heimdal.mk
+index 2d4b826a03..0dbb151d43 100644
+--- a/package/heimdal/heimdal.mk
++++ b/package/heimdal/heimdal.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-HEIMDAL_VERSION = 7.4.0
++HEIMDAL_VERSION = 7.5.0
+ HEIMDAL_SITE = https://github.com/heimdal/heimdal/releases/download/heimdal-$(HEIMDAL_VERSION)
+ HOST_HEIMDAL_DEPENDENCIES = host-e2fsprogs host-ncurses host-pkgconf
+ HEIMDAL_INSTALL_STAGING = YES
+diff --git a/package/libcue/libcue.mk b/package/libcue/libcue.mk
+index 70124538f2..ba559a7f2a 100644
+--- a/package/libcue/libcue.mk
++++ b/package/libcue/libcue.mk
+@@ -12,6 +12,8 @@ LIBCUE_DEPENDENCIES = host-bison host-flex flex
+ LIBCUE_INSTALL_STAGING = YES
+ LIBCUE_AUTORECONF = YES
+ 
++LIBCUE_MAKE = $(MAKE1)
++
+ # Needed for autoreconf
+ define LIBCUE_MAKE_CONFIG_DIR
+ 	mkdir $(@D)/config
+diff --git a/package/libcurl/libcurl.hash b/package/libcurl/libcurl.hash
+index 49292dfb9e..275a5a373f 100644
+--- a/package/libcurl/libcurl.hash
++++ b/package/libcurl/libcurl.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated after checking pgp signature
+-# https://curl.haxx.se/download/curl-7.56.1.tar.xz.asc
+-sha256 8eed282cf3a0158d567a0feaa3c4619e8e847970597b5a2c81879e8f0d1a39d1  curl-7.56.1.tar.xz
++# https://curl.haxx.se/download/curl-7.57.0.tar.xz.asc
++sha256 f5f6fd3c72b7b8389969f4fb671ed8532fa9b5bb7a5cae7ca89bc1cea45c7878  curl-7.57.0.tar.xz
+ sha256 cbcf511f5702f7baf5424193a792bc9c18fab22bcbec2e6a587598389dc632c2  COPYING
+diff --git a/package/libcurl/libcurl.mk b/package/libcurl/libcurl.mk
+index 57b9c2cbca..0aab58a7de 100644
+--- a/package/libcurl/libcurl.mk
++++ b/package/libcurl/libcurl.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBCURL_VERSION = 7.56.1
++LIBCURL_VERSION = 7.57.0
+ LIBCURL_SOURCE = curl-$(LIBCURL_VERSION).tar.xz
+ LIBCURL_SITE = https://curl.haxx.se/download
+ LIBCURL_DEPENDENCIES = host-pkgconf \
+diff --git a/package/libevent/libevent.mk b/package/libevent/libevent.mk
+index 5458ce316a..50e48915c2 100644
+--- a/package/libevent/libevent.mk
++++ b/package/libevent/libevent.mk
+@@ -12,6 +12,7 @@ LIBEVENT_LICENSE_FILES = LICENSE
+ # For 0001-Disable-building-test-programs.patch
+ LIBEVENT_AUTORECONF = YES
+ LIBEVENT_CONF_OPTS = --disable-samples
++HOST_LIBEVENT_CONF_OPTS = --disable-samples --disable-openssl
+ 
+ define LIBEVENT_REMOVE_PYSCRIPT
+ 	rm $(TARGET_DIR)/usr/bin/event_rpcgen.py
+diff --git a/package/libpqxx/0001-Fix-broken-sed-call-in-configure.ac.in.patch b/package/libpqxx/0001-Fix-broken-sed-call-in-configure.ac.in.patch
+new file mode 100644
+index 0000000000..672133a506
+--- /dev/null
++++ b/package/libpqxx/0001-Fix-broken-sed-call-in-configure.ac.in.patch
+@@ -0,0 +1,31 @@
++From d5120738a9b6b90d19e742f3c591727d16d76c9c Mon Sep 17 00:00:00 2001
++From: Romain Naour <romain.naour@gmail.com>
++Date: Tue, 26 Dec 2017 14:09:46 +0100
++Subject: [PATCH] Fix broken sed call in configure.ac.in
++
++Upstream fix from commit [1][2]
++
++[1] 80a9d5386641ac67d4ea1b602c786b45b40b252f
++[2] 85e9336740475be25ed19924cca0961f7d844c4b
++
++Signed-off-by: Romain Naour <romain.naour@gmail.com>
++---
++ configure.ac | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/configure.ac b/configure.ac
++index 32cf5cb5..77cf7edd 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -480,7 +480,7 @@ occurring in the file.
++ ])], -L${with_postgres_lib})
++ 
++ # Remove redundant occurrances of -lpq
++-LIBS="`echo "$LIBS" | sed -e 's/-lpq[[:space:]]*[[:space:]]-lpq\>/-lpq/g'`"
+++LIBS=[`echo "$LIBS" | sed -e 's/-lpq * -lpq\>/-lpq/g'`]
++ 
++ AC_LANG_POP(C)
++ 
++-- 
++2.14.3
++
+diff --git a/package/libpqxx/libpqxx.mk b/package/libpqxx/libpqxx.mk
+index 058719038e..89a35202ed 100644
+--- a/package/libpqxx/libpqxx.mk
++++ b/package/libpqxx/libpqxx.mk
+@@ -11,6 +11,9 @@ LIBPQXX_DEPENDENCIES = postgresql
+ LIBPQXX_LICENSE = BSD-3c
+ LIBPQXX_LICENSE_FILES = COPYING
+ 
++# 0001-Fix-broken-sed-call-in-configure.ac.in.patch
++LIBPQXX_AUTORECONF = YES
++
+ LIBPQXX_CONF_ENV += ac_cv_path_PG_CONFIG=$(STAGING_DIR)/usr/bin/pg_config
+ 
+ $(eval $(autotools-package))
+diff --git a/package/libsoxr/Config.in b/package/libsoxr/Config.in
+index a218ae99c8..ae1ea10280 100644
+--- a/package/libsoxr/Config.in
++++ b/package/libsoxr/Config.in
+@@ -2,7 +2,7 @@ config BR2_PACKAGE_LIBSOXR
+ 	bool "libsoxr"
+ 	help
+ 	  The SoX Resampler library `libsoxr' performs one-dimensional
+-	  sample-rate conversion—it may be used, for example, to
++	  sample-rate conversion. It may be used, for example, to
+ 	  resample PCM-encoded audio.
+ 
+ 	  It aims to give fast and high quality results for any constant
+diff --git a/package/linphone/linphone.mk b/package/linphone/linphone.mk
+index df804907e8..5c678d4c40 100644
+--- a/package/linphone/linphone.mk
++++ b/package/linphone/linphone.mk
+@@ -50,4 +50,11 @@ else
+ LINPHONE_CONF_OPTS += --disable-libv4l1 --disable-libv4l2
+ endif
+ 
++ifeq ($(BR2_PACKAGE_LIBUPNP),y)
++LINPHONE_DEPENDENCIES += libupnp
++LINPHONE_CONF_OPTS += --enable-upnp
++else
++LINPHONE_CONF_OPTS += --disable-upnp
++endif
++
+ $(eval $(autotools-package))
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index bb516df2cf..ee9f0e9f1c 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -221,8 +221,8 @@ config BR2_DEFAULT_KERNEL_HEADERS
+ 	default "3.18.72"	if BR2_KERNEL_HEADERS_3_18
+ 	default "3.19.8"	if BR2_KERNEL_HEADERS_3_19
+ 	default "4.0.9"		if BR2_KERNEL_HEADERS_4_0
+-	default "4.1.46"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.102"	if BR2_KERNEL_HEADERS_4_4
++	default "4.1.48"	if BR2_KERNEL_HEADERS_4_1
++	default "4.4.108"	if BR2_KERNEL_HEADERS_4_4
+ 	default "4.8.17"	if BR2_KERNEL_HEADERS_4_8
+-	default "4.9.65"	if BR2_KERNEL_HEADERS_4_9
++	default "4.9.73"	if BR2_KERNEL_HEADERS_4_9
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/lldpd/0003-configure-remove-check-on-CXX-compiler.patch b/package/lldpd/0003-configure-remove-check-on-CXX-compiler.patch
+new file mode 100644
+index 0000000000..880f603f71
+--- /dev/null
++++ b/package/lldpd/0003-configure-remove-check-on-CXX-compiler.patch
+@@ -0,0 +1,35 @@
++From d28b3bfa1b224f7770004dddf4dfaf10ad7ad6c9 Mon Sep 17 00:00:00 2001
++From: Damien Riegel <damien.riegel@savoirfairelinux.com>
++Date: Mon, 18 Dec 2017 14:37:08 -0500
++Subject: [PATCH] configure: remove check on CXX compiler
++
++lldpd fails to build if the toolchain doesn't have a C++ compiler
++because configure fails with the following error:
++
++  checking how to run the C++ preprocessor... /lib/cpp
++  configure: error: in `/home/dkc/src/buildroot/build-zii/build/lldpd-0.9.4':
++  configure: error: C++ preprocessor "/lib/cpp" fails sanity check
++
++Since "8d92800b: build: cleaner way to not alter CFLAGS/CPPFLAGS/LDFLAGS",
++it seems that the dependency on C++ is not required anymore, so there
++is no reason to keep this restriction. Dropping AC_PROG_CXX allows to
++build with a toolchain that doesn't have C++ just fine.
++---
++ configure.ac | 1 -
++ 1 file changed, 1 deletion(-)
++
++diff --git a/configure.ac b/configure.ac
++index 0edceb1..5afe8f2 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -48,7 +48,6 @@ AC_PROG_CC_C99
++ if test x"$ac_cv_prog_cc_c99" = x"no"; then
++   AC_MSG_FAILURE([*** C99 support is mandatory])
++ fi
++-AC_PROG_CXX
++ AM_PROG_CC_C_O
++ AC_PROG_LIBTOOL
++ AC_PROG_LN_S
++-- 
++2.15.1
++
+diff --git a/package/lldpd/lldpd.mk b/package/lldpd/lldpd.mk
+index 349c556c14..2bdda0213e 100644
+--- a/package/lldpd/lldpd.mk
++++ b/package/lldpd/lldpd.mk
+@@ -9,7 +9,7 @@ LLDPD_SITE = http://media.luffy.cx/files/lldpd
+ LLDPD_DEPENDENCIES = host-pkgconf libevent
+ LLDPD_LICENSE = ISC
+ LLDPD_LICENSE_FILES = README.md
+-# 0002-configure-do-not-check-for-libbsd.patch
++# 0002-configure-do-not-check-for-libbsd.patch / 0003-configure-remove-check-on-CXX-compiler.patch
+ LLDPD_AUTORECONF = YES
+ 
+ ifeq ($(BR2_PACKAGE_CHECK),y)
+diff --git a/package/mariadb/mariadb.hash b/package/mariadb/mariadb.hash
+index fd5625c8e7..fcca9be6e4 100644
+--- a/package/mariadb/mariadb.hash
++++ b/package/mariadb/mariadb.hash
+@@ -1,5 +1,5 @@
+-# From https://downloads.mariadb.org/mariadb/10.1.26/
+-sha256 ba88b1cb9967dea2909938a34ba89373b162b0d83e5c98a0f1c94540156bf73d  mariadb-10.1.26.tar.gz
++# From https://downloads.mariadb.org/mariadb/10.1.29/
++sha256 73bbd5602f52ab5aa4d83f465134871b6c87bda25371d098f6da5a3d98517ed4  mariadb-10.1.29.tar.gz
+ 
+ # Hash for license files
+ sha256 69ce89a0cadbe35a858398c258be93c388715e84fc0ca04e5a1fd1aa9770dd3a  README
+diff --git a/package/mariadb/mariadb.mk b/package/mariadb/mariadb.mk
+index 86b3a23f59..97a1b034e0 100644
+--- a/package/mariadb/mariadb.mk
++++ b/package/mariadb/mariadb.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MARIADB_VERSION = 10.1.26
++MARIADB_VERSION = 10.1.29
+ MARIADB_SITE = https://downloads.mariadb.org/interstitial/mariadb-$(MARIADB_VERSION)/source
+ MARIADB_LICENSE = GPLv2 (server), GPLv2 with FLOSS exception (GPL client library), LGPLv2 (LGPL client library)
+ # Tarball no longer contains LGPL license text
+diff --git a/package/mfgtools/Config.in.host b/package/mfgtools/Config.in.host
+index 1cb5a7f095..4bbdde38e2 100644
+--- a/package/mfgtools/Config.in.host
++++ b/package/mfgtools/Config.in.host
+@@ -11,4 +11,4 @@ config BR2_PACKAGE_HOST_MFGTOOLS
+ 	  production. The communication is done over USB using the
+ 	  Freescale UTP protocol.
+ 
+-	  https://github.com/NXPmicro/mfgtools
++	  https://github.com/codeauroraforum/mfgtools
+diff --git a/package/mfgtools/mfgtools.hash b/package/mfgtools/mfgtools.hash
+index e73a7fa13a..4932a80dba 100644
+--- a/package/mfgtools/mfgtools.hash
++++ b/package/mfgtools/mfgtools.hash
+@@ -1,2 +1,4 @@
+ # locally computed
+-sha256  6ce93a33c269282df305cf7e517d2d14fde78203537d8ea75b064966afe48464  mfgtools-b219fc219a35c365010897ed093c40750f8cdac6.tar.gz
++sha256  055d71227d18883d6e8bc9e854c076015f9a7749820a94272e19071bf0b25c89  mfgtools-v0.02.tar.gz
++sha256  2655559a6bb1179eae514f5c7166f4ede4f2453efa9cf4dc3c045cab5d57dede  LICENSE
++sha256  0963b6e5086bf454265b0f57821a02b681d1211e40ad74c310231cb4d94815c9  README.txt
+diff --git a/package/mfgtools/mfgtools.mk b/package/mfgtools/mfgtools.mk
+index cc24352462..99a72cb2de 100644
+--- a/package/mfgtools/mfgtools.mk
++++ b/package/mfgtools/mfgtools.mk
+@@ -4,11 +4,11 @@
+ #
+ ################################################################################
+ 
+-MFGTOOLS_VERSION = b219fc219a35c365010897ed093c40750f8cdac6
+-MFGTOOLS_SITE = $(call github,NXPmicro,mfgtools,$(MFGTOOLS_VERSION))
++MFGTOOLS_VERSION = v0.02
++MFGTOOLS_SITE = $(call github,codeauroraforum,mfgtools,$(MFGTOOLS_VERSION))
+ MFGTOOLS_SUBDIR = MfgToolLib
+ MFGTOOLS_LICENSE = BSD-3c or CPOL
+-MFGTOOLS_LICENSE_FILES = LICENSE CPOL.htm
++MFGTOOLS_LICENSE_FILES = LICENSE README.txt
+ HOST_MFGTOOLS_DEPENDENCIES = host-libusb
+ 
+ HOST_MFGTOOLS_CFLAGS = \
+diff --git a/package/mtools/mtools.mk b/package/mtools/mtools.mk
+index adba1fc473..1ba1e986ff 100644
+--- a/package/mtools/mtools.mk
++++ b/package/mtools/mtools.mk
+@@ -13,9 +13,13 @@ MTOOLS_CONF_OPTS = --without-x
+ # info documentation not needed
+ MTOOLS_CONF_ENV = \
+ 	ac_cv_func_setpgrp_void=yes \
++	ac_cv_lib_bsd_gethostbyname=no \
++	ac_cv_lib_bsd_main=no \
+ 	ac_cv_path_INSTALL_INFO=
+ 
+ HOST_MTOOLS_CONF_ENV = \
++	ac_cv_lib_bsd_gethostbyname=no \
++	ac_cv_lib_bsd_main=no \
+ 	ac_cv_path_INSTALL_INFO=
+ 
+ # link with iconv if enabled
+diff --git a/package/nodejs/6.11.5/0001-gyp-force-link-command-to-use-CXX.patch b/package/nodejs/6.12.2/0001-gyp-force-link-command-to-use-CXX.patch
+similarity index 100%
+rename from package/nodejs/6.11.5/0001-gyp-force-link-command-to-use-CXX.patch
+rename to package/nodejs/6.12.2/0001-gyp-force-link-command-to-use-CXX.patch
+diff --git a/package/nodejs/6.11.5/0002-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch b/package/nodejs/6.12.2/0002-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch
+similarity index 100%
+rename from package/nodejs/6.11.5/0002-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch
+rename to package/nodejs/6.12.2/0002-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch
+diff --git a/package/nodejs/Config.in b/package/nodejs/Config.in
+index 9ce02306e4..c88baaff2b 100644
+--- a/package/nodejs/Config.in
++++ b/package/nodejs/Config.in
+@@ -43,7 +43,7 @@ config BR2_PACKAGE_NODEJS_V8_ARCH_SUPPORTS
+ 
+ config BR2_PACKAGE_NODEJS_VERSION_STRING
+ 	string
+-	default "6.11.5"		if BR2_PACKAGE_NODEJS_V8_ARCH_SUPPORTS
++	default "6.12.2"		if BR2_PACKAGE_NODEJS_V8_ARCH_SUPPORTS
+ 	default "0.10.48"
+ 
+ config BR2_PACKAGE_NODEJS_NPM
+diff --git a/package/nodejs/nodejs.hash b/package/nodejs/nodejs.hash
+index 319774c62d..f82ce1e3a7 100644
+--- a/package/nodejs/nodejs.hash
++++ b/package/nodejs/nodejs.hash
+@@ -1,5 +1,5 @@
+ # From upstream URL: http://nodejs.org/dist/v0.10.48/SHASUMS256.txt
+ sha256  365a93d9acc076a0d93f087d269f376abeebccad599a9dab72f2f6ed96c8ae6e  node-v0.10.48.tar.xz
+ 
+-# From upstream URL: http://nodejs.org/dist/v6.11.5/SHASUMS256.txt
+-sha256  1c6de415216799fbaeca82304b3fef87accc7101ebf2ead7d5c545e0779e8aaf  node-v6.11.5.tar.xz
++# From upstream URL: http://nodejs.org/dist/v6.12.2/SHASUMS256.txt
++sha256  33677c1fcf6a2f35d2718834fd0afdb36166b0cc68349820e05d8f9316b1dafc  node-v6.12.2.tar.xz
+diff --git a/package/nut/nut.mk b/package/nut/nut.mk
+index 7136e834cc..adc64c900b 100644
+--- a/package/nut/nut.mk
++++ b/package/nut/nut.mk
+@@ -14,6 +14,9 @@ NUT_DEPENDENCIES = host-pkgconf
+ # Our patch changes m4 macros, so we need to autoreconf
+ NUT_AUTORECONF = YES
+ 
++# Race condition in tools generation
++NUT_MAKE = $(MAKE1)
++
+ # Put the PID files in a read-write place (/var/run is a tmpfs)
+ # since the default location (/var/state/ups) maybe readonly.
+ NUT_CONF_OPTS = \
+diff --git a/package/openssl/openssl.hash b/package/openssl/openssl.hash
+index c6226c302f..e3d3da757d 100644
+--- a/package/openssl/openssl.hash
++++ b/package/openssl/openssl.hash
+@@ -1,7 +1,8 @@
+-# From https://www.openssl.org/source/openssl-1.0.2m.tar.gz.sha256
+-sha256	8c6ff15ec6b319b50788f42c7abc2890c08ba5a1cdcd3810eb9092deada37b0f	openssl-1.0.2m.tar.gz
++# From https://www.openssl.org/source/openssl-1.0.2n.tar.gz.sha256
++sha256	370babb75f278c39e0c50e8c4e7493bc0f18db6867478341a832a982fd15a8fe	openssl-1.0.2n.tar.gz
+ # Locally computed
+ sha256	eddd8a5123748052c598214487ac178e4bfa4e31ba2ec520c70d59c8c5bfa2e9	openssl-1.0.2a-parallel-install-dirs.patch?id=c8abcbe8de5d3b6cdd68c162f398c011ff6e2d9d
+ sha256	147c3eeaad614c044749ea527cb433eae5e2d5cad34a78c6ba61cd967bfbe01f	openssl-1.0.2a-parallel-obj-headers.patch?id=c8abcbe8de5d3b6cdd68c162f398c011ff6e2d9d
+ sha256	30cb49489de5041841a74da9155cd4fabfbce33237262ba7cd23974314ae2956	openssl-1.0.2a-parallel-symlinking.patch?id=c8abcbe8de5d3b6cdd68c162f398c011ff6e2d9d
+ sha256	deaf6f3af41874ecc6d63841ea14b8e6c71cea81d4a511a754bc90c9a993147f	openssl-1.0.2d-parallel-build.patch?id=c8abcbe8de5d3b6cdd68c162f398c011ff6e2d9d
++sha256	9ee37d72966bb4a841343f0606ce44d41b3eae4df4285200c5a8ddc2b935992a	LICENSE
+diff --git a/package/openssl/openssl.mk b/package/openssl/openssl.mk
+index c7ff59f061..ef8387706a 100644
+--- a/package/openssl/openssl.mk
++++ b/package/openssl/openssl.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-OPENSSL_VERSION = 1.0.2m
++OPENSSL_VERSION = 1.0.2n
+ OPENSSL_SITE = http://www.openssl.org/source
+ OPENSSL_LICENSE = OpenSSL or SSLeay
+ OPENSSL_LICENSE_FILES = LICENSE
+diff --git a/package/rsync/0001-Check-fname-in-recv_files-sooner.patch b/package/rsync/0001-Check-fname-in-recv_files-sooner.patch
+new file mode 100644
+index 0000000000..3616960306
+--- /dev/null
++++ b/package/rsync/0001-Check-fname-in-recv_files-sooner.patch
+@@ -0,0 +1,45 @@
++From 3e06d40029cfdce9d0f73d87cfd4edaf54be9c51 Mon Sep 17 00:00:00 2001
++From: Jeriko One <jeriko.one@gmx.us>
++Date: Thu, 2 Nov 2017 23:44:19 -0700
++Subject: [PATCH] Check fname in recv_files sooner.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Patch status: upstream commit 3e06d40029c
++
++ receiver.c | 12 ++++++------
++ 1 file changed, 6 insertions(+), 6 deletions(-)
++
++diff --git a/receiver.c b/receiver.c
++index baae3a919cdd..9fdafa152cb3 100644
++--- a/receiver.c
+++++ b/receiver.c
++@@ -574,6 +574,12 @@ int recv_files(int f_in, int f_out, char *local_name)
++ 			file = dir_flist->files[cur_flist->parent_ndx];
++ 		fname = local_name ? local_name : f_name(file, fbuf);
++ 
+++		if (daemon_filter_list.head
+++		    && check_filter(&daemon_filter_list, FLOG, fname, 0) < 0) {
+++			rprintf(FERROR, "attempt to hack rsync failed.\n");
+++			exit_cleanup(RERR_PROTOCOL);
+++		}
+++
++ 		if (DEBUG_GTE(RECV, 1))
++ 			rprintf(FINFO, "recv_files(%s)\n", fname);
++ 
++@@ -645,12 +651,6 @@ int recv_files(int f_in, int f_out, char *local_name)
++ 
++ 		cleanup_got_literal = 0;
++ 
++-		if (daemon_filter_list.head
++-		    && check_filter(&daemon_filter_list, FLOG, fname, 0) < 0) {
++-			rprintf(FERROR, "attempt to hack rsync failed.\n");
++-			exit_cleanup(RERR_PROTOCOL);
++-		}
++-
++ 		if (read_batch) {
++ 			int wanted = redoing
++ 				   ? we_want_redo(ndx)
++-- 
++2.15.0
++
+diff --git a/package/rsync/0002-Sanitize-xname-in-read_ndx_and_attrs.patch b/package/rsync/0002-Sanitize-xname-in-read_ndx_and_attrs.patch
+new file mode 100644
+index 0000000000..1e5d3717c4
+--- /dev/null
++++ b/package/rsync/0002-Sanitize-xname-in-read_ndx_and_attrs.patch
+@@ -0,0 +1,39 @@
++From 70aeb5fddd1b2f8e143276f8d5a085db16c593b9 Mon Sep 17 00:00:00 2001
++From: Jeriko One <jeriko.one@gmx.us>
++Date: Thu, 16 Nov 2017 17:05:42 -0800
++Subject: [PATCH] Sanitize xname in read_ndx_and_attrs.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Patch status: upstream commit 70aeb5fddd
++
++ rsync.c | 6 ++++++
++ 1 file changed, 6 insertions(+)
++
++diff --git a/rsync.c b/rsync.c
++index b82e59881018..a0945ba4e7f5 100644
++--- a/rsync.c
+++++ b/rsync.c
++@@ -49,6 +49,7 @@ extern int flist_eof;
++ extern int file_old_total;
++ extern int keep_dirlinks;
++ extern int make_backups;
+++extern int sanitize_paths;
++ extern struct file_list *cur_flist, *first_flist, *dir_flist;
++ extern struct chmod_mode_struct *daemon_chmod_modes;
++ #ifdef ICONV_OPTION
++@@ -396,6 +397,11 @@ int read_ndx_and_attrs(int f_in, int f_out, int *iflag_ptr, uchar *type_ptr,
++ 	if (iflags & ITEM_XNAME_FOLLOWS) {
++ 		if ((len = read_vstring(f_in, buf, MAXPATHLEN)) < 0)
++ 			exit_cleanup(RERR_PROTOCOL);
+++
+++		if (sanitize_paths) {
+++			sanitize_path(buf, buf, "", 0, SP_DEFAULT);
+++			len = strlen(buf);
+++		}
++ 	} else {
++ 		*buf = '\0';
++ 		len = -1;
++-- 
++2.15.0
++
+diff --git a/package/rsync/0003-Check-daemon-filter-against-fnamecmp-in-recv_files.patch b/package/rsync/0003-Check-daemon-filter-against-fnamecmp-in-recv_files.patch
+new file mode 100644
+index 0000000000..b19921c3eb
+--- /dev/null
++++ b/package/rsync/0003-Check-daemon-filter-against-fnamecmp-in-recv_files.patch
+@@ -0,0 +1,28 @@
++From 5509597decdbd7b91994210f700329d8a35e70a1 Mon Sep 17 00:00:00 2001
++From: Jeriko One <jeriko.one@gmx.us>
++Date: Thu, 16 Nov 2017 17:26:03 -0800
++Subject: [PATCH] Check daemon filter against fnamecmp in recv_files().
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Patch status: upstream commit 5509597dec
++
++ receiver.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/receiver.c b/receiver.c
++index 9fdafa152cb3..9c46242e013c 100644
++--- a/receiver.c
+++++ b/receiver.c
++@@ -722,7 +722,7 @@ int recv_files(int f_in, int f_out, char *local_name)
++ 				break;
++ 			}
++ 			if (!fnamecmp || (daemon_filter_list.head
++-			  && check_filter(&daemon_filter_list, FLOG, fname, 0) < 0)) {
+++			  && check_filter(&daemon_filter_list, FLOG, fnamecmp, 0) < 0)) {
++ 				fnamecmp = fname;
++ 				fnamecmp_type = FNAMECMP_FNAME;
++ 			}
++-- 
++2.15.0
++
+diff --git a/package/rsync/0004-Enforce-trailing-0-when-receiving-xattr-name-values.patch b/package/rsync/0004-Enforce-trailing-0-when-receiving-xattr-name-values.patch
+new file mode 100644
+index 0000000000..be9040010c
+--- /dev/null
++++ b/package/rsync/0004-Enforce-trailing-0-when-receiving-xattr-name-values.patch
+@@ -0,0 +1,33 @@
++From 47a63d90e71d3e19e0e96052bb8c6b9cb140ecc1 Mon Sep 17 00:00:00 2001
++From: Wayne Davison <wayned@samba.org>
++Date: Sun, 5 Nov 2017 11:33:15 -0800
++Subject: [PATCH] Enforce trailing \0 when receiving xattr name values. Fixes
++ bug 13112.
++
++Fixes CVE-2017-16548
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++Patch status: upstream commit 47a63d90e7
++
++ xattrs.c | 4 ++++
++ 1 file changed, 4 insertions(+)
++
++diff --git a/xattrs.c b/xattrs.c
++index 68305d75..4867e6f5 100644
++--- a/xattrs.c
+++++ b/xattrs.c
++@@ -824,6 +824,10 @@ void receive_xattr(int f, struct file_struct *file)
++ 			out_of_memory("receive_xattr");
++ 		name = ptr + dget_len + extra_len;
++ 		read_buf(f, name, name_len);
+++		if (name_len < 1 || name[name_len-1] != '\0') {
+++			rprintf(FERROR, "Invalid xattr name received (missing trailing \\0).\n");
+++			exit_cleanup(RERR_FILEIO);
+++		}
++ 		if (dget_len == datum_len)
++ 			read_buf(f, ptr, dget_len);
++ 		else {
++-- 
++2.11.0
++
+diff --git a/package/samba4/samba4.mk b/package/samba4/samba4.mk
+index c8b1e5add4..4e7dc5b7da 100644
+--- a/package/samba4/samba4.mk
++++ b/package/samba4/samba4.mk
+@@ -80,7 +80,7 @@ endef
+ SAMBA4_POST_INSTALL_TARGET_HOOKS += SAMBA4_REMOVE_CTDB_TESTS
+ 
+ define SAMBA4_CONFIGURE_CMDS
+-	cp package/samba4/samba4-cache.txt $(@D)/cache.txt;
++	$(INSTALL) -m 0644 package/samba4/samba4-cache.txt $(@D)/cache.txt;
+ 	echo 'Checking uname machine type: $(BR2_ARCH)' >>$(@D)/cache.txt;
+ 	(cd $(@D); \
+ 		PYTHON_CONFIG="$(STAGING_DIR)/usr/bin/python-config" \
+diff --git a/package/tor/tor.hash b/package/tor/tor.hash
+index ba0b47af15..8b5a3958a2 100644
+--- a/package/tor/tor.hash
++++ b/package/tor/tor.hash
+@@ -1,2 +1,2 @@
+ # Locally computed
+-sha256 6e7466625d53812f23c2ad60a873c5855f63f756fde0fc5cbeda8d32cee1086b  tor-0.2.9.12.tar.gz
++sha256 44d9ddca1479f517b74067fe55e919d8d3643645618d5a1f6a5e033765781979  tor-0.2.9.14.tar.gz
+diff --git a/package/tor/tor.mk b/package/tor/tor.mk
+index 4cc5c48351..f87b10f314 100644
+--- a/package/tor/tor.mk
++++ b/package/tor/tor.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-TOR_VERSION = 0.2.9.12
++TOR_VERSION = 0.2.9.14
+ TOR_SITE = https://dist.torproject.org
+ TOR_LICENSE = BSD-3c
+ TOR_LICENSE_FILES = LICENSE
+diff --git a/package/vlc/0013-codec-avcodec-check-avcodec-visible-sizes.patch b/package/vlc/0013-codec-avcodec-check-avcodec-visible-sizes.patch
+deleted file mode 100644
+index 41a5e25d38..0000000000
+--- a/package/vlc/0013-codec-avcodec-check-avcodec-visible-sizes.patch
++++ /dev/null
+@@ -1,33 +0,0 @@
+-From 6cc73bcad19da2cd2e95671173f2e0d203a57e9b Mon Sep 17 00:00:00 2001
+-From: Francois Cartegnie <fcvlcdev@free.fr>
+-Date: Thu, 29 Jun 2017 09:45:20 +0200
+-Subject: [PATCH] codec: avcodec: check avcodec visible sizes
+-
+-refs #18467
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- modules/codec/avcodec/video.c | 6 ++++--
+- 1 file changed, 4 insertions(+), 2 deletions(-)
+-
+-diff --git a/modules/codec/avcodec/video.c b/modules/codec/avcodec/video.c
+-index 1bcad21..ce52544 100644
+---- a/modules/codec/avcodec/video.c
+-+++ b/modules/codec/avcodec/video.c
+-@@ -137,9 +137,11 @@ static inline picture_t *ffmpeg_NewPictBuf( decoder_t *p_dec,
+-     }
+- 
+- 
+--    if( width == 0 || height == 0 || width > 8192 || height > 8192 )
+-+    if( width == 0 || height == 0 || width > 8192 || height > 8192 ||
+-+        width < p_context->width || height < p_context->height )
+-     {
+--        msg_Err( p_dec, "Invalid frame size %dx%d.", width, height );
+-+        msg_Err( p_dec, "Invalid frame size %dx%d. vsz %dx%d",
+-+                 width, height, p_context->width, p_context->height );
+-         return NULL; /* invalid display size */
+-     }
+-     p_dec->fmt_out.video.i_width = width;
+--- 
+-2.1.4
+-
+diff --git a/package/vlc/0014-decoder-check-visible-size-when-creating-buffer.patch b/package/vlc/0014-decoder-check-visible-size-when-creating-buffer.patch
+deleted file mode 100644
+index a16dcf0e97..0000000000
+--- a/package/vlc/0014-decoder-check-visible-size-when-creating-buffer.patch
++++ /dev/null
+@@ -1,33 +0,0 @@
+-From a38a85db58c569cc592d9380cc07096757ef3d49 Mon Sep 17 00:00:00 2001
+-From: Francois Cartegnie <fcvlcdev@free.fr>
+-Date: Thu, 29 Jun 2017 11:09:02 +0200
+-Subject: [PATCH] decoder: check visible size when creating buffer
+-
+-early reject invalid visible size
+-mishandled by filters.
+-
+-refs #18467
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- src/input/decoder.c | 4 +++-
+- 1 file changed, 3 insertions(+), 1 deletion(-)
+-
+-diff --git a/src/input/decoder.c b/src/input/decoder.c
+-index 2c0823f..a216165 100644
+---- a/src/input/decoder.c
+-+++ b/src/input/decoder.c
+-@@ -2060,7 +2060,9 @@ static picture_t *vout_new_buffer( decoder_t *p_dec )
+-         vout_thread_t *p_vout;
+- 
+-         if( !p_dec->fmt_out.video.i_width ||
+--            !p_dec->fmt_out.video.i_height )
+-+            !p_dec->fmt_out.video.i_height ||
+-+            p_dec->fmt_out.video.i_width < p_dec->fmt_out.video.i_visible_width ||
+-+            p_dec->fmt_out.video.i_height < p_dec->fmt_out.video.i_visible_height )
+-         {
+-             /* Can't create a new vout without display size */
+-             return NULL;
+--- 
+-2.1.4
+-
+diff --git a/package/vlc/vlc.hash b/package/vlc/vlc.hash
+index 628dad74d9..02b70ef943 100644
+--- a/package/vlc/vlc.hash
++++ b/package/vlc/vlc.hash
+@@ -1,2 +1,8 @@
+-# From http://download.videolan.org/pub/videolan/vlc/2.2.6/vlc-2.2.6.tar.xz.sha256
+-sha256 c403d3accd9a400eb2181c958f3e7bc5524fe5738425f4253d42883b425a42a8  vlc-2.2.6.tar.xz
++# From http://download.videolan.org/pub/videolan/vlc/2.2.8/vlc-2.2.8.tar.xz.sha256
++sha256 9bf046848fb56d93518881b39099b8288ee005d5ba0ddf705b6f6643b8d562ec vlc-2.2.8.tar.xz
++# From http://download.videolan.org/pub/videolan/vlc/2.2.8/vlc-2.2.8.tar.xz.sha1
++sha1 b960ec5bdb9a51da285430fc68962927ccc87187 vlc-2.2.8.tar.xz
++# From http://download.videolan.org/pub/videolan/vlc/2.2.8/vlc-2.2.8.tar.xz.md5
++md5 b721fddf65aaf64eeee5629aa9bf7c9e vlc-2.2.8.tar.xz
++sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  COPYING
++sha256 dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551  COPYING.LIB
+diff --git a/package/vlc/vlc.mk b/package/vlc/vlc.mk
+index 47fb3e80e4..dfa84c3f6d 100644
+--- a/package/vlc/vlc.mk
++++ b/package/vlc/vlc.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-VLC_VERSION = 2.2.6
+-VLC_SITE = http://get.videolan.org/vlc/$(VLC_VERSION)
++VLC_VERSION = 2.2.8
++VLC_SITE = https://get.videolan.org/vlc/$(VLC_VERSION)
+ VLC_SOURCE = vlc-$(VLC_VERSION).tar.xz
+ VLC_LICENSE = GPLv2+, LGPLv2.1+
+ VLC_LICENSE_FILES = COPYING COPYING.LIB
+diff --git a/package/webkitgtk/webkitgtk.hash b/package/webkitgtk/webkitgtk.hash
+index 669bb1cc62..3d64b6f5a9 100644
+--- a/package/webkitgtk/webkitgtk.hash
++++ b/package/webkitgtk/webkitgtk.hash
+@@ -1,4 +1,8 @@
+-# From https://webkitgtk.org/releases/webkitgtk-2.18.3.tar.xz.sums
+-md5 264a22d7467deae606e42b6eb5dd65af webkitgtk-2.18.3.tar.xz
+-sha1 164cad34281ef597a3d4ad214e8037c3ddef4d17 webkitgtk-2.18.3.tar.xz
+-sha256 e15420e1616a6f70f321541d467af5ca285bff66b1e0fa68a01df3ccf1b18f9e webkitgtk-2.18.3.tar.xz
++# From https://webkitgtk.org/releases/webkitgtk-2.18.4.tar.xz.sums
++md5 c4686971eac2760bab685e21ac8849be webkitgtk-2.18.4.tar.xz
++sha1 709616b445158dc3163a64bb59e95aadbe58949c webkitgtk-2.18.4.tar.xz
++sha256 87b6bb9a6065b949ecbe6191313c43e57ad28efdf1f2b5e763405093520632b8 webkitgtk-2.18.4.tar.xz
++
++# Hashes for license files:
++sha256 0b5d3a7cc325942567373b0ecd757d07c132e0ebd7c97bfc63f7e1a76094edb4 Source/WebCore/LICENSE-APPLE
++sha256 f2b3bd09663381deb99721109d22b47af1213bb43007a8b56a06c6375c8050ce Source/WebCore/LICENSE-LGPL-2.1
+diff --git a/package/webkitgtk/webkitgtk.mk b/package/webkitgtk/webkitgtk.mk
+index 43e9aa0598..00f7920a5f 100644
+--- a/package/webkitgtk/webkitgtk.mk
++++ b/package/webkitgtk/webkitgtk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WEBKITGTK_VERSION = 2.18.3
++WEBKITGTK_VERSION = 2.18.4
+ WEBKITGTK_SITE = http://www.webkitgtk.org/releases
+ WEBKITGTK_SOURCE = webkitgtk-$(WEBKITGTK_VERSION).tar.xz
+ WEBKITGTK_INSTALL_STAGING = YES
+diff --git a/package/wireshark/wireshark.hash b/package/wireshark/wireshark.hash
+index 3494f2e5bf..cffdab2a24 100644
+--- a/package/wireshark/wireshark.hash
++++ b/package/wireshark/wireshark.hash
+@@ -1,2 +1,2 @@
+-# From: https://www.wireshark.org/download/src/all-versions/SIGNATURES-2.2.10.txt
+-sha256 8574a5e1fdec7affae640924bd46c1aed1bd866e02632fa5625e1450e4a50707  wireshark-2.2.10.tar.bz2
++# From: https://www.wireshark.org/download/src/all-versions/SIGNATURES-2.2.11.txt
++sha256 a9f11621e85d7e1d72259157edd94825e72af3fd72e184b8474459f92ad5fc40  wireshark-2.2.11.tar.bz2
+diff --git a/package/wireshark/wireshark.mk b/package/wireshark/wireshark.mk
+index 0b781a23ef..76c0db3826 100644
+--- a/package/wireshark/wireshark.mk
++++ b/package/wireshark/wireshark.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WIRESHARK_VERSION = 2.2.10
++WIRESHARK_VERSION = 2.2.11
+ WIRESHARK_SOURCE = wireshark-$(WIRESHARK_VERSION).tar.bz2
+ WIRESHARK_SITE = https://www.wireshark.org/download/src/all-versions
+ WIRESHARK_LICENSE = wireshark license
+diff --git a/package/x11r7/xlib_libXcursor/xlib_libXcursor.hash b/package/x11r7/xlib_libXcursor/xlib_libXcursor.hash
+index 0135ac9dd0..7da9eb8c4f 100644
+--- a/package/x11r7/xlib_libXcursor/xlib_libXcursor.hash
++++ b/package/x11r7/xlib_libXcursor/xlib_libXcursor.hash
+@@ -1,2 +1,5 @@
+-# From http://lists.x.org/archives/xorg-announce/2013-May/002229.html
+-sha256	9bc6acb21ca14da51bda5bc912c8955bc6e5e433f0ab00c5e8bef842596c33df	libXcursor-1.1.14.tar.bz2
++# From https://lists.x.org/archives/xorg-announce/2017-November/002823.html
++md5  58fe3514e1e7135cf364101e714d1a14  libXcursor-1.1.15.tar.bz2
++sha1 3e19f991f244b7fa31566adce7ead078424296cf  libXcursor-1.1.15.tar.bz2
++sha256 294e670dd37cd23995e69aae626629d4a2dfe5708851bbc13d032401b7a3df6b  libXcursor-1.1.15.tar.bz2
++sha512 53ad0fa2afd7b4cf1108b560e44ea71abdf5c55a18df243d7123942513589c927f5c105395f790d8769959e0129db54264e6aac7efd51a5f1aec270379b1f2f5  libXcursor-1.1.15.tar.bz2
+diff --git a/package/x11r7/xlib_libXcursor/xlib_libXcursor.mk b/package/x11r7/xlib_libXcursor/xlib_libXcursor.mk
+index c59c01a51f..b27aa653e9 100644
+--- a/package/x11r7/xlib_libXcursor/xlib_libXcursor.mk
++++ b/package/x11r7/xlib_libXcursor/xlib_libXcursor.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-XLIB_LIBXCURSOR_VERSION = 1.1.14
++XLIB_LIBXCURSOR_VERSION = 1.1.15
+ XLIB_LIBXCURSOR_SOURCE = libXcursor-$(XLIB_LIBXCURSOR_VERSION).tar.bz2
+ XLIB_LIBXCURSOR_SITE = http://xorg.freedesktop.org/releases/individual/lib
+ XLIB_LIBXCURSOR_LICENSE = MIT
+diff --git a/package/x11r7/xlib_libXfont/0001-Check-for-end-of-string-in-PatternMatch-CVE-2017-137.patch b/package/x11r7/xlib_libXfont/0001-Check-for-end-of-string-in-PatternMatch-CVE-2017-137.patch
+deleted file mode 100644
+index 3795179af1..0000000000
+--- a/package/x11r7/xlib_libXfont/0001-Check-for-end-of-string-in-PatternMatch-CVE-2017-137.patch
++++ /dev/null
+@@ -1,34 +0,0 @@
+-From d1e670a4a8704b8708e493ab6155589bcd570608 Mon Sep 17 00:00:00 2001
+-From: Michal Srb <msrb@suse.com>
+-Date: Thu, 20 Jul 2017 13:38:53 +0200
+-Subject: [PATCH] Check for end of string in PatternMatch (CVE-2017-13720)
+-
+-If a pattern contains '?' character, any character in the string is skipped,
+-even if it is '\0'. The rest of the matching then reads invalid memory.
+-
+-Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
+-Signed-off-by: Julien Cristau <jcristau@debian.org>
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- src/fontfile/fontdir.c | 4 +++-
+- 1 file changed, 3 insertions(+), 1 deletion(-)
+-
+-diff --git a/src/fontfile/fontdir.c b/src/fontfile/fontdir.c
+-index 4ce2473..996b7d1 100644
+---- a/src/fontfile/fontdir.c
+-+++ b/src/fontfile/fontdir.c
+-@@ -400,8 +400,10 @@ PatternMatch(char *pat, int patdashes, char *string, int stringdashes)
+- 		}
+- 	    }
+- 	case '?':
+--	    if (*string++ == XK_minus)
+-+	    if ((t = *string++) == XK_minus)
+- 		stringdashes--;
+-+	    if (!t)
+-+		return 0;
+- 	    break;
+- 	case '\0':
+- 	    return (*string == '\0');
+--- 
+-2.11.0
+-
+diff --git a/package/x11r7/xlib_libXfont/0002-pcfGetProperties-Check-string-boundaries-CVE-2017-13.patch b/package/x11r7/xlib_libXfont/0002-pcfGetProperties-Check-string-boundaries-CVE-2017-13.patch
+deleted file mode 100644
+index 709e446efe..0000000000
+--- a/package/x11r7/xlib_libXfont/0002-pcfGetProperties-Check-string-boundaries-CVE-2017-13.patch
++++ /dev/null
+@@ -1,52 +0,0 @@
+-From 672bb944311392e2415b39c0d63b1e1902905bcd Mon Sep 17 00:00:00 2001
+-From: Michal Srb <msrb@suse.com>
+-Date: Thu, 20 Jul 2017 17:05:23 +0200
+-Subject: [PATCH] pcfGetProperties: Check string boundaries (CVE-2017-13722)
+-
+-Without the checks a malformed PCF file can cause the library to make
+-atom from random heap memory that was behind the `strings` buffer.
+-This may crash the process or leak information.
+-
+-Signed-off-by: Julien Cristau <jcristau@debian.org>
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- src/bitmap/pcfread.c | 13 +++++++++++--
+- 1 file changed, 11 insertions(+), 2 deletions(-)
+-
+-diff --git a/src/bitmap/pcfread.c b/src/bitmap/pcfread.c
+-index dab1c44..ae34c28 100644
+---- a/src/bitmap/pcfread.c
+-+++ b/src/bitmap/pcfread.c
+-@@ -45,6 +45,7 @@ from The Open Group.
+- 
+- #include <stdarg.h>
+- #include <stdint.h>
+-+#include <string.h>
+- 
+- void
+- pcfError(const char* message, ...)
+-@@ -311,11 +312,19 @@ pcfGetProperties(FontInfoPtr pFontInfo, FontFilePtr file,
+-     if (IS_EOF(file)) goto Bail;
+-     position += string_size;
+-     for (i = 0; i < nprops; i++) {
+-+	if (props[i].name >= string_size) {
+-+	    pcfError("pcfGetProperties(): String starts out of bounds (%ld/%d)\n", props[i].name, string_size);
+-+	    goto Bail;
+-+	}
+- 	props[i].name = MakeAtom(strings + props[i].name,
+--				 strlen(strings + props[i].name), TRUE);
+-+				 strnlen(strings + props[i].name, string_size - props[i].name), TRUE);
+- 	if (isStringProp[i]) {
+-+	    if (props[i].value >= string_size) {
+-+		pcfError("pcfGetProperties(): String starts out of bounds (%ld/%d)\n", props[i].value, string_size);
+-+		goto Bail;
+-+	    }
+- 	    props[i].value = MakeAtom(strings + props[i].value,
+--				      strlen(strings + props[i].value), TRUE);
+-+				      strnlen(strings + props[i].value, string_size - props[i].value), TRUE);
+- 	}
+-     }
+-     free(strings);
+--- 
+-2.11.0
+-
+diff --git a/package/x11r7/xlib_libXfont/xlib_libXfont.hash b/package/x11r7/xlib_libXfont/xlib_libXfont.hash
+index 6db8339ce4..ea04348719 100644
+--- a/package/x11r7/xlib_libXfont/xlib_libXfont.hash
++++ b/package/x11r7/xlib_libXfont/xlib_libXfont.hash
+@@ -1,2 +1,5 @@
+-# From https://lists.x.org/archives/xorg-announce/2016-August/002702.html
+-sha256 02945ea68da447102f3e6c2b896c1d2061fd115de99404facc2aca3ad7010d71  libXfont-1.5.2.tar.bz2
++# From https://lists.x.org/archives/xorg-announce/2017-November/002825.html
++md5  16eaf156edd79b68038b6a7c44aa9e9b  libXfont-1.5.4.tar.bz2
++sha1 9db050f63b9c4cb19e0dbb40575558ccb95719ca  libXfont-1.5.4.tar.bz2
++sha256 1a7f7490774c87f2052d146d1e0e64518d32e6848184a18654e8d0bb57883242  libXfont-1.5.4.tar.bz2
++sha512 864edbaff45c44bd92bc4b06275c73fdf584a9b88bc523a297d4c75c01ca253f438463e929af70d753ddecfa648bb0b9bcf0ec72267db9f2b1704f7afa906cb3  libXfont-1.5.4.tar.bz2
+diff --git a/package/x11r7/xlib_libXfont/xlib_libXfont.mk b/package/x11r7/xlib_libXfont/xlib_libXfont.mk
+index 422c01d152..30163eec6f 100644
+--- a/package/x11r7/xlib_libXfont/xlib_libXfont.mk
++++ b/package/x11r7/xlib_libXfont/xlib_libXfont.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-XLIB_LIBXFONT_VERSION = 1.5.2
++XLIB_LIBXFONT_VERSION = 1.5.4
+ XLIB_LIBXFONT_SOURCE = libXfont-$(XLIB_LIBXFONT_VERSION).tar.bz2
+ XLIB_LIBXFONT_SITE = http://xorg.freedesktop.org/releases/individual/lib
+ XLIB_LIBXFONT_LICENSE = MIT
+diff --git a/package/x11r7/xlib_libXfont2/0001-Check-for-end-of-string-in-PatternMatch-CVE-2017-137.patch b/package/x11r7/xlib_libXfont2/0001-Check-for-end-of-string-in-PatternMatch-CVE-2017-137.patch
+deleted file mode 100644
+index 3795179af1..0000000000
+--- a/package/x11r7/xlib_libXfont2/0001-Check-for-end-of-string-in-PatternMatch-CVE-2017-137.patch
++++ /dev/null
+@@ -1,34 +0,0 @@
+-From d1e670a4a8704b8708e493ab6155589bcd570608 Mon Sep 17 00:00:00 2001
+-From: Michal Srb <msrb@suse.com>
+-Date: Thu, 20 Jul 2017 13:38:53 +0200
+-Subject: [PATCH] Check for end of string in PatternMatch (CVE-2017-13720)
+-
+-If a pattern contains '?' character, any character in the string is skipped,
+-even if it is '\0'. The rest of the matching then reads invalid memory.
+-
+-Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
+-Signed-off-by: Julien Cristau <jcristau@debian.org>
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- src/fontfile/fontdir.c | 4 +++-
+- 1 file changed, 3 insertions(+), 1 deletion(-)
+-
+-diff --git a/src/fontfile/fontdir.c b/src/fontfile/fontdir.c
+-index 4ce2473..996b7d1 100644
+---- a/src/fontfile/fontdir.c
+-+++ b/src/fontfile/fontdir.c
+-@@ -400,8 +400,10 @@ PatternMatch(char *pat, int patdashes, char *string, int stringdashes)
+- 		}
+- 	    }
+- 	case '?':
+--	    if (*string++ == XK_minus)
+-+	    if ((t = *string++) == XK_minus)
+- 		stringdashes--;
+-+	    if (!t)
+-+		return 0;
+- 	    break;
+- 	case '\0':
+- 	    return (*string == '\0');
+--- 
+-2.11.0
+-
+diff --git a/package/x11r7/xlib_libXfont2/0002-pcfGetProperties-Check-string-boundaries-CVE-2017-13.patch b/package/x11r7/xlib_libXfont2/0002-pcfGetProperties-Check-string-boundaries-CVE-2017-13.patch
+deleted file mode 100644
+index 709e446efe..0000000000
+--- a/package/x11r7/xlib_libXfont2/0002-pcfGetProperties-Check-string-boundaries-CVE-2017-13.patch
++++ /dev/null
+@@ -1,52 +0,0 @@
+-From 672bb944311392e2415b39c0d63b1e1902905bcd Mon Sep 17 00:00:00 2001
+-From: Michal Srb <msrb@suse.com>
+-Date: Thu, 20 Jul 2017 17:05:23 +0200
+-Subject: [PATCH] pcfGetProperties: Check string boundaries (CVE-2017-13722)
+-
+-Without the checks a malformed PCF file can cause the library to make
+-atom from random heap memory that was behind the `strings` buffer.
+-This may crash the process or leak information.
+-
+-Signed-off-by: Julien Cristau <jcristau@debian.org>
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- src/bitmap/pcfread.c | 13 +++++++++++--
+- 1 file changed, 11 insertions(+), 2 deletions(-)
+-
+-diff --git a/src/bitmap/pcfread.c b/src/bitmap/pcfread.c
+-index dab1c44..ae34c28 100644
+---- a/src/bitmap/pcfread.c
+-+++ b/src/bitmap/pcfread.c
+-@@ -45,6 +45,7 @@ from The Open Group.
+- 
+- #include <stdarg.h>
+- #include <stdint.h>
+-+#include <string.h>
+- 
+- void
+- pcfError(const char* message, ...)
+-@@ -311,11 +312,19 @@ pcfGetProperties(FontInfoPtr pFontInfo, FontFilePtr file,
+-     if (IS_EOF(file)) goto Bail;
+-     position += string_size;
+-     for (i = 0; i < nprops; i++) {
+-+	if (props[i].name >= string_size) {
+-+	    pcfError("pcfGetProperties(): String starts out of bounds (%ld/%d)\n", props[i].name, string_size);
+-+	    goto Bail;
+-+	}
+- 	props[i].name = MakeAtom(strings + props[i].name,
+--				 strlen(strings + props[i].name), TRUE);
+-+				 strnlen(strings + props[i].name, string_size - props[i].name), TRUE);
+- 	if (isStringProp[i]) {
+-+	    if (props[i].value >= string_size) {
+-+		pcfError("pcfGetProperties(): String starts out of bounds (%ld/%d)\n", props[i].value, string_size);
+-+		goto Bail;
+-+	    }
+- 	    props[i].value = MakeAtom(strings + props[i].value,
+--				      strlen(strings + props[i].value), TRUE);
+-+				      strnlen(strings + props[i].value, string_size - props[i].value), TRUE);
+- 	}
+-     }
+-     free(strings);
+--- 
+-2.11.0
+-
+diff --git a/package/x11r7/xlib_libXfont2/xlib_libXfont2.hash b/package/x11r7/xlib_libXfont2/xlib_libXfont2.hash
+index 81a3c9f1ea..1816b4bf6e 100644
+--- a/package/x11r7/xlib_libXfont2/xlib_libXfont2.hash
++++ b/package/x11r7/xlib_libXfont2/xlib_libXfont2.hash
+@@ -1,2 +1,5 @@
+-# From https://lists.x.org/archives/xorg-announce/2015-December/002663.html
+-sha256 e9fbbb475ddd171b3a6a54b989cbade1f6f874fc35d505ebc5be426bc6e4db7e  libXfont2-2.0.1.tar.bz2
++# From https://lists.x.org/archives/xorg-announce/2017-November/002824.html
++md5  b7ca87dfafeb5205b28a1e91ac3efe85  libXfont2-2.0.3.tar.bz2
++sha1 1110f1ad4061d9e8131ecb941757480e3e32bca0  libXfont2-2.0.3.tar.bz2
++sha256 0e8ab7fd737ccdfe87e1f02b55f221f0bd4503a1c5f28be4ed6a54586bac9c4e  libXfont2-2.0.3.tar.bz2
++sha512 648b664e2aa58cbc7366a1b05873aa06bd4a38060f64085783043388244af8ceced77b29a22c3ac8b6d34cd226e093bbbcc785ea1748ea65720fe7ea05b4b44b  libXfont2-2.0.3.tar.bz2
+diff --git a/package/x11r7/xlib_libXfont2/xlib_libXfont2.mk b/package/x11r7/xlib_libXfont2/xlib_libXfont2.mk
+index fef1e68323..3f1bdee435 100644
+--- a/package/x11r7/xlib_libXfont2/xlib_libXfont2.mk
++++ b/package/x11r7/xlib_libXfont2/xlib_libXfont2.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-XLIB_LIBXFONT2_VERSION = 2.0.1
++XLIB_LIBXFONT2_VERSION = 2.0.3
+ XLIB_LIBXFONT2_SOURCE = libXfont2-$(XLIB_LIBXFONT2_VERSION).tar.bz2
+ XLIB_LIBXFONT2_SITE = http://xorg.freedesktop.org/releases/individual/lib
+ XLIB_LIBXFONT2_LICENSE = MIT
+diff --git a/package/xfsprogs/Config.in b/package/xfsprogs/Config.in
+index 9f0d2509c0..78c1aa90d0 100644
+--- a/package/xfsprogs/Config.in
++++ b/package/xfsprogs/Config.in
+@@ -13,4 +13,4 @@ config BR2_PACKAGE_XFSPROGS
+ 	help
+ 	  The XFS file system utilities and libraries
+ 
+-	  http://oss.sgi.com/projects/xfs/
++	  http://xfs.org
+diff --git a/support/scripts/size-stats b/support/scripts/size-stats
+index af45000359..3ff2a1ce18 100755
+--- a/support/scripts/size-stats
++++ b/support/scripts/size-stats
+@@ -178,9 +178,17 @@ def gen_files_csv(filesdict, pkgsizes, outputf):
+                      "File size in system (%)"])
+         for f, (pkgname, filesize) in filesdict.items():
+             pkgsize = pkgsizes[pkgname]
++
++            if pkgsize == 0:
++                percent_pkg = 0
++            else:
++                percent_pkg = float(filesize) / pkgsize * 100
++
++            percent_total = float(filesize) / total * 100
++
+             wr.writerow([f, pkgname, filesize, pkgsize,
+-                         "%.1f" % (float(filesize) / pkgsize * 100),
+-                         "%.1f" % (float(filesize) / total * 100)])
++                         "%.1f" % percent_pkg,
++                         "%.1f" % percent_total])
+ 
+ 
+ #
+diff --git a/toolchain/toolchain-external/toolchain-external.mk b/toolchain/toolchain-external/toolchain-external.mk
+index 48de1e71f2..dd07884c7e 100644
+--- a/toolchain/toolchain-external/toolchain-external.mk
++++ b/toolchain/toolchain-external/toolchain-external.mk
+@@ -25,4 +25,4 @@ $(error No prefix selected for external toolchain package $(BR2_PACKAGE_PROVIDES
+ endif
+ endif
+ 
+-include toolchain/toolchain-external/*/*.mk
++include $(sort $(wildcard toolchain/toolchain-external/*/*.mk))

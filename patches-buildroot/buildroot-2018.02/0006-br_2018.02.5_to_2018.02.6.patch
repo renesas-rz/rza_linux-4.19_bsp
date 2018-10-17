@@ -1,0 +1,3130 @@
+diff --git a/CHANGES b/CHANGES
+index 0c50243c60..cdf682164f 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,29 @@
++2018.02.6, Released October 7th, 2018
++
++	Important / security related fixes.
++
++	Add a number of patches to fix build errors for host utilities
++	on modern distributions using glibc-2.28.
++
++	mkusers: Ensure existing group members are preserved when a
++	group is reprocessed.
++
++	printvars: Fix issue with exceeding shell command line length
++	limits for certain setups.
++
++	Updated/fixes packages: acpid, android-tools, apache,
++	arp-scan, bandwidthd, bind, bison, clamav, connman, cppcms,
++	cramfs, fio, gcc, ghostscript, glibc, gnupg, httping,
++	igmpproxy, imagemagick, imlib2, ipsec-tools, lcms2, libcurl,
++	libesmtp, libnfs, libssh, libxslt, links, linuxptp,
++	mediastreamer, minicom, moarvm, nilfs-utils, ocrad, parted,
++	php, pv, python-django, qt, qt5quickcontrols, qt5webengine,
++	screen, sdl2, shairport-sync, squashfs, strongswan,
++	vboot-utils, webkitgtk, wireguard, x265, xen, xlib_libXfont,
++	xlib_libXft
++
++	New packages: brotli, woff2
++
+ 2018.02.5, Released August 29th, 2018
+ 
+ 	Important / security related fixes.
+diff --git a/DEVELOPERS b/DEVELOPERS
+index 909b4cedfe..ba16b4667a 100644
+--- a/DEVELOPERS
++++ b/DEVELOPERS
+@@ -60,8 +60,10 @@ F:	package/setools/
+ F:	package/sngrep/
+ 
+ N:	Adrian Perez de Castro <aperez@igalia.com>
++F:	package/brotli/
+ F:	package/libepoxy/
+ F:	package/webkitgtk/
++F:	package/woff2/
+ 
+ N:	Adrien Gallouët <adrien@gallouet.fr>
+ F:	package/glorytun/
+diff --git a/Makefile b/Makefile
+index 5fb26c9733..36614a8c35 100644
+--- a/Makefile
++++ b/Makefile
+@@ -87,9 +87,9 @@ all:
+ .PHONY: all
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2018.02.5
++export BR2_VERSION := 2018.02.6
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1535550000
++BR2_VERSION_EPOCH = 1538896000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+@@ -976,7 +976,8 @@ $(BUILD_DIR)/.br2-external.in: $(BUILD_DIR)
+ # displayed.
+ .PHONY: printvars
+ printvars:
+-	@:$(foreach V, \
++	@:
++	$(foreach V, \
+ 		$(sort $(if $(VARS),$(filter $(VARS),$(.VARIABLES)),$(.VARIABLES))), \
+ 		$(if $(filter-out environment% default automatic, \
+ 				$(origin $V)), \
+diff --git a/boot/at91bootstrap3/Config.in b/boot/at91bootstrap3/Config.in
+index 237deb929c..f82a0e5edc 100644
+--- a/boot/at91bootstrap3/Config.in
++++ b/boot/at91bootstrap3/Config.in
+@@ -8,6 +8,8 @@ config BR2_TARGET_AT91BOOTSTRAP3
+ 	  - Peripheral drivers such as PIO, PMC or SDRAMC...
+ 	  - Physical media algorithm such as DataFlash, NandFlash, NOR Flash...
+ 
++	  https://www.at91.com/linux4sam/bin/view/Linux4SAM/AT91Bootstrap
++
+ if BR2_TARGET_AT91BOOTSTRAP3
+ 
+ choice
+diff --git a/boot/vexpress-firmware/Config.in b/boot/vexpress-firmware/Config.in
+index 8479df3d57..265fb4be1d 100644
+--- a/boot/vexpress-firmware/Config.in
++++ b/boot/vexpress-firmware/Config.in
+@@ -4,3 +4,5 @@ config BR2_TARGET_VEXPRESS_FIRMWARE
+ 	help
+ 	  Versatile Express firmware from ARM, with Linaro mods last
+ 	  change.
++
++	  https://git.linaro.org/arm/vexpress-firmware.git
+diff --git a/boot/xloader/Config.in b/boot/xloader/Config.in
+index c411be478b..f687b897ea 100644
+--- a/boot/xloader/Config.in
++++ b/boot/xloader/Config.in
+@@ -5,6 +5,8 @@ config BR2_TARGET_XLOADER
+ 	  The x-loader bootloader. It is mainly used on OMAP-based
+ 	  platforms.
+ 
++	  http://omappedia.org/wiki/Linux_OMAP_Kernel_Main
++
+ if BR2_TARGET_XLOADER
+ config BR2_TARGET_XLOADER_BOARDNAME
+ 	string "x-loader board name"
+diff --git a/package/Config.in b/package/Config.in
+index 189909dbdf..456d5443c4 100644
+--- a/package/Config.in
++++ b/package/Config.in
+@@ -63,6 +63,7 @@ menu "Audio and video applications"
+ endmenu
+ 
+ menu "Compressors and decompressors"
++	source "package/brotli/Config.in"
+ 	source "package/bzip2/Config.in"
+ 	source "package/gzip/Config.in"
+ 	source "package/lz4/Config.in"
+@@ -1170,6 +1171,7 @@ menu "Graphics"
+ 	source "package/waylandpp/Config.in"
+ 	source "package/webkitgtk/Config.in"
+ 	source "package/webp/Config.in"
++	source "package/woff2/Config.in"
+ 	source "package/zbar/Config.in"
+ 	source "package/zxing-cpp/Config.in"
+ endmenu
+diff --git a/package/acpid/acpid.mk b/package/acpid/acpid.mk
+index 2141a1a9e0..87378d8106 100644
+--- a/package/acpid/acpid.mk
++++ b/package/acpid/acpid.mk
+@@ -15,9 +15,15 @@ define ACPID_INSTALL_INIT_SYSV
+ 		$(TARGET_DIR)/etc/init.d/S02acpid
+ endef
+ 
++ifeq ($(BR2_INIT_SYSV)$(BR2_INIT_SYSTEMD),y)
++ACPID_POWEROFF_CMD = /sbin/shutdown -hP now
++else
++ACPID_POWEROFF_CMD = /sbin/poweroff
++endif
++
+ define ACPID_SET_EVENTS
+ 	mkdir -p $(TARGET_DIR)/etc/acpi/events
+-	printf "event=button[ /]power\naction=/sbin/poweroff\n" \
++	printf 'event=button[ /]power\naction=%s\n' '$(ACPID_POWEROFF_CMD)' \
+ 		>$(TARGET_DIR)/etc/acpi/events/powerbtn
+ endef
+ 
+diff --git a/package/android-tools/0008-Include-sysmacros.h-to-compile-with-glibc-2.28.patch b/package/android-tools/0008-Include-sysmacros.h-to-compile-with-glibc-2.28.patch
+new file mode 100644
+index 0000000000..77b457f604
+--- /dev/null
++++ b/package/android-tools/0008-Include-sysmacros.h-to-compile-with-glibc-2.28.patch
+@@ -0,0 +1,42 @@
++usb_linux.c: fix minor()/major() build failure due to glibc 2.28
++
++glibc 2.28 no longer includes <sys/sysmacros.h> from <sys/types.h>,
++and therefore <sys/sysmacros.h> must be included explicitly when
++major()/minor() are used.
++
++This commit adds a patch to directly include <sys/sysmacros.h> into
++all usb_linux.c files where minor() and major() macros are used.
++
++diff -urpN host-android-tools-4.2.2+git20130218.orig/core/adb/usb_linux.c host-android-tools-4.2.2+git20130218/core/adb/usb_linux.c
++--- host-android-tools-4.2.2+git20130218.orig/core/adb/usb_linux.c	2013-02-18 15:49:03.000000000 +0100
+++++ host-android-tools-4.2.2+git20130218/core/adb/usb_linux.c	2018-09-09 11:47:16.476292546 +0200
++@@ -20,6 +20,7 @@
++ #include <string.h>
++ 
++ #include <sys/ioctl.h>
+++#include <sys/sysmacros.h>
++ #include <sys/types.h>
++ #include <sys/time.h>
++ #include <dirent.h>
++diff -urpN host-android-tools-4.2.2+git20130218.orig/core/adbd/usb_linux.c host-android-tools-4.2.2+git20130218/core/adbd/usb_linux.c
++--- host-android-tools-4.2.2+git20130218.orig/core/adbd/usb_linux.c	2018-09-09 02:32:57.154503866 +0200
+++++ host-android-tools-4.2.2+git20130218/core/adbd/usb_linux.c	2018-09-09 11:47:28.148353880 +0200
++@@ -20,6 +20,7 @@
++ #include <string.h>
++ 
++ #include <sys/ioctl.h>
+++#include <sys/sysmacros.h>
++ #include <sys/types.h>
++ #include <sys/time.h>
++ #include <dirent.h>
++diff -urpN host-android-tools-4.2.2+git20130218.orig/core/fastboot/usb_linux.c host-android-tools-4.2.2+git20130218/core/fastboot/usb_linux.c
++--- host-android-tools-4.2.2+git20130218.orig/core/fastboot/usb_linux.c	2013-02-18 15:49:03.000000000 +0100
+++++ host-android-tools-4.2.2+git20130218/core/fastboot/usb_linux.c	2018-09-09 11:46:53.028169154 +0200
++@@ -33,6 +33,7 @@
++ 
++ #include <sys/ioctl.h>
++ #include <sys/stat.h>
+++#include <sys/sysmacros.h>
++ #include <sys/types.h>
++ #include <dirent.h>
++ #include <fcntl.h>
+diff --git a/package/android-tools/Config.in b/package/android-tools/Config.in
+index 96e36e6cd7..478f1392dc 100644
+--- a/package/android-tools/Config.in
++++ b/package/android-tools/Config.in
+@@ -15,6 +15,8 @@ config BR2_PACKAGE_ANDROID_TOOLS
+ 	  can be used to interact with target devices using of these
+ 	  protocols.
+ 
++	  https://wiki.debian.org/AndroidTools#Original_android-tools_package
++
+ if BR2_PACKAGE_ANDROID_TOOLS
+ 
+ # We need kernel headers that support the __SANE_USERSPACE_TYPES__
+diff --git a/package/apache/apache.hash b/package/apache/apache.hash
+index 74a48ae914..32743656fd 100644
+--- a/package/apache/apache.hash
++++ b/package/apache/apache.hash
+@@ -1,4 +1,4 @@
+-# From http://archive.apache.org/dist/httpd/httpd-2.4.34.tar.bz2.sha256
+-sha256 fa53c95631febb08a9de41fd2864cfff815cf62d9306723ab0d4b8d7aa1638f0 httpd-2.4.34.tar.bz2
++# From http://archive.apache.org/dist/httpd/httpd-2.4.35.tar.bz2.sha256
++sha256 2607c6fdd4d12ac3f583127629291e9432b247b782396a563bec5678aae69b56 httpd-2.4.35.tar.bz2
+ # Locally computed
+ sha256 c49c0819a726b70142621715dae3159c47b0349c2bc9db079070f28dadac0229 LICENSE
+diff --git a/package/apache/apache.mk b/package/apache/apache.mk
+index 14891adbe7..982c6de793 100644
+--- a/package/apache/apache.mk
++++ b/package/apache/apache.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-APACHE_VERSION = 2.4.34
++APACHE_VERSION = 2.4.35
+ APACHE_SOURCE = httpd-$(APACHE_VERSION).tar.bz2
+ APACHE_SITE = http://archive.apache.org/dist/httpd
+ APACHE_LICENSE = Apache-2.0
+diff --git a/package/arp-scan/Config.in b/package/arp-scan/Config.in
+index cc47a72b01..ed70b39586 100644
+--- a/package/arp-scan/Config.in
++++ b/package/arp-scan/Config.in
+@@ -7,4 +7,4 @@ config BR2_PACKAGE_ARP_SCAN
+ 	  arp-scan is a command-line tool that uses the ARP protocol to
+ 	  discover and fingerprint IP hosts on the local network.
+ 
+-	  http://www.nta-monitor.com/wiki/index.php/Arp-scan_Documentation
++	  https://github.com/royhills/arp-scan
+diff --git a/package/bandwidthd/Config.in b/package/bandwidthd/Config.in
+index a503da43ff..8a19733c2c 100644
+--- a/package/bandwidthd/Config.in
++++ b/package/bandwidthd/Config.in
+@@ -25,8 +25,10 @@ config BR2_PACKAGE_BANDWIDTHD
+ 	  available on github that works on making BandwidthD's build
+ 	  process more compatible with buildroot's.
+ 
+-	  Upstream: http://bandwidthd.sourceforge.net/
+-	  Github fork: http://github.com/nroach44/bandwidthd
++	  Upstream:
++	  http://bandwidthd.sourceforge.net/
++	  Github fork:
++	  http://github.com/nroach44/bandwidthd
+ 
+ if BR2_PACKAGE_BANDWIDTHD
+ 
+diff --git a/package/bind/bind.hash b/package/bind/bind.hash
+index 34d9891805..19d5f61f6d 100644
+--- a/package/bind/bind.hash
++++ b/package/bind/bind.hash
+@@ -1,4 +1,4 @@
+ # Verified from https://ftp.isc.org/isc/bind9/9.11.4-P1/bind-9.11.4-P1.tar.gz.asc
+ # with key BE0E9748B718253A28BB89FFF1B11BF05CF02E57
+-sha256 b0e0dc3c8bf26989b1cad53f90d44a48e39404afc68f65c45bae79b446f0fe23 bind-9.11.4-P1.tar.gz
++sha256 a85af7b629109d41285c7adeae1515daac638bbe4d5dc30d1f4b343dff09d811 bind-9.11.4-P2.tar.gz
+ sha256 336f3c40e37a1a13690efb4c63e20908faa4c40498cc02f3579fb67d3a1933a5 COPYRIGHT
+diff --git a/package/bind/bind.mk b/package/bind/bind.mk
+index 5cefa5b804..4b80eaf04f 100644
+--- a/package/bind/bind.mk
++++ b/package/bind/bind.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-BIND_VERSION = 9.11.4-P1
++BIND_VERSION = 9.11.4-P2
+ BIND_SITE = http://ftp.isc.org/isc/bind9/$(BIND_VERSION)
+ # bind does not support parallel builds.
+ BIND_MAKE = $(MAKE1)
+diff --git a/package/bison/0001-fflush-adjust-to-glibc-2.28-libio.h-removal.patch b/package/bison/0001-fflush-adjust-to-glibc-2.28-libio.h-removal.patch
+new file mode 100644
+index 0000000000..e9dee48af9
+--- /dev/null
++++ b/package/bison/0001-fflush-adjust-to-glibc-2.28-libio.h-removal.patch
+@@ -0,0 +1,50 @@
++From 4af4a4a71827c0bc5e0ec67af23edef4f15cee8e Mon Sep 17 00:00:00 2001
++From: Paul Eggert <eggert@cs.ucla.edu>
++Date: Mon, 5 Mar 2018 10:56:29 -0800
++Subject: [PATCH 1/1] fflush: adjust to glibc 2.28 libio.h removal
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++Problem reported by Daniel P. Berrangé in:
++https://lists.gnu.org/r/bug-gnulib/2018-03/msg00000.html
++* lib/fbufmode.c (fbufmode):
++* lib/fflush.c (clear_ungetc_buffer_preserving_position)
++(disable_seek_optimization, rpl_fflush):
++* lib/fpending.c (__fpending):
++* lib/fpurge.c (fpurge):
++* lib/freadable.c (freadable):
++* lib/freadahead.c (freadahead):
++* lib/freading.c (freading):
++* lib/freadptr.c (freadptr):
++* lib/freadseek.c (freadptrinc):
++* lib/fseeko.c (fseeko):
++* lib/fseterr.c (fseterr):
++* lib/fwritable.c (fwritable):
++* lib/fwriting.c (fwriting):
++Check _IO_EOF_SEEN instead of _IO_ftrylockfile.
++* lib/stdio-impl.h (_IO_IN_BACKUP) [_IO_EOF_SEEN]:
++Define if not already defined.
++---
++ lib/fseterr.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++[yann.morin.1998@free.fr: partially backport from upstream gnulib]
++Signed-off-by: "Yann E. MORIN" <yann.morin.1998@free.fr>
++
++diff --git a/lib/fseterr.c b/lib/fseterr.c
++index 82649c3ac..adb637256 100644
++--- a/lib/fseterr.c
+++++ b/lib/fseterr.c
++@@ -29,7 +29,7 @@ fseterr (FILE *fp)
++   /* Most systems provide FILE as a struct and the necessary bitmask in
++      <stdio.h>, because they need it for implementing getc() and putc() as
++      fast macros.  */
++-#if defined _IO_ftrylockfile || __GNU_LIBRARY__ == 1 /* GNU libc, BeOS, Haiku, Linux libc5 */
+++#if defined _IO_EOF_SEEN || __GNU_LIBRARY__ == 1 /* GNU libc, BeOS, Haiku, Linux libc5 */
++   fp->_flags |= _IO_ERR_SEEN;
++ #elif defined __sferror || defined __DragonFly__ || defined __ANDROID__
++   /* FreeBSD, NetBSD, OpenBSD, DragonFly, Mac OS X, Cygwin, Minix 3, Android */
++-- 
++2.14.1
++
+diff --git a/package/bison/0002-fflush-be-more-paranoid-about-libio.h-change.patch b/package/bison/0002-fflush-be-more-paranoid-about-libio.h-change.patch
+new file mode 100644
+index 0000000000..035f8282c1
+--- /dev/null
++++ b/package/bison/0002-fflush-be-more-paranoid-about-libio.h-change.patch
+@@ -0,0 +1,46 @@
++From 74d9d6a293d7462dea8f83e7fc5ac792e956a0ad Mon Sep 17 00:00:00 2001
++From: Paul Eggert <eggert@cs.ucla.edu>
++Date: Thu, 8 Mar 2018 16:42:45 -0800
++Subject: [PATCH 2/2] fflush: be more paranoid about libio.h change
++
++Suggested by Eli Zaretskii in:
++https://lists.gnu.org/r/emacs-devel/2018-03/msg00270.html
++* lib/fbufmode.c (fbufmode):
++* lib/fflush.c (clear_ungetc_buffer_preserving_position)
++(disable_seek_optimization, rpl_fflush):
++* lib/fpending.c (__fpending):
++* lib/fpurge.c (fpurge):
++* lib/freadable.c (freadable):
++* lib/freadahead.c (freadahead):
++* lib/freading.c (freading):
++* lib/freadptr.c (freadptr):
++* lib/freadseek.c (freadptrinc):
++* lib/fseeko.c (fseeko):
++* lib/fseterr.c (fseterr):
++* lib/fwritable.c (fwritable):
++* lib/fwriting.c (fwriting):
++Look at _IO_ftrylockfile as well as at _IO_EOF_SEEN.
++---
++ lib/fseterr.c | 3 ++-
++ 1 file changed, 2 insertions(+), 1 deletion(-)
++
++[yann.morin.1998@free.fr: partially backport from upstream gnulib]
++Signed-off-by: "Yann E. MORIN" <yann.morin.1998@free.fr>
++
++diff --git a/lib/fseterr.c b/lib/fseterr.c
++index adb637256..fd9da6338 100644
++--- a/lib/fseterr.c
+++++ b/lib/fseterr.c
++@@ -29,7 +29,8 @@ fseterr (FILE *fp)
++   /* Most systems provide FILE as a struct and the necessary bitmask in
++      <stdio.h>, because they need it for implementing getc() and putc() as
++      fast macros.  */
++-#if defined _IO_EOF_SEEN || __GNU_LIBRARY__ == 1 /* GNU libc, BeOS, Haiku, Linux libc5 */
+++#if defined _IO_EOF_SEEN || defined _IO_ftrylockfile || __GNU_LIBRARY__ == 1
+++  /* GNU libc, BeOS, Haiku, Linux libc5 */
++   fp->_flags |= _IO_ERR_SEEN;
++ #elif defined __sferror || defined __DragonFly__ || defined __ANDROID__
++   /* FreeBSD, NetBSD, OpenBSD, DragonFly, Mac OS X, Cygwin, Minix 3, Android */
++-- 
++2.14.1
++
+diff --git a/package/brotli/0001-CMake-Allow-using-BUILD_SHARED_LIBS-to-choose-static.patch b/package/brotli/0001-CMake-Allow-using-BUILD_SHARED_LIBS-to-choose-static.patch
+new file mode 100644
+index 0000000000..33b9bb70ce
+--- /dev/null
++++ b/package/brotli/0001-CMake-Allow-using-BUILD_SHARED_LIBS-to-choose-static.patch
+@@ -0,0 +1,144 @@
++From b60b613e7c2c9bf7a142c3c486ac6e77ad93f5d1 Mon Sep 17 00:00:00 2001
++From: Adrian Perez de Castro <aperez@igalia.com>
++Date: Mon, 26 Mar 2018 19:08:31 +0100
++Subject: [PATCH] CMake: Allow using BUILD_SHARED_LIBS to choose static/shared
++ libs
++
++By convention projects using CMake which can build either static or
++shared libraries use a BUILD_SHARED_LIBS flag to allow selecting between
++both: the add_library() command automatically switches between both using
++this variable when the library kind is not passed to add_library(). It
++is also usual to expose the BUILD_SHARED_LIBS as an user-facing setting
++with the option() command.
++
++This way, the following will both work as expected:
++
++   % cmake -DBUILD_SHARED_LIBS=OFF ...
++   % cmake -DBUILS_SHARED_LIBS=ON ...
++
++This is helpful for distributions which need (or want) to build only
++static libraries.
++---
++ CMakeLists.txt        | 42 ++++++++++++++----------------------------
++ c/fuzz/test_fuzzer.sh |  6 +++---
++ 2 files changed, 17 insertions(+), 31 deletions(-)
++
++Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
++Upstream-Status: Submitted [https://github.com/google/brotli/pull/655]
++
++diff --git a/CMakeLists.txt b/CMakeLists.txt
++index 99b9258..3867931 100644
++--- a/CMakeLists.txt
+++++ b/CMakeLists.txt
++@@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 2.8.6)
++ 
++ project(brotli C)
++ 
+++option(BUILD_SHARED_LIBS "Build shared libraries" ON)
+++
++ # If Brotli is being bundled in another project, we don't want to
++ # install anything.  However, we want to let people override this, so
++ # we'll use the BROTLI_BUNDLED_MODE variable to let them do that; just
++@@ -114,10 +116,6 @@ set(BROTLI_LIBRARIES_CORE brotlienc brotlidec brotlicommon)
++ set(BROTLI_LIBRARIES ${BROTLI_LIBRARIES_CORE} ${LIBM_LIBRARY})
++ mark_as_advanced(BROTLI_LIBRARIES)
++ 
++-set(BROTLI_LIBRARIES_CORE_STATIC brotlienc-static brotlidec-static brotlicommon-static)
++-set(BROTLI_LIBRARIES_STATIC ${BROTLI_LIBRARIES_CORE_STATIC} ${LIBM_LIBRARY})
++-mark_as_advanced(BROTLI_LIBRARIES_STATIC)
++-
++ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
++   add_definitions(-DOS_LINUX)
++ elseif(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
++@@ -137,24 +135,22 @@ endfunction()
++ transform_sources_list("scripts/sources.lst" "${CMAKE_CURRENT_BINARY_DIR}/sources.lst.cmake")
++ include("${CMAKE_CURRENT_BINARY_DIR}/sources.lst.cmake")
++ 
++-add_library(brotlicommon SHARED ${BROTLI_COMMON_C})
++-add_library(brotlidec SHARED ${BROTLI_DEC_C})
++-add_library(brotlienc SHARED ${BROTLI_ENC_C})
++-
++-add_library(brotlicommon-static STATIC ${BROTLI_COMMON_C})
++-add_library(brotlidec-static STATIC ${BROTLI_DEC_C})
++-add_library(brotlienc-static STATIC ${BROTLI_ENC_C})
+++add_library(brotlicommon ${BROTLI_COMMON_C})
+++add_library(brotlidec ${BROTLI_DEC_C})
+++add_library(brotlienc ${BROTLI_ENC_C})
++ 
++ # Older CMake versions does not understand INCLUDE_DIRECTORIES property.
++ include_directories(${BROTLI_INCLUDE_DIRS})
++ 
+++if(BUILD_SHARED_LIBS)
+++  foreach(lib brotlicommon brotlidec brotlienc)
+++    target_compile_definitions(${lib} PUBLIC "BROTLI_SHARED_COMPILATION" )
+++    string(TOUPPER "${lib}" LIB)
+++    set_target_properties (${lib} PROPERTIES DEFINE_SYMBOL "${LIB}_SHARED_COMPILATION" )
+++  endforeach()
+++endif()
+++
++ foreach(lib brotlicommon brotlidec brotlienc)
++-  target_compile_definitions(${lib} PUBLIC "BROTLI_SHARED_COMPILATION" )
++-  string(TOUPPER "${lib}" LIB)
++-  set_target_properties (${lib} PROPERTIES DEFINE_SYMBOL "${LIB}_SHARED_COMPILATION" )
++-endforeach()
++-
++-foreach(lib brotlicommon brotlidec brotlienc brotlicommon-static brotlidec-static brotlienc-static)
++   target_link_libraries(${lib} ${LIBM_LIBRARY})
++   set_property(TARGET ${lib} APPEND PROPERTY INCLUDE_DIRECTORIES ${BROTLI_INCLUDE_DIRS})
++   set_target_properties(${lib} PROPERTIES
++@@ -167,9 +163,6 @@ endforeach()
++ target_link_libraries(brotlidec brotlicommon)
++ target_link_libraries(brotlienc brotlicommon)
++ 
++-target_link_libraries(brotlidec-static brotlicommon-static)
++-target_link_libraries(brotlienc-static brotlicommon-static)
++-
++ # For projects stuck on older versions of CMake, this will set the
++ # BROTLI_INCLUDE_DIRS and BROTLI_LIBRARIES variables so they still
++ # have a relatively easy way to use Brotli:
++@@ -183,7 +176,7 @@ endif()
++ 
++ # Build the brotli executable
++ add_executable(brotli ${BROTLI_CLI_C})
++-target_link_libraries(brotli ${BROTLI_LIBRARIES_STATIC})
+++target_link_libraries(brotli ${BROTLI_LIBRARIES})
++ 
++ # Installation
++ if(NOT BROTLI_BUNDLED_MODE)
++@@ -199,13 +192,6 @@ if(NOT BROTLI_BUNDLED_MODE)
++     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
++   )
++ 
++-  install(
++-    TARGETS ${BROTLI_LIBRARIES_CORE_STATIC}
++-    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
++-    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
++-    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
++-  )
++-
++   install(
++     DIRECTORY ${BROTLI_INCLUDE_DIRS}/brotli
++     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
++diff --git a/c/fuzz/test_fuzzer.sh b/c/fuzz/test_fuzzer.sh
++index 5c754e1..e85e12f 100755
++--- a/c/fuzz/test_fuzzer.sh
+++++ b/c/fuzz/test_fuzzer.sh
++@@ -14,12 +14,12 @@ mkdir bin
++ cd bin
++ 
++ cmake $BROTLI -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
++-    -DBUILD_TESTING=OFF -DENABLE_SANITIZER=address
++-make -j$(nproc) brotlidec-static
+++    -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=OFF -DENABLE_SANITIZER=address
+++make -j$(nproc) brotlidec
++ 
++ ${CXX} -o run_decode_fuzzer -std=c++11 -fsanitize=address -I$SRC/include \
++     $SRC/fuzz/decode_fuzzer.cc $SRC/fuzz/run_decode_fuzzer.cc \
++-    ./libbrotlidec-static.a ./libbrotlicommon-static.a
+++    ./libbrotlidec.a ./libbrotlicommon.a
++ 
++ mkdir decode_corpora
++ unzip $BROTLI/java/org/brotli/integration/fuzz_data.zip -d decode_corpora
++-- 
++2.16.3
++
+diff --git a/package/brotli/0001-Tell-CMake-to-not-check-for-a-C-compiler.patch b/package/brotli/0001-Tell-CMake-to-not-check-for-a-C-compiler.patch
+new file mode 100644
+index 0000000000..410de2830e
+--- /dev/null
++++ b/package/brotli/0001-Tell-CMake-to-not-check-for-a-C-compiler.patch
+@@ -0,0 +1,31 @@
++From fea0b1e46c486225d57e730cc0f94fa06b5b93fc Mon Sep 17 00:00:00 2001
++From: Adrian Perez de Castro <aperez@igalia.com>
++Date: Mon, 26 Mar 2018 12:12:00 +0100
++Subject: [PATCH] Tell CMake to not check for a C++ compiler
++
++By default CMake checks both for C and C++ compilers, while the latter
++is not needed. Setting the list of languages to just "C" in the call to
++project() removes the unneeded check.
++---
++ CMakeLists.txt | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
++Upstream-Status: Submitted [https://github.com/google/brotli/pull/653]
++
++diff --git a/CMakeLists.txt b/CMakeLists.txt
++index 2dc7232..3fbcbfb 100644
++--- a/CMakeLists.txt
+++++ b/CMakeLists.txt
++@@ -4,7 +4,7 @@
++ # support 2.8.7.
++ cmake_minimum_required(VERSION 2.8.6)
++ 
++-project(brotli)
+++project(brotli LANGUAGES C)
++ 
++ # If Brotli is being bundled in another project, we don't want to
++ # install anything.  However, we want to let people override this, so
++-- 
++2.16.3
++
+diff --git a/package/brotli/Config.in b/package/brotli/Config.in
+new file mode 100644
+index 0000000000..e40f5b6b9f
+--- /dev/null
++++ b/package/brotli/Config.in
+@@ -0,0 +1,12 @@
++config BR2_PACKAGE_BROTLI
++	bool "brotli"
++	help
++	  Generic-purpose lossless compression library. The algorithm
++	  compresses data using a combination of a modern variant of
++	  the LZ77 algorithm, Huffman coding and 2nd order context
++	  modeling, with a compression ratio comparable to the best
++	  currently available general-purpose compression methods. It
++	  is similar in speed with deflate but offers more dense
++	  compression.
++
++	  https://github.com/google/brotli
+diff --git a/package/brotli/brotli.hash b/package/brotli/brotli.hash
+new file mode 100644
+index 0000000000..954d44eb70
+--- /dev/null
++++ b/package/brotli/brotli.hash
+@@ -0,0 +1,5 @@
++# Locally generated:
++sha512  93adcf437d730ac403e444285ac8aefbb2c8a6b5e1b064e8ee33684c067287a8159e0ee73d2217c167881e87da73fa494792d963a15508fd42b2ac4a5b52823c  v1.0.3.tar.gz
++
++# Hash for license files:
++sha512  bae78184c2f50f86d8c727826d3982c469454c42b9af81f4ef007e39036434fa894cf5be3bf5fc65b7de2301f0a72d067a8186e303327db8a96bd14867e0a3a8  LICENSE
+diff --git a/package/brotli/brotli.mk b/package/brotli/brotli.mk
+new file mode 100644
+index 0000000000..cf1e811543
+--- /dev/null
++++ b/package/brotli/brotli.mk
+@@ -0,0 +1,17 @@
++################################################################################
++#
++# brotli
++#
++################################################################################
++
++BROTLI_VERSION = 1.0.3
++BROTLI_SOURCE = v$(BROTLI_VERSION).tar.gz
++BROTLI_SITE = https://github.com/google/brotli/archive
++BROTLI_LICENSE = MIT
++BROTLI_LICENSE_FILES = LICENSE
++BROTLI_INSTALL_STAGING = YES
++BROTLI_CONF_OPTS = \
++	-DBROTLI_DISABLE_TESTS=ON \
++	-DBROTLI_BUNDLED_MODE=OFF
++
++$(eval $(cmake-package))
+diff --git a/package/clamav/clamav.hash b/package/clamav/clamav.hash
+index 0cb8f51d87..390251fc24 100644
+--- a/package/clamav/clamav.hash
++++ b/package/clamav/clamav.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated
+-sha256 84e026655152247de7237184ee13003701c40be030dd68e0316111049f58a59f  clamav-0.100.1.tar.gz
++sha256 4a2e4f0cd41e62adb5a713b4a1857c49145cd09a69957e6d946ecad575206dd6  clamav-0.100.2.tar.gz
+ sha256 0c4fd2fa9733fc9122503797648710851e4ee6d9e4969dd33fcbd8c63cd2f584  COPYING
+ sha256 d72a145c90918184a05ef65a04c9e6f7466faa59bc1b82c8f6a8ddc7ddcb9bed  COPYING.bzip2
+ sha256 dfb818a0d41411c6fb1c193c68b73018ceadd1994bda41ad541cbff292894bc6  COPYING.file
+diff --git a/package/clamav/clamav.mk b/package/clamav/clamav.mk
+index 9db90bddea..50990abad6 100644
+--- a/package/clamav/clamav.mk
++++ b/package/clamav/clamav.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-CLAMAV_VERSION = 0.100.1
++CLAMAV_VERSION = 0.100.2
+ CLAMAV_SITE = https://www.clamav.net/downloads/production
+ CLAMAV_LICENSE = GPL-2.0
+ CLAMAV_LICENSE_FILES = COPYING COPYING.bzip2 COPYING.file COPYING.getopt \
+diff --git a/package/connman/Config.in b/package/connman/Config.in
+index 253c604e88..5177c939a4 100644
+--- a/package/connman/Config.in
++++ b/package/connman/Config.in
+@@ -14,7 +14,7 @@ config BR2_PACKAGE_CONNMAN
+ 	  for managing internet connections within embedded devices
+ 	  running the Linux operating system.
+ 
+-	  For more information, see https://01.org/connman
++	  https://01.org/connman
+ 
+ if BR2_PACKAGE_CONNMAN
+ 
+diff --git a/package/cppcms/cppcms.hash b/package/cppcms/cppcms.hash
+index 28e998c6c1..6bfc680ac0 100644
+--- a/package/cppcms/cppcms.hash
++++ b/package/cppcms/cppcms.hash
+@@ -3,3 +3,5 @@ sha1	15f21897c14acfd4b0c74622e49d95857f2fe939	cppcms-1.0.5.tar.bz2
+ md5	d668c201dd31fff8090380ebdc0bcc2b	cppcms-1.0.5.tar.bz2
+ # Locally computed:
+ sha256	84b685977bca97c3e997497f227bd5906adb80555066d811a7046b01c2f51865	cppcms-1.0.5.tar.bz2
++sha256	2ff22bab712c46dbadf9bae0f759bbc95d5d87614cacb7ebc3d5a50910603d6a	COPYING.TXT
++sha256	70fbf0194bee0f444c57ecd47e7d976a3e5a890e4421a21aab49f2d214267e69	THIRD_PARTY_SOFTWARE.TXT
+diff --git a/package/cppcms/cppcms.mk b/package/cppcms/cppcms.mk
+index f3ea2628ea..5fb6375d80 100644
+--- a/package/cppcms/cppcms.mk
++++ b/package/cppcms/cppcms.mk
+@@ -6,8 +6,8 @@
+ 
+ CPPCMS_VERSION = 1.0.5
+ CPPCMS_SOURCE = cppcms-$(CPPCMS_VERSION).tar.bz2
+-CPPCMS_LICENSE = LGPL-3.0
+-CPPCMS_LICENSE_FILES = COPYING.TXT
++CPPCMS_LICENSE = LGPL-3.0, BSL-1.0 (boost), MIT (base64.cpp), Public Domain (json2.js), Zlib (md5)
++CPPCMS_LICENSE_FILES = COPYING.TXT THIRD_PARTY_SOFTWARE.TXT
+ CPPCMS_SITE = http://downloads.sourceforge.net/project/cppcms/cppcms/$(CPPCMS_VERSION)
+ CPPCMS_INSTALL_STAGING = YES
+ CPPCMS_CXXFLAGS = $(TARGET_CXXFLAGS)
+diff --git a/package/cramfs/0004-Include-sysmacros.h-to-compile-with-glibc-2.28.patch b/package/cramfs/0004-Include-sysmacros.h-to-compile-with-glibc-2.28.patch
+new file mode 100644
+index 0000000000..6096cf3625
+--- /dev/null
++++ b/package/cramfs/0004-Include-sysmacros.h-to-compile-with-glibc-2.28.patch
+@@ -0,0 +1,33 @@
++Fix minor()/major() build failure due to glibc 2.28
++
++glibc 2.28 no longer includes <sys/sysmacros.h> from <sys/types.h>,
++and therefore <sys/sysmacros.h> must be included explicitly when
++major()/minor() are used.
++
++This commit directly includes <sys/sysmacros.h> into cramfsck.c and
++mkcramfs.c files where minor() and major() macros are used.
++
++Signed-off-by: Giulio Benetti <giulio.benetti@micronovasrl.com>
++---
++diff -urpN host-cramfs-1.1.orig/cramfsck.c host-cramfs-1.1/cramfsck.c
++--- host-cramfs-1.1.orig/cramfsck.c	2018-09-27 16:48:09.704782201 +0200
+++++ host-cramfs-1.1/cramfsck.c	2018-09-27 16:49:12.841138657 +0200
++@@ -38,6 +38,7 @@
++ 
++ #define _GNU_SOURCE
++ #include <sys/types.h>
+++#include <sys/sysmacros.h>
++ #include <stdio.h>
++ #include <stdarg.h>
++ #include <sys/stat.h>
++diff -urpN host-cramfs-1.1.orig/mkcramfs.c host-cramfs-1.1/mkcramfs.c
++--- host-cramfs-1.1.orig/mkcramfs.c	2018-09-27 16:48:09.712782246 +0200
+++++ host-cramfs-1.1/mkcramfs.c	2018-09-27 16:48:59.777064921 +0200
++@@ -24,6 +24,7 @@
++ 
++ #define _GNU_SOURCE
++ #include <sys/types.h>
+++#include <sys/sysmacros.h>
++ #include <stdio.h>
++ #include <sys/stat.h>
++ #include <unistd.h>
+diff --git a/package/fio/fio.hash b/package/fio/fio.hash
+index 7eb08140c5..d136fd595b 100644
+--- a/package/fio/fio.hash
++++ b/package/fio/fio.hash
+@@ -1,2 +1,4 @@
+ # Locally computed
+ sha256 1952db4d534221e6e8454f851dfcc38328b0ed4a3f499ea25a51ca2b5ccc8136  fio-fio-2.20.tar.gz
++sha256 204d8eff92f95aac4df6c8122bc1505f468f3a901e5a4cc08940e0ede1938994  COPYING
++sha256 8a240c1ad13d1fe3e58588643d81d0695899be4a669fe6d8fafa76ca6a89db2c  MORAL-LICENSE
+diff --git a/package/fio/fio.mk b/package/fio/fio.mk
+index c109f0795c..aabdff9925 100644
+--- a/package/fio/fio.mk
++++ b/package/fio/fio.mk
+@@ -6,8 +6,8 @@
+ 
+ FIO_VERSION = fio-2.20
+ FIO_SITE = git://git.kernel.dk/fio.git
+-FIO_LICENSE = GPL-2.0 + special obligations
+-FIO_LICENSE_FILES = COPYING
++FIO_LICENSE = GPL-2.0
++FIO_LICENSE_FILES = COPYING MORAL-LICENSE
+ 
+ ifeq ($(BR2_PACKAGE_LIBAIO),y)
+ FIO_DEPENDENCIES += libaio
+diff --git a/package/gcc/6.4.0/872-gcc-xtensa-fix-NAND-code-in-xtensa_expand_atomic.patch b/package/gcc/6.4.0/872-gcc-xtensa-fix-NAND-code-in-xtensa_expand_atomic.patch
+new file mode 100644
+index 0000000000..d62d7c1566
+--- /dev/null
++++ b/package/gcc/6.4.0/872-gcc-xtensa-fix-NAND-code-in-xtensa_expand_atomic.patch
+@@ -0,0 +1,39 @@
++From 6765eecde2ed8d4be0fc217408b9e9b92a840aff Mon Sep 17 00:00:00 2001
++From: Max Filippov <jcmvbkbc@gmail.com>
++Date: Tue, 4 Sep 2018 00:39:32 -0700
++Subject: [PATCH] gcc: xtensa: fix NAND code in xtensa_expand_atomic
++
++NAND is ~(a1 & a2), but xtensa_expand_atomic does ~a1 & a2.
++That fixes libatomic tests atomic-op-{1,2}.
++
++gcc/
++2018-09-04  Max Filippov  <jcmvbkbc@gmail.com>
++
++	* config/xtensa/xtensa.c (xtensa_expand_atomic): Reorder AND and
++	XOR operations in NAND case.
++
++Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
++Backported from: r264087
++---
++ gcc/config/xtensa/xtensa.c | 4 ++--
++ 1 file changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/gcc/config/xtensa/xtensa.c b/gcc/config/xtensa/xtensa.c
++index 7cfe64d42895..080bb4ad765d 100644
++--- a/gcc/config/xtensa/xtensa.c
+++++ b/gcc/config/xtensa/xtensa.c
++@@ -1614,9 +1614,9 @@ xtensa_expand_atomic (enum rtx_code code, rtx target, rtx mem, rtx val,
++       break;
++ 
++     case MULT: /* NAND */
++-      tmp = expand_simple_binop (SImode, XOR, old, ac.modemask,
+++      tmp = expand_simple_binop (SImode, AND, old, val,
++ 				 NULL_RTX, 1, OPTAB_DIRECT);
++-      tmp = expand_simple_binop (SImode, AND, tmp, val,
+++      tmp = expand_simple_binop (SImode, XOR, tmp, ac.modemask,
++ 				 new_rtx, 1, OPTAB_DIRECT);
++       break;
++ 
++-- 
++2.11.0
++
+diff --git a/package/gcc/7.3.0/0003-gcc-xtensa-fix-NAND-code-in-xtensa_expand_atomic.patch b/package/gcc/7.3.0/0003-gcc-xtensa-fix-NAND-code-in-xtensa_expand_atomic.patch
+new file mode 100644
+index 0000000000..d62d7c1566
+--- /dev/null
++++ b/package/gcc/7.3.0/0003-gcc-xtensa-fix-NAND-code-in-xtensa_expand_atomic.patch
+@@ -0,0 +1,39 @@
++From 6765eecde2ed8d4be0fc217408b9e9b92a840aff Mon Sep 17 00:00:00 2001
++From: Max Filippov <jcmvbkbc@gmail.com>
++Date: Tue, 4 Sep 2018 00:39:32 -0700
++Subject: [PATCH] gcc: xtensa: fix NAND code in xtensa_expand_atomic
++
++NAND is ~(a1 & a2), but xtensa_expand_atomic does ~a1 & a2.
++That fixes libatomic tests atomic-op-{1,2}.
++
++gcc/
++2018-09-04  Max Filippov  <jcmvbkbc@gmail.com>
++
++	* config/xtensa/xtensa.c (xtensa_expand_atomic): Reorder AND and
++	XOR operations in NAND case.
++
++Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
++Backported from: r264087
++---
++ gcc/config/xtensa/xtensa.c | 4 ++--
++ 1 file changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/gcc/config/xtensa/xtensa.c b/gcc/config/xtensa/xtensa.c
++index 7cfe64d42895..080bb4ad765d 100644
++--- a/gcc/config/xtensa/xtensa.c
+++++ b/gcc/config/xtensa/xtensa.c
++@@ -1614,9 +1614,9 @@ xtensa_expand_atomic (enum rtx_code code, rtx target, rtx mem, rtx val,
++       break;
++ 
++     case MULT: /* NAND */
++-      tmp = expand_simple_binop (SImode, XOR, old, ac.modemask,
+++      tmp = expand_simple_binop (SImode, AND, old, val,
++ 				 NULL_RTX, 1, OPTAB_DIRECT);
++-      tmp = expand_simple_binop (SImode, AND, tmp, val,
+++      tmp = expand_simple_binop (SImode, XOR, tmp, ac.modemask,
++ 				 new_rtx, 1, OPTAB_DIRECT);
++       break;
++ 
++-- 
++2.11.0
++
+diff --git a/package/ghostscript/0001-Fix-cross-compilation-issue.patch b/package/ghostscript/0001-Fix-cross-compilation-issue.patch
+index 57e1be61ca..a13c7f8381 100644
+--- a/package/ghostscript/0001-Fix-cross-compilation-issue.patch
++++ b/package/ghostscript/0001-Fix-cross-compilation-issue.patch
+@@ -9,7 +9,10 @@ x86_64-linux-gcc: ERROR: unsafe header/library path used in cross-compilation: '
+ Downloaded from
+ http://bugs.ghostscript.com/show_bug.cgi?id=696508#c3
+ 
++Slightly updated to work with 9.23
++
+ Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
+ ---
+  configure.ac | 2 +-
+  1 file changed, 1 insertion(+), 1 deletion(-)
+@@ -24,6 +27,7 @@ index d0f62d7..0d49344 100644
+  LIBTIFFDIR='src'
+ -LIBTIFFCONFDIR=''
+ +LIBTIFFCONFDIR='src'
++ TIFFCFLAGS=''
+  
+  TIFFDEVS_ALL='tiffs tiff12nc tiff24nc tiff48nc tiff32nc tiff64nc tiffcrle tifflzw tiffpack tiffgray tiffsep tiffsep1 tiffscaled tiffscaled4 tiffscaled8 tiffscaled24 tiffscaled32'
+  FAX_DEVS_ALL='cfax dfaxlow dfaxhigh fax faxg3 faxg32d faxg4 tiffg3 tiffg32d tiffg4 tfax'
+diff --git a/package/ghostscript/ghostscript.hash b/package/ghostscript/ghostscript.hash
+index 2b36e34831..f8ca6c8d4e 100644
+--- a/package/ghostscript/ghostscript.hash
++++ b/package/ghostscript/ghostscript.hash
+@@ -1,4 +1,5 @@
+-# From https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs922/SHA256SUMS
+-sha256 c1f862e6f40f997dbe3feba89355e8cb05d55818994e10f4932b0dd9b627d1bb  ghostscript-9.22.tar.xz
+-# From https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs922/SHA512SUMS
+-sha512 67739ace64090ab1951cba4cb011a5a6829ee60b32ba4157d0f17e744e345ea268335304db6722677ae33565ea5b696c2ff7b889d42a463acf2933c8230523d4  ghostscript-9.22.tar.xz
++# From https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs925/SHA512SUMS
++sha512 7a1c0b7546ed523f50c1452d4a1c13fcf043d6060fc9708bbc4b543f66ecb1b619b6e71998094ac702ef44a2fd159b6523271de19b1cae352981ef51fb637651  ghostscript-9.25.tar.xz
++
++# Hash for license file:
++sha256 6f852249f975287b3efd43a5883875e47fa9f3125e2f1b18b5c09517ac30ecf2  LICENSE
+diff --git a/package/ghostscript/ghostscript.mk b/package/ghostscript/ghostscript.mk
+index daf5bdad09..b1f5e1edb1 100644
+--- a/package/ghostscript/ghostscript.mk
++++ b/package/ghostscript/ghostscript.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-GHOSTSCRIPT_VERSION = 9.22
+-GHOSTSCRIPT_SITE = https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs922
++GHOSTSCRIPT_VERSION = 9.25
++GHOSTSCRIPT_SITE = https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs925
+ GHOSTSCRIPT_SOURCE = ghostscript-$(GHOSTSCRIPT_VERSION).tar.xz
+ GHOSTSCRIPT_LICENSE = AGPL-3.0
+ GHOSTSCRIPT_LICENSE_FILES = LICENSE
+@@ -27,7 +27,8 @@ GHOSTSCRIPT_DEPENDENCIES = \
+ # Inspired by linuxfromscratch:
+ # http://www.linuxfromscratch.org/blfs/view/svn/pst/gs.html
+ define GHOSTSCRIPT_REMOVE_LIBS
+-	rm -rf $(@D)/freetype $(@D)/ijs $(@D)/jpeg $(@D)/lcms2 $(@D)/libpng $(@D)/tiff $(@D)/zlib
++	rm -rf $(@D)/freetype $(@D)/ijs $(@D)/jpeg $(@D)/lcms2mt \
++		$(@D)/libpng $(@D)/tiff $(@D)/zlib
+ endef
+ GHOSTSCRIPT_POST_PATCH_HOOKS += GHOSTSCRIPT_REMOVE_LIBS
+ 
+diff --git a/package/glibc/glibc.hash b/package/glibc/glibc.hash
+index 890f523fd9..bfe40f1f96 100644
+--- a/package/glibc/glibc.hash
++++ b/package/glibc/glibc.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated (fetched from Github)
+-sha256  1e18aee61dc51a5aaf7bfcb65ed01894aa82c3d3f7b9a01f20d59cd9db2f082b     glibc-glibc-2.26-160-g4df8479e6b3baf365bd4eedbba922b73471e5d73.tar.gz
++sha256   acbec224e69f29c9c59c34f15f0fbb19eecf3fce347eba8bb928fac507ae86c6    glibc-glibc-2.26-175-gc5c90b480e4f21ed1d28e0e6d942b06b8d9e8bd7.tar.gz
+ # Locally calculated (fetched from Github)
+ sha256  5aa9adeac09727db0b8a52794186563771e74d70410e9fd86431e339953fd4bb     glibc-arc-2017.09-release.tar.gz
+diff --git a/package/glibc/glibc.mk b/package/glibc/glibc.mk
+index 562f0258d5..2e93593b0d 100644
+--- a/package/glibc/glibc.mk
++++ b/package/glibc/glibc.mk
+@@ -10,7 +10,7 @@ GLIBC_SITE = $(call github,foss-for-synopsys-dwc-arc-processors,glibc,$(GLIBC_VE
+ else
+ # Generate version string using:
+ #   git describe --match 'glibc-*' --abbrev=40 origin/release/MAJOR.MINOR/master
+-GLIBC_VERSION = glibc-2.26-160-g4df8479e6b3baf365bd4eedbba922b73471e5d73
++GLIBC_VERSION = glibc-2.26-175-gc5c90b480e4f21ed1d28e0e6d942b06b8d9e8bd7
+ # Upstream doesn't officially provide an https download link.
+ # There is one (https://sourceware.org/git/glibc.git) but it's not reliable,
+ # sometimes the connection times out. So use an unofficial github mirror.
+diff --git a/package/gnupg/Config.in b/package/gnupg/Config.in
+index 7c31612298..2db46318f1 100644
+--- a/package/gnupg/Config.in
++++ b/package/gnupg/Config.in
+@@ -2,7 +2,6 @@ config BR2_PACKAGE_GNUPG
+ 	bool "gnupg"
+ 	depends on !BR2_PACKAGE_GNUPG2
+ 	select BR2_PACKAGE_ZLIB
+-	select BR2_PACKAGE_NCURSES
+ 	help
+ 	  GnuPG is the GNU project's complete and free implementation
+ 	  of the OpenPGP standard as defined by RFC4880. GnuPG allows
+diff --git a/package/gnupg/gnupg.mk b/package/gnupg/gnupg.mk
+index ac9047894d..bedcf6c985 100644
+--- a/package/gnupg/gnupg.mk
++++ b/package/gnupg/gnupg.mk
+@@ -9,7 +9,7 @@ GNUPG_SOURCE = gnupg-$(GNUPG_VERSION).tar.bz2
+ GNUPG_SITE = https://gnupg.org/ftp/gcrypt/gnupg
+ GNUPG_LICENSE = GPL-3.0+
+ GNUPG_LICENSE_FILES = COPYING
+-GNUPG_DEPENDENCIES = zlib ncurses $(if $(BR2_PACKAGE_LIBICONV),libiconv)
++GNUPG_DEPENDENCIES = zlib $(if $(BR2_PACKAGE_LIBICONV),libiconv)
+ GNUPG_CONF_ENV = ac_cv_sys_symbol_underscore=no
+ GNUPG_CONF_OPTS = \
+ 	--disable-rpath \
+@@ -18,7 +18,7 @@ GNUPG_CONF_OPTS = \
+ 	--enable-sha256 \
+ 	--enable-sha512
+ 
+-HOST_GNUPG_DEPENDENCIES = host-zlib host-ncurses
++HOST_GNUPG_DEPENDENCIES = host-zlib
+ HOST_GNUPG_CONF_OPTS = \
+ 	--disable-rpath \
+ 	--enable-minimal \
+diff --git a/package/httping/httping.hash b/package/httping/httping.hash
+index a50eedb744..c396157646 100644
+--- a/package/httping/httping.hash
++++ b/package/httping/httping.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+ sha256	3e895a0a6d7bd79de25a255a1376d4da88eb09c34efdd0476ab5a907e75bfaf8	httping-2.5.tgz
++sha256  c5db2e5b9a692fcdf2bd370f1533529063fbcf8947a8f5ee9d4b050a14e0566d	license.txt
+diff --git a/package/igmpproxy/igmpproxy.hash b/package/igmpproxy/igmpproxy.hash
+index 2e3a374618..313af52fbe 100644
+--- a/package/igmpproxy/igmpproxy.hash
++++ b/package/igmpproxy/igmpproxy.hash
+@@ -1,2 +1,5 @@
+ # Locally computed:
+ sha256 e60331031f85d1fb834c5272a134f32d32e7834718da19ba3f787dff68389a31  igmpproxy-f47644d8fa7266a784f3ec7b251e7d318bc2f0a9.tar.gz
++sha256 be3d05af93dbbc4650f8d641d8e1bec220af4a729e07ba71e949c25b93a1b4f6  COPYING
++sha256 c4f65d5d396ad518a37d30b83fe33897661858dc174ff64a15d0461630ce64e4  GPL.txt
++sha256 4328a21f0822caa9976356623118bcdcc9970c7a0f9a3deeba23c779b7cfb5d1  Stanford.txt
+diff --git a/package/igmpproxy/igmpproxy.mk b/package/igmpproxy/igmpproxy.mk
+index 8989c74de0..9c19f76f0c 100644
+--- a/package/igmpproxy/igmpproxy.mk
++++ b/package/igmpproxy/igmpproxy.mk
+@@ -7,7 +7,7 @@
+ IGMPPROXY_VERSION = f47644d8fa7266a784f3ec7b251e7d318bc2f0a9
+ IGMPPROXY_SITE = $(call github,pali,igmpproxy,$(IGMPPROXY_VERSION))
+ IGMPPROXY_AUTORECONF = YES
+-IGMPPROXY_LICENSE = GPL-2.0+
+-IGMPPROXY_LICENSE_FILES = COPYING
++IGMPPROXY_LICENSE = GPL-2.0+, BSD-3-Clause (mrouted)
++IGMPPROXY_LICENSE_FILES = COPYING GPL.txt Stanford.txt
+ 
+ $(eval $(autotools-package))
+diff --git a/package/imagemagick/imagemagick.hash b/package/imagemagick/imagemagick.hash
+index cf529b597c..9d5a39567e 100644
+--- a/package/imagemagick/imagemagick.hash
++++ b/package/imagemagick/imagemagick.hash
+@@ -1,3 +1,3 @@
+ # Locally computed
+-sha256 ac957ef303fb870cb92331947ebcdcef5b553e80c7897c0aec866889f35e1a23  7.0.7-38.tar.gz
++sha256 e7c1b19923bb97ed456c78b63b3259b809ebc8e3967c6d086450370c67eedf06  7.0.7-39.tar.gz
+ sha256 2318cc05bbd2c25c1b2d13af1aadccc45b9cf6f94757421ae59a3c8ea9064f1c  LICENSE
+diff --git a/package/imagemagick/imagemagick.mk b/package/imagemagick/imagemagick.mk
+index 4aa9d56db2..b75d65375b 100644
+--- a/package/imagemagick/imagemagick.mk
++++ b/package/imagemagick/imagemagick.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-IMAGEMAGICK_VERSION = 7.0.7-38
++IMAGEMAGICK_VERSION = 7.0.7-39
+ IMAGEMAGICK_SOURCE = $(IMAGEMAGICK_VERSION).tar.gz
+ IMAGEMAGICK_SITE = https://github.com/ImageMagick/ImageMagick/archive
+ IMAGEMAGICK_LICENSE = Apache-2.0
+diff --git a/package/imlib2/imlib2.hash b/package/imlib2/imlib2.hash
+index 0c234c8c23..62ebac32ea 100644
+--- a/package/imlib2/imlib2.hash
++++ b/package/imlib2/imlib2.hash
+@@ -1,3 +1,7 @@
+ # From https://sourceforge.net/projects/enlightenment/files/imlib2-src/1.4.10/
+ md5 a0de8524592bbd9f24fcc6cb8352137c  imlib2-1.4.10.tar.bz2
+ sha1 664df65c6265a2825d685d2f3a4f0d072eb626ac  imlib2-1.4.10.tar.bz2
++
++# Locally computed
++sha256 fb70339dd33a77b6213c7ae067fccf93d04af44ff3f937c61f8863f7970e73f6  COPYING
++sha256 8c9a2e92ed4937e2d30c2ea95439c36ed3002fc47e34efee43455a460fee8ef5  COPYING-PLAIN
+diff --git a/package/imlib2/imlib2.mk b/package/imlib2/imlib2.mk
+index b5012a69a8..21a96cb1ca 100644
+--- a/package/imlib2/imlib2.mk
++++ b/package/imlib2/imlib2.mk
+@@ -7,8 +7,8 @@
+ IMLIB2_VERSION = 1.4.10
+ IMLIB2_SOURCE = imlib2-$(IMLIB2_VERSION).tar.bz2
+ IMLIB2_SITE = http://downloads.sourceforge.net/project/enlightenment/imlib2-src/$(IMLIB2_VERSION)
+-IMLIB2_LICENSE = imlib2 license
+-IMLIB2_LICENSE_FILES = COPYING
++IMLIB2_LICENSE = Imlib2
++IMLIB2_LICENSE_FILES = COPYING COPYING-PLAIN
+ 
+ IMLIB2_INSTALL_STAGING = YES
+ IMLIB2_DEPENDENCIES = host-pkgconf freetype
+diff --git a/package/ipsec-tools/ipsec-tools.mk b/package/ipsec-tools/ipsec-tools.mk
+index c0b180de55..20c7ab4f77 100644
+--- a/package/ipsec-tools/ipsec-tools.mk
++++ b/package/ipsec-tools/ipsec-tools.mk
+@@ -9,7 +9,7 @@ IPSEC_TOOLS_SOURCE = ipsec-tools-$(IPSEC_TOOLS_VERSION).tar.bz2
+ IPSEC_TOOLS_SITE = http://sourceforge.net/projects/ipsec-tools/files/ipsec-tools/$(IPSEC_TOOLS_VERSION)
+ IPSEC_TOOLS_INSTALL_STAGING = YES
+ IPSEC_TOOLS_MAKE = $(MAKE1)
+-IPSEC_TOOLS_DEPENDENCIES = openssl flex host-flex
++IPSEC_TOOLS_DEPENDENCIES = openssl flex host-flex host-bison
+ # we patch configure.ac
+ IPSEC_TOOLS_AUTORECONF = YES
+ 
+diff --git a/package/lcms2/0001-Fix-lcms2.pc.in-thread-library-dependency.patch b/package/lcms2/0001-Fix-lcms2.pc.in-thread-library-dependency.patch
+deleted file mode 100644
+index f8c0d00d30..0000000000
+--- a/package/lcms2/0001-Fix-lcms2.pc.in-thread-library-dependency.patch
++++ /dev/null
+@@ -1,26 +0,0 @@
+-From 0b55fd4e0935a0231ca258fde631a95215df2f72 Mon Sep 17 00:00:00 2001
+-From: Peter Seiderer <ps.report@gmx.net>
+-Date: Fri, 11 Nov 2016 23:29:56 +0100
+-Subject: [PATCH] Fix lcms2.pc.in thread library dependency.
+-
+-Needed (sometimes) for static linking.
+-
+-Signed-off-by: Peter Seiderer <ps.report@gmx.net>
+----
+- lcms2.pc.in | 2 +-
+- 1 file changed, 1 insertion(+), 1 deletion(-)
+-
+-diff --git a/lcms2.pc.in b/lcms2.pc.in
+-index b715f59..5b4213c 100644
+---- a/lcms2.pc.in
+-+++ b/lcms2.pc.in
+-@@ -7,5 +7,5 @@ Name: @PACKAGE@
+- Description: LCMS Color Management Library
+- Version: @VERSION@
+- Libs: -L${libdir} -llcms2
+--Libs.private: @LIB_MATH@ 
+-+Libs.private: @LIB_MATH@ @LIB_THREAD@
+- Cflags: -I${includedir}
+--- 
+-2.8.1
+-
+diff --git a/package/lcms2/0001-Upgrade-Visual-studio-2017-15.8.patch b/package/lcms2/0001-Upgrade-Visual-studio-2017-15.8.patch
+new file mode 100644
+index 0000000000..c43d934342
+--- /dev/null
++++ b/package/lcms2/0001-Upgrade-Visual-studio-2017-15.8.patch
+@@ -0,0 +1,174 @@
++From 768f70ca405cd3159d990e962d54456773bb8cf8 Mon Sep 17 00:00:00 2001
++From: Marti Maria <info@littlecms.com>
++Date: Wed, 15 Aug 2018 20:07:56 +0200
++Subject: [PATCH] Upgrade Visual studio 2017 15.8
++
++- Upgrade to 15.8
++- Add check on CGATS memory allocation (thanks to Quang Nguyen for
++pointing out this)
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Projects/VC2017/jpegicc/jpegicc.vcxproj           |  1 +
++ Projects/VC2017/lcms2_DLL/lcms2_DLL.vcxproj       |  2 +-
++ Projects/VC2017/lcms2_static/lcms2_static.vcxproj |  2 +-
++ Projects/VC2017/linkicc/linkicc.vcxproj           |  2 +-
++ Projects/VC2017/psicc/psicc.vcxproj               |  2 +-
++ Projects/VC2017/testbed/testbed.vcxproj           |  2 +-
++ Projects/VC2017/tiffdiff/tiffdiff.vcxproj         |  2 +-
++ Projects/VC2017/tifficc/tifficc.vcxproj           |  2 +-
++ Projects/VC2017/transicc/transicc.vcxproj         |  1 +
++ src/cmscgats.c                                    | 14 ++++++++++----
++ 10 files changed, 19 insertions(+), 11 deletions(-)
++
++diff --git a/Projects/VC2017/jpegicc/jpegicc.vcxproj b/Projects/VC2017/jpegicc/jpegicc.vcxproj
++index ab26a53..39cfd00 100644
++--- a/Projects/VC2017/jpegicc/jpegicc.vcxproj
+++++ b/Projects/VC2017/jpegicc/jpegicc.vcxproj
++@@ -22,6 +22,7 @@
++     <ProjectGuid>{62812507-F926-4968-96A9-17678460AD90}</ProjectGuid>
++     <RootNamespace>jpegicc</RootNamespace>
++     <Keyword>Win32Proj</Keyword>
+++    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
++   </PropertyGroup>
++   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
++   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
++diff --git a/Projects/VC2017/lcms2_DLL/lcms2_DLL.vcxproj b/Projects/VC2017/lcms2_DLL/lcms2_DLL.vcxproj
++index 4c8aa3f..d1bf3eb 100644
++--- a/Projects/VC2017/lcms2_DLL/lcms2_DLL.vcxproj
+++++ b/Projects/VC2017/lcms2_DLL/lcms2_DLL.vcxproj
++@@ -22,7 +22,7 @@
++     <ProjectGuid>{8C51BE48-ADB8-4089-A9EC-F6BF993A0548}</ProjectGuid>
++     <RootNamespace>lcms2_DLL</RootNamespace>
++     <Keyword>Win32Proj</Keyword>
++-    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+++    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
++   </PropertyGroup>
++   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
++   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
++diff --git a/Projects/VC2017/lcms2_static/lcms2_static.vcxproj b/Projects/VC2017/lcms2_static/lcms2_static.vcxproj
++index 2a9988a..9fc05ce 100644
++--- a/Projects/VC2017/lcms2_static/lcms2_static.vcxproj
+++++ b/Projects/VC2017/lcms2_static/lcms2_static.vcxproj
++@@ -22,7 +22,7 @@
++     <ProjectGuid>{71DEDE59-3F1E-486B-A899-4283000F76B5}</ProjectGuid>
++     <RootNamespace>lcms2_static</RootNamespace>
++     <Keyword>Win32Proj</Keyword>
++-    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+++    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
++   </PropertyGroup>
++   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
++   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
++diff --git a/Projects/VC2017/linkicc/linkicc.vcxproj b/Projects/VC2017/linkicc/linkicc.vcxproj
++index 30c2b4e..51586dd 100644
++--- a/Projects/VC2017/linkicc/linkicc.vcxproj
+++++ b/Projects/VC2017/linkicc/linkicc.vcxproj
++@@ -22,7 +22,7 @@
++     <ProjectGuid>{FBFBE1DC-DB84-4BA1-9552-B4780F457849}</ProjectGuid>
++     <RootNamespace>linkicc</RootNamespace>
++     <Keyword>Win32Proj</Keyword>
++-    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+++    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
++   </PropertyGroup>
++   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
++   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
++diff --git a/Projects/VC2017/psicc/psicc.vcxproj b/Projects/VC2017/psicc/psicc.vcxproj
++index 9dcf89a..8f26e12 100644
++--- a/Projects/VC2017/psicc/psicc.vcxproj
+++++ b/Projects/VC2017/psicc/psicc.vcxproj
++@@ -22,7 +22,7 @@
++     <ProjectGuid>{EF6A8851-65FE-46F5-B9EF-14F0B671F693}</ProjectGuid>
++     <RootNamespace>psicc</RootNamespace>
++     <Keyword>Win32Proj</Keyword>
++-    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+++    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
++   </PropertyGroup>
++   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
++   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
++diff --git a/Projects/VC2017/testbed/testbed.vcxproj b/Projects/VC2017/testbed/testbed.vcxproj
++index 0af3762..3f6aea3 100644
++--- a/Projects/VC2017/testbed/testbed.vcxproj
+++++ b/Projects/VC2017/testbed/testbed.vcxproj
++@@ -22,7 +22,7 @@
++     <ProjectGuid>{928A3A2B-46EF-4279-959C-513B3652FF0E}</ProjectGuid>
++     <RootNamespace>testbed</RootNamespace>
++     <Keyword>Win32Proj</Keyword>
++-    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+++    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
++   </PropertyGroup>
++   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
++   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
++diff --git a/Projects/VC2017/tiffdiff/tiffdiff.vcxproj b/Projects/VC2017/tiffdiff/tiffdiff.vcxproj
++index 7edfe28..3a6d837 100644
++--- a/Projects/VC2017/tiffdiff/tiffdiff.vcxproj
+++++ b/Projects/VC2017/tiffdiff/tiffdiff.vcxproj
++@@ -22,7 +22,7 @@
++     <ProjectGuid>{75B91835-CCD7-48BE-A606-A9C997D5DBEE}</ProjectGuid>
++     <RootNamespace>tiffdiff</RootNamespace>
++     <Keyword>Win32Proj</Keyword>
++-    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+++    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
++   </PropertyGroup>
++   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
++   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
++diff --git a/Projects/VC2017/tifficc/tifficc.vcxproj b/Projects/VC2017/tifficc/tifficc.vcxproj
++index cd9f04c..5ef954f 100644
++--- a/Projects/VC2017/tifficc/tifficc.vcxproj
+++++ b/Projects/VC2017/tifficc/tifficc.vcxproj
++@@ -22,7 +22,7 @@
++     <ProjectGuid>{2256DE16-ED92-4A6F-9C54-F65BB61E64A2}</ProjectGuid>
++     <RootNamespace>tifficc</RootNamespace>
++     <Keyword>Win32Proj</Keyword>
++-    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+++    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
++   </PropertyGroup>
++   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
++   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
++diff --git a/Projects/VC2017/transicc/transicc.vcxproj b/Projects/VC2017/transicc/transicc.vcxproj
++index d9b77c6..b3173d8 100644
++--- a/Projects/VC2017/transicc/transicc.vcxproj
+++++ b/Projects/VC2017/transicc/transicc.vcxproj
++@@ -22,6 +22,7 @@
++     <ProjectGuid>{9EE22D66-C849-474C-9ED5-C3E141DAB160}</ProjectGuid>
++     <RootNamespace>transicc</RootNamespace>
++     <Keyword>Win32Proj</Keyword>
+++    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
++   </PropertyGroup>
++   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
++   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
++diff --git a/src/cmscgats.c b/src/cmscgats.c
++index 1a87613..8c3e96d 100644
++--- a/src/cmscgats.c
+++++ b/src/cmscgats.c
++@@ -1,7 +1,7 @@
++ //---------------------------------------------------------------------------------
++ //
++ //  Little Color Management System
++-//  Copyright (c) 1998-2017 Marti Maria Saguer
+++//  Copyright (c) 1998-2018 Marti Maria Saguer
++ //
++ // Permission is hereby granted, free of charge, to any person obtaining
++ // a copy of this software and associated documentation files (the "Software"),
++@@ -1506,10 +1506,16 @@ void AllocateDataSet(cmsIT8* it8)
++     t-> nSamples   = atoi(cmsIT8GetProperty(it8, "NUMBER_OF_FIELDS"));
++     t-> nPatches   = atoi(cmsIT8GetProperty(it8, "NUMBER_OF_SETS"));
++ 
++-    t-> Data = (char**)AllocChunk (it8, ((cmsUInt32Number) t->nSamples + 1) * ((cmsUInt32Number) t->nPatches + 1) *sizeof (char*));
++-    if (t->Data == NULL) {
+++    if (t -> nSamples < 0 || t->nSamples > 0x7ffe || t->nPatches < 0 || t->nPatches > 0x7ffe)
+++    {
+++        SynError(it8, "AllocateDataSet: too much data");
+++    }
+++    else {
+++        t->Data = (char**)AllocChunk(it8, ((cmsUInt32Number)t->nSamples + 1) * ((cmsUInt32Number)t->nPatches + 1) * sizeof(char*));
+++        if (t->Data == NULL) {
++ 
++-        SynError(it8, "AllocateDataSet: Unable to allocate data array");
+++            SynError(it8, "AllocateDataSet: Unable to allocate data array");
+++        }
++     }
++ 
++ }
++-- 
++2.11.0
++
+diff --git a/package/lcms2/0002-Added-an-extra-check-to-MLU-bounds.patch b/package/lcms2/0002-Added-an-extra-check-to-MLU-bounds.patch
+deleted file mode 100644
+index 9a5d9dd4e9..0000000000
+--- a/package/lcms2/0002-Added-an-extra-check-to-MLU-bounds.patch
++++ /dev/null
+@@ -1,27 +0,0 @@
+-From 5ca71a7bc18b6897ab21d815d15e218e204581e2 Mon Sep 17 00:00:00 2001
+-From: Marti <marti.maria@tktbrainpower.com>
+-Date: Mon, 15 Aug 2016 23:31:39 +0200
+-Subject: [PATCH] Added an extra check to MLU bounds
+-
+-Thanks to Ibrahim el-sayed for spotting the bug
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- src/cmstypes.c | 1 +
+- 1 file changed, 1 insertion(+)
+-
+-diff --git a/src/cmstypes.c b/src/cmstypes.c
+-index cb61860..c7328b9 100644
+---- a/src/cmstypes.c
+-+++ b/src/cmstypes.c
+-@@ -1460,6 +1460,7 @@ void *Type_MLU_Read(struct _cms_typehandler_struct* self, cmsIOHANDLER* io, cmsU
+- 
+-         // Check for overflow
+-         if (Offset < (SizeOfHeader + 8)) goto Error;
+-+        if ((Offset + Len) > SizeOfTag + 8) goto Error;
+- 
+-         // True begin of the string
+-         BeginOfThisString = Offset - SizeOfHeader - 8;
+--- 
+-2.11.0
+-
+diff --git a/package/lcms2/lcms2.hash b/package/lcms2/lcms2.hash
+index 1cf1017c54..248a08cf87 100644
+--- a/package/lcms2/lcms2.hash
++++ b/package/lcms2/lcms2.hash
+@@ -1,4 +1,5 @@
+-# From https://sourceforge.net/projects/lcms/files/lcms/2.8
+-sha1 e9535ec4a572b8fc7a1c405c35e6f4dc97714197 lcms2-2.8.tar.gz
++# From https://sourceforge.net/projects/lcms/files/lcms/2.9
++sha1 60bea9875e017dd1c466e988c2ad98f8766e4e55 lcms2-2.9.tar.gz
+ # Locally computed:
+-sha256 66d02b229d2ea9474e62c2b6cd6720fde946155cd1d0d2bffdab829790a0fb22 lcms2-2.8.tar.gz
++sha256 48c6fdf98396fa245ed86e622028caf49b96fa22f3e5734f853f806fbc8e7d20 lcms2-2.9.tar.gz
++sha256 c725daac91a9259ce5e195683c0eeb797d345035c36ac5ba114c9fa80e11639a COPYING
+diff --git a/package/lcms2/lcms2.mk b/package/lcms2/lcms2.mk
+index 29f8ac8dee..a19f807d86 100644
+--- a/package/lcms2/lcms2.mk
++++ b/package/lcms2/lcms2.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LCMS2_VERSION = 2.8
++LCMS2_VERSION = 2.9
+ LCMS2_SITE = http://downloads.sourceforge.net/project/lcms/lcms/$(LCMS2_VERSION)
+ LCMS2_LICENSE = MIT
+ LCMS2_LICENSE_FILES = COPYING
+diff --git a/package/libcurl/libcurl.hash b/package/libcurl/libcurl.hash
+index 9a57153d2b..395307653d 100644
+--- a/package/libcurl/libcurl.hash
++++ b/package/libcurl/libcurl.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated after checking pgp signature
+-# https://curl.haxx.se/download/curl-7.61.0.tar.xz.asc
++# https://curl.haxx.se/download/curl-7.61.1.tar.xz.asc
+ # with key 27EDEAF22F3ABCEB50DB9A125CC908FDB71E12C2
+-sha256 ef6e55192d04713673b4409ccbcb4cb6cd723137d6e10ca45b0c593a454e1720  curl-7.61.0.tar.xz
++sha256 3d5913d6a39bd22e68e34dff697fd6e4c3c81563f580c76fca2009315cd81891  curl-7.61.1.tar.xz
+ sha256 5f3849ec38ddb927e79f514bf948890c41b8d1407286a49609b8fb1585931095  COPYING
+diff --git a/package/libcurl/libcurl.mk b/package/libcurl/libcurl.mk
+index f07a53757c..92c1a1fb7a 100644
+--- a/package/libcurl/libcurl.mk
++++ b/package/libcurl/libcurl.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBCURL_VERSION = 7.61.0
++LIBCURL_VERSION = 7.61.1
+ LIBCURL_SOURCE = curl-$(LIBCURL_VERSION).tar.xz
+ LIBCURL_SITE = https://curl.haxx.se/download
+ LIBCURL_DEPENDENCIES = host-pkgconf \
+diff --git a/package/libesmtp/Config.in b/package/libesmtp/Config.in
+index ba9d52751c..f3ed521d22 100644
+--- a/package/libesmtp/Config.in
++++ b/package/libesmtp/Config.in
+@@ -4,7 +4,7 @@ config BR2_PACKAGE_LIBESMTP
+ 	help
+ 	  Library for sending emails through SMTP.
+ 
+-	  http://www.stafford.uklinux.net/libesmtp
++	  http://brianstafford.info/libesmtp
+ 
+ comment "libesmtp needs a toolchain w/ dynamic library"
+ 	depends on BR2_STATIC_LIBS
+diff --git a/package/libesmtp/libesmtp.mk b/package/libesmtp/libesmtp.mk
+index b0f88c7a3b..9c336793a4 100644
+--- a/package/libesmtp/libesmtp.mk
++++ b/package/libesmtp/libesmtp.mk
+@@ -6,7 +6,7 @@
+ 
+ LIBESMTP_VERSION = 1.0.6
+ LIBESMTP_SOURCE = libesmtp-$(LIBESMTP_VERSION).tar.bz2
+-LIBESMTP_SITE = http://www.stafford.uklinux.net/libesmtp
++LIBESMTP_SITE = http://brianstafford.info/libesmtp
+ LIBESMTP_INSTALL_STAGING = YES
+ LIBESMTP_CONFIG_SCRIPTS = libesmtp-config
+ LIBESMTP_DEPENDENCIES = $(if $(BR2_PACKAGE_OPENSSL),openssl)
+diff --git a/package/libnfs/libnfs.hash b/package/libnfs/libnfs.hash
+index cfe6678842..2bd8caf255 100644
+--- a/package/libnfs/libnfs.hash
++++ b/package/libnfs/libnfs.hash
+@@ -1,3 +1,6 @@
+ # Locally calculated
+ sha256 7ea6cd8fa6c461d01091e584d424d28e137d23ff4b65b95d01a3fd0ef95d120e  libnfs-libnfs-2.0.0.tar.gz
++sha256 2d152e3a2f31ef0fe14d4908377277f8215fb5c82ec9329d1eed081c845fc85f  COPYING
++sha256 d9406ced95457941032aa11d04623b8ab71f2827a3395ebef137aec475be35b1  LICENCE-BSD.txt
+ sha256 dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551  LICENCE-LGPL-2.1.txt
++sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  LICENCE-GPL-3.txt
+diff --git a/package/libnfs/libnfs.mk b/package/libnfs/libnfs.mk
+index d961fd1d4e..0cf07d2143 100644
+--- a/package/libnfs/libnfs.mk
++++ b/package/libnfs/libnfs.mk
+@@ -8,8 +8,8 @@ LIBNFS_VERSION = libnfs-2.0.0
+ LIBNFS_SITE = $(call github,sahlberg,libnfs,$(LIBNFS_VERSION))
+ LIBNFS_INSTALL_STAGING = YES
+ LIBNFS_AUTORECONF = YES
+-LIBNFS_LICENSE = LGPL-2.1+
+-LIBNFS_LICENSE_FILES = LICENCE-LGPL-2.1.txt
++LIBNFS_LICENSE = LGPL-2.1+ (library), BSD-2-Clause (protocol, .x files), GPL-3.0+ (examples)
++LIBNFS_LICENSE_FILES = COPYING LICENCE-BSD.txt LICENCE-LGPL-2.1.txt LICENCE-GPL-3.txt
+ LIBNFS_DEPENDENCIES = host-pkgconf
+ 
+ ifeq ($(BR2_PACKAGE_LIBTIRPC),y)
+diff --git a/package/libssh/libssh.mk b/package/libssh/libssh.mk
+index 34716c502a..902865d73b 100644
+--- a/package/libssh/libssh.mk
++++ b/package/libssh/libssh.mk
+@@ -4,9 +4,10 @@
+ #
+ ################################################################################
+ 
+-LIBSSH_VERSION = 0.7.5
++LIBSSH_VERSION_MAJOR = 0.7
++LIBSSH_VERSION = $(LIBSSH_VERSION_MAJOR).5
+ LIBSSH_SOURCE = libssh-$(LIBSSH_VERSION).tar.xz
+-LIBSSH_SITE = https://red.libssh.org/attachments/download/218
++LIBSSH_SITE = https://www.libssh.org/files/$(LIBSSH_VERSION_MAJOR)
+ LIBSSH_LICENSE = LGPL-2.1
+ LIBSSH_LICENSE_FILES = COPYING
+ LIBSSH_INSTALL_STAGING = YES
+diff --git a/package/libxslt/libxslt.mk b/package/libxslt/libxslt.mk
+index f05bc5a70a..ae58e14a0e 100644
+--- a/package/libxslt/libxslt.mk
++++ b/package/libxslt/libxslt.mk
+@@ -13,7 +13,8 @@ LIBXSLT_LICENSE_FILES = COPYING
+ LIBXSLT_CONF_OPTS = \
+ 	--with-gnu-ld \
+ 	--without-debug \
+-	--without-python
++	--without-python \
++	--with-libxml-prefix=$(STAGING_DIR)/usr
+ LIBXSLT_CONFIG_SCRIPTS = xslt-config
+ LIBXSLT_DEPENDENCIES = host-pkgconf libxml2
+ 
+diff --git a/package/links/links.mk b/package/links/links.mk
+index dd6adb29b1..651a089fda 100644
+--- a/package/links/links.mk
++++ b/package/links/links.mk
+@@ -15,7 +15,10 @@ ifeq ($(BR2_PACKAGE_LINKS_GRAPHICS),y)
+ LINKS_CONF_OPTS += --enable-graphics
+ LINKS_DEPENDENCIES += libpng
+ ifeq ($(BR2_PACKAGE_XLIB_LIBXT),y)
+-LINKS_CONF_OPTS += --with-x
++LINKS_CONF_OPTS += \
++	--with-x \
++	--x-includes=$(STAGING_DIR)/usr/include \
++	--x-libraries=$(STAGING_DIR)/usr/lib
+ LINKS_DEPENDENCIES += xlib_libXt
+ else
+ LINKS_CONF_OPTS += --without-x
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index 1635cdcd70..8dc8a4cc38 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -69,6 +69,14 @@ config BR2_KERNEL_HEADERS_4_15
+ 
+ config BR2_KERNEL_HEADERS_VERSION
+ 	bool "Manually specified Linux version"
++	help
++	  This option allows you to use a specific official version from
++	  kernel.org, like 2.6.x, 2.6.x.y, 3.x.y, ...
++
++	  Note: you cannot use this option to select a _longterm_ 2.6
++	  kernel, because these kernels are not located at the standard
++	  URL at kernel.org. Instead, select "Custom tarball" and
++	  specify the right URL directly.
+ 
+ endchoice
+ 
+@@ -242,12 +250,12 @@ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+ 	default "3.2.102"	if BR2_KERNEL_HEADERS_3_2
+ 	default "4.1.52"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.150"	if BR2_KERNEL_HEADERS_4_4
+-	default "4.9.122"	if BR2_KERNEL_HEADERS_4_9
++	default "4.4.158"	if BR2_KERNEL_HEADERS_4_4
++	default "4.9.129"	if BR2_KERNEL_HEADERS_4_9
+ 	default "4.10.17"	if BR2_KERNEL_HEADERS_4_10
+ 	default "4.11.12"	if BR2_KERNEL_HEADERS_4_11
+ 	default "4.12.14"	if BR2_KERNEL_HEADERS_4_12
+ 	default "4.13.16"	if BR2_KERNEL_HEADERS_4_13
+-	default "4.14.65"	if BR2_KERNEL_HEADERS_4_14
++	default "4.14.72"	if BR2_KERNEL_HEADERS_4_14
+ 	default "4.15.18"	if BR2_KERNEL_HEADERS_4_15
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/linuxptp/Config.in b/package/linuxptp/Config.in
+index 3e18a0cb13..a32dbde2e1 100644
+--- a/package/linuxptp/Config.in
++++ b/package/linuxptp/Config.in
+@@ -1,5 +1,6 @@
+ config BR2_PACKAGE_LINUXPTP
+ 	bool "linuxptp"
++	depends on BR2_TOOLCHAIN_HAS_THREADS_NPTL # clock_nanosleep()
+ 	help
+ 	  The Linux PTP Project is the Precision Time Protocol
+ 	  implementation according to IEEE standard 1588 for Linux.
+@@ -11,3 +12,6 @@ config BR2_PACKAGE_LINUXPTP
+ 	  not a goal.
+ 
+ 	  http://linuxptp.sourceforge.net/
++
++comment "linuxptp needs a toolchain w/ NPTL"
++	depends on !BR2_TOOLCHAIN_HAS_THREADS_NPTL
+diff --git a/package/mediastreamer/0002-m4-fix-local-ffmpeg-and-avcodec-function-conflict.patch b/package/mediastreamer/0002-m4-fix-local-ffmpeg-and-avcodec-function-conflict.patch
+new file mode 100644
+index 0000000000..cdaa0fab24
+--- /dev/null
++++ b/package/mediastreamer/0002-m4-fix-local-ffmpeg-and-avcodec-function-conflict.patch
+@@ -0,0 +1,42 @@
++From d12e74a559602b3dff9a6bf38fcbb139535c9c9c Mon Sep 17 00:00:00 2001
++From: Giulio Benetti <giulio.benetti@micronovasrl.com>
++Date: Mon, 3 Sep 2018 20:27:00 +0200
++Subject: [PATCH] m4: fix local ffmpeg and avcodec function conflict
++
++Autotools miss avcodec function check.
++This is due to linker library list order, -ldrm is appended too early
++respect to -lavutil. This results in missing drm library functions for
++avcodec functions:
++- drmGetVersion()
++- drmFreeVersion()
++So these functions:
++- avcodec_get_context_defaults3
++- avcodec_open2
++- avcodec_encode_video2
++can't link correctly during check and they seem not to be present.
++Then macros HAVE_FUN_avcodec_* are not defined in mediastreamer-config.h
++So local avcodec functions conflict with real avcodec library functions.
++
++In acinclude.m4 file, swap $FFMPEG_LIBS and -lavutil if avcodec is found.
++
++Signed-off-by: Giulio Benetti <giulio.benetti@micronovasrl.com>
++---
++ acinclude.m4 | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/acinclude.m4 b/acinclude.m4
++index 6c31ed82..89ff6643 100644
++--- a/acinclude.m4
+++++ b/acinclude.m4
++@@ -110,7 +110,7 @@ AC_DEFUN([MS_CHECK_VIDEO],[
++ 			if test x$avcodec_found = xno ; then
++ 			   AC_MSG_WARN([Could not find libavcodec (from ffmpeg) headers and library.])
++ 			else
++-			   FFMPEG_LIBS="$FFMPEG_LIBS -lavutil"
+++			   FFMPEG_LIBS="-lavutil $FFMPEG_LIBS"
++ 			fi
++ 			
++ 			
++-- 
++2.17.1
++
+diff --git a/package/midori/Config.in b/package/midori/Config.in
+index bc37c6a95b..f0767c85f9 100644
+--- a/package/midori/Config.in
++++ b/package/midori/Config.in
+@@ -1,7 +1,7 @@
+-comment "midori needs libgtk3 and a glibc toolchain w/ C++, gcc >= 5, host gcc >= 4.8"
++comment "midori needs libgtk3 and a glibc toolchain w/ C++, gcc >= 6, host gcc >= 4.8"
+ 	depends on BR2_PACKAGE_WEBKITGTK_ARCH_SUPPORTS
+ 	depends on !BR2_INSTALL_LIBSTDCPP || !BR2_PACKAGE_LIBGTK3 || \
+-		!BR2_HOST_GCC_AT_LEAST_4_8 || !BR2_TOOLCHAIN_GCC_AT_LEAST_5 || \
++		!BR2_HOST_GCC_AT_LEAST_4_8 || !BR2_TOOLCHAIN_GCC_AT_LEAST_6 || \
+ 		!BR2_TOOLCHAIN_USES_GLIBC
+ 
+ config BR2_PACKAGE_MIDORI
+@@ -10,7 +10,7 @@ config BR2_PACKAGE_MIDORI
+ 	depends on BR2_PACKAGE_LIBGTK3
+ 	depends on BR2_INSTALL_LIBSTDCPP # webkitgtk
+ 	depends on BR2_HOST_GCC_AT_LEAST_4_8 # webkitgtk -> icu
+-	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_5 # webkitgtk
++	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_6 # webkitgtk
+ 	depends on BR2_TOOLCHAIN_USES_GLIBC # webkitgtk
+ 	depends on BR2_PACKAGE_WEBKITGTK_ARCH_SUPPORTS
+ 	# GCR can only be used with the X11 backend
+diff --git a/package/minicom/minicom.hash b/package/minicom/minicom.hash
+index ca3087160b..f49e430c67 100644
+--- a/package/minicom/minicom.hash
++++ b/package/minicom/minicom.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+ sha256 532f836b7a677eb0cb1dca8d70302b73729c3d30df26d58368d712e5cca041f1  minicom-2.7.1.tar.gz
++sha256 cf80a758014eefbf068afffe3d462fc34ff4f528527524d8e100329c42094e15  COPYING
+diff --git a/package/moarvm/Config.in b/package/moarvm/Config.in
+index 3ff4f827e0..c370a0f229 100644
+--- a/package/moarvm/Config.in
++++ b/package/moarvm/Config.in
+@@ -12,7 +12,8 @@ config BR2_PACKAGE_MOARVM
+ 	select BR2_PACKAGE_LIBATOMIC_OPS
+ 	# dyncall does not work on MIPS; libffi needs to be used.
+ 	# See: https://github.com/MoarVM/MoarVM/issues/222
+-	select BR2_PACKAGE_LIBFFI if BR2_mips || BR2_mipsel || BR2_mips64 || BR2_mips64el
++	# dyncall does not work also on powerpc64 and powerpc64le
++	select BR2_PACKAGE_LIBFFI if BR2_mips || BR2_mipsel || BR2_mips64 || BR2_mips64el || BR2_powerpc64 || BR2_powerpc64le
+ 	help
+ 	  Short for "Metamodel On A Runtime", MoarVM is a virtual
+ 	  machine built especially for Rakudo Perl 6 and the NQP
+diff --git a/package/nilfs-utils/Config.in b/package/nilfs-utils/Config.in
+index e49cab369b..e245dc4656 100644
+--- a/package/nilfs-utils/Config.in
++++ b/package/nilfs-utils/Config.in
+@@ -1,8 +1,8 @@
+ config BR2_PACKAGE_NILFS_UTILS
+ 	bool "nilfs-utils"
++	depends on BR2_USE_MMU # util-linux libmount, libblkid
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS # sem_open()
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS_NPTL # clock_nanosleep()
+-	depends on BR2_USE_MMU # util-linux libmount, libblkid
+ 	select BR2_PACKAGE_UTIL_LINUX_LIBUUID
+ 	select BR2_PACKAGE_UTIL_LINUX_LIBBLKID
+ 	select BR2_PACKAGE_UTIL_LINUX_LIBMOUNT
+@@ -13,5 +13,6 @@ config BR2_PACKAGE_NILFS_UTILS
+ 	  https://github.com/nilfs-dev/nilfs-utils
+ 
+ comment "nilfs-utils needs a toolchain w/ threads, NPTL"
++	depends on BR2_USE_MMU
+ 	depends on !BR2_TOOLCHAIN_HAS_THREADS || \
+ 		!BR2_TOOLCHAIN_HAS_THREADS_NPTL
+diff --git a/package/ocrad/ocrad.hash b/package/ocrad/ocrad.hash
+index 5f093d241e..5cde4d3ac4 100644
+--- a/package/ocrad/ocrad.hash
++++ b/package/ocrad/ocrad.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated after checking pgp signature
+ sha256 c383d37869baa0990d38d38836d4d567e9e2862aa0cd704868b62dafeac18e3c  ocrad-0.26.tar.lz
++sha256 3d77c1a58fbde5ddba612d1fe09965e20a3804953eca12e8c1892298bb8a5eef  COPYING
+diff --git a/package/parted/0005-linux-Include-sys-sysmacros.h-for-major-macro.patch b/package/parted/0005-linux-Include-sys-sysmacros.h-for-major-macro.patch
+new file mode 100644
+index 0000000000..e0b4c2acba
+--- /dev/null
++++ b/package/parted/0005-linux-Include-sys-sysmacros.h-for-major-macro.patch
+@@ -0,0 +1,27 @@
++From ba5e0451b51c983e40afd123b6e0d3eddb55e610 Mon Sep 17 00:00:00 2001
++From: "Richard W.M. Jones" <rjones@redhat.com>
++Date: Sat, 24 Mar 2018 17:37:02 +0000
++Subject: [PATCH] linux: Include <sys/sysmacros.h> for major() macro.
++
++Since glibc 2.27 this header is required.
++
++Signed-off-by: Giulio Benetti <giulio.benetti@micronovasrl.com>
++---
++ libparted/arch/linux.c | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/libparted/arch/linux.c b/libparted/arch/linux.c
++index 31b98ab..7e86b51 100644
++--- a/libparted/arch/linux.c
+++++ b/libparted/arch/linux.c
++@@ -41,6 +41,7 @@
++ #include <sys/utsname.h>        /* for uname() */
++ #include <scsi/scsi.h>
++ #include <assert.h>
+++#include <sys/sysmacros.h>
++ #ifdef ENABLE_DEVICE_MAPPER
++ #include <libdevmapper.h>
++ #endif
++-- 
++2.17.1
++
+diff --git a/package/php/Config.ext b/package/php/Config.ext
+index 60ef1aee7c..51dcbbf4a4 100644
+--- a/package/php/Config.ext
++++ b/package/php/Config.ext
+@@ -132,6 +132,7 @@ if BR2_PACKAGE_PHP_EXT_PDO
+ 
+ config BR2_PACKAGE_PHP_EXT_PDO_MYSQL
+ 	bool "MySQL"
++	select BR2_PACKAGE_PHP_EXT_HASH
+ 	help
+ 	  PDO driver for MySQL
+ 
+diff --git a/package/php/php.hash b/package/php/php.hash
+index 6e401dec00..2774c44d6d 100644
+--- a/package/php/php.hash
++++ b/package/php/php.hash
+@@ -1,5 +1,5 @@
+ # From http://php.net/downloads.php
+-sha256 3585c1222e00494efee4f5a65a8e03a1e6eca3dfb834814236ee7f02c5248ae0  php-7.2.9.tar.xz
++sha256 01c2154a3a8e3c0818acbdbc1a956832c828a0380ce6d1d14fea495ea21804f0  php-7.2.10.tar.xz
+ 
+ # License file
+ sha256 00e567a8d50359d93ee1f9afdd9511277660c1e70a0cbf3229f84403aa9aebb1  LICENSE
+diff --git a/package/php/php.mk b/package/php/php.mk
+index 04a32283c8..f92e9b6565 100644
+--- a/package/php/php.mk
++++ b/package/php/php.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-PHP_VERSION = 7.2.9
++PHP_VERSION = 7.2.10
+ PHP_SITE = http://www.php.net/distributions
+ PHP_SOURCE = php-$(PHP_VERSION).tar.xz
+ PHP_INSTALL_STAGING = YES
+diff --git a/package/pv/0001-configure.in-tighten-AIX-test.patch b/package/pv/0001-configure.in-tighten-AIX-test.patch
+new file mode 100644
+index 0000000000..2e0d2af247
+--- /dev/null
++++ b/package/pv/0001-configure.in-tighten-AIX-test.patch
+@@ -0,0 +1,57 @@
++From cd7605723eb8e6d8231644f1cf62f1e80badf074 Mon Sep 17 00:00:00 2001
++From: Peter Korsgaard <peter@korsgaard.com>
++Date: Mon, 20 Aug 2018 15:57:22 +0200
++Subject: [PATCH] configure.in: tighten AIX test
++
++Depending on the configuration, the cpp output may contain the string 'yes'
++in a comment if built under a path containing 'yes', confusing the _AIX
++test:
++
++${CROSS}-cpp conftest.h
++\# 1 "conftest.h"
++\# 1 "<built-in>"
++\# 1 "<command-line>"
++\# 31 "<command-line>"
++\# 1 "/home/peko/source/buildroot/output-yes/host/x86_64-buildroot-linux-gnu/sysroot/usr/include/stdc-predef.h" 1 3 4
++\# 32 "<command-line>" 2
++\# 1 "conftest.txt"
++
++Fix it by only matching on 'yes' on a line by itself.
++
++Upstream-status: submitted to author
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++
++ autoconf/configure.in | 2 +-
++ configure             | 2 +-
++ 2 files changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/autoconf/configure.in b/autoconf/configure.in
++index bd45004..487c42b 100644
++--- a/autoconf/configure.in
+++++ b/autoconf/configure.in
++@@ -86,7 +86,7 @@ AC_PROG_MAKE_SET
++ 
++ dnl AIX needs -lc128
++ dnl
++-AC_EGREP_CPP([yes], [#ifdef _AIX
+++AC_EGREP_CPP([^yes$], [#ifdef _AIX
++ yes
++ #endif
++ ], [LIBS="$LIBS -lc128"])
++diff --git a/configure b/configure
++index 7c11be0..59267b9 100755
++--- a/configure
+++++ b/configure
++@@ -3377,7 +3377,7 @@ yes
++ 
++ _ACEOF
++ if (eval "$ac_cpp conftest.$ac_ext") 2>&5 |
++-  $EGREP "yes" >/dev/null 2>&1; then
+++  $EGREP "^yes$" >/dev/null 2>&1; then
++   LIBS="$LIBS -lc128"
++ fi
++ rm -f conftest*
++-- 
++2.11.0
++
+diff --git a/package/python-django/python-django.hash b/package/python-django/python-django.hash
+index bc7aed9479..6e6e7708db 100644
+--- a/package/python-django/python-django.hash
++++ b/package/python-django/python-django.hash
+@@ -1,3 +1,3 @@
+-# From https://www.djangoproject.com/m/pgp/Django-1.11.15.checksum.txt
+-sha256	b18235d82426f09733d2de9910cee975cf52ff05e5f836681eb957d105a05a40  Django-1.11.15.tar.gz
++# From https://www.djangoproject.com/m/pgp/Django-1.11.16.checksum.txt
++sha256	29268cc47816a44f27308e60f71da635f549c47d8a1d003b28de55141df75791  Django-1.11.16.tar.gz
+ sha256	b846415d1b514e9c1dff14a22deb906d794bc546ca6129f950a18cd091e2a669  LICENSE
+diff --git a/package/python-django/python-django.mk b/package/python-django/python-django.mk
+index ae604dbc97..9f43ffab85 100644
+--- a/package/python-django/python-django.mk
++++ b/package/python-django/python-django.mk
+@@ -4,10 +4,10 @@
+ #
+ ################################################################################
+ 
+-PYTHON_DJANGO_VERSION = 1.11.15
++PYTHON_DJANGO_VERSION = 1.11.16
+ PYTHON_DJANGO_SOURCE = Django-$(PYTHON_DJANGO_VERSION).tar.gz
+ # The official Django site has an unpractical URL
+-PYTHON_DJANGO_SITE = https://files.pythonhosted.org/packages/43/b5/b44286e56a5211d37b4058dcd5e62835afa5ce5aa6a38b56bd04c0d01cbc
++PYTHON_DJANGO_SITE = https://files.pythonhosted.org/packages/35/1d/59836bce4c9cfded261e21c0abd6a4629de6d289522d0fd928117d8eb985
+ PYTHON_DJANGO_LICENSE = BSD-3-Clause
+ PYTHON_DJANGO_LICENSE_FILES = LICENSE
+ PYTHON_DJANGO_SETUP_TYPE = setuptools
+diff --git a/package/qt/qt.mk b/package/qt/qt.mk
+index 1dcb05d6af..921ff13d29 100644
+--- a/package/qt/qt.mk
++++ b/package/qt/qt.mk
+@@ -32,6 +32,15 @@ QT_LDFLAGS = $(TARGET_LDFLAGS)
+ # use an older c++ standard to prevent build failure
+ QT_CXXFLAGS += -std=gnu++98
+ 
++# gcc bug internal compiler error: in validate_condition_mode, at
++# config/rs6000/rs6000.c:180744. Bug is fixed since gcc 7.
++# Workaround is to set -mno-isel, see
++# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=60818 and
++# https://gcc.gnu.org/ml/gcc-patches/2016-02/msg01036.html
++ifeq ($(BR2_powerpc_8540)$(BR2_powerpc_8548)$(BR2_powerpc_e500mc)$(BR2_powerpc_e5500):$(BR2_TOOLCHAIN_GCC_AT_LEAST_7),y:)
++QT_CXXFLAGS += -mno-isel
++endif
++
+ # Qt has some assembly function that are not present in thumb1 mode:
+ # Error: selected processor does not support Thumb mode `swp r3,r7,[r4]'
+ # so, we desactivate thumb mode
+diff --git a/package/qt5/qt5quickcontrols/qt5quickcontrols.hash b/package/qt5/qt5quickcontrols/qt5quickcontrols.hash
+index c437073de0..37ddd00573 100644
+--- a/package/qt5/qt5quickcontrols/qt5quickcontrols.hash
++++ b/package/qt5/qt5quickcontrols/qt5quickcontrols.hash
+@@ -8,4 +8,7 @@ sha256 da4dd353802197c2bb53c92a36cf7749c7d9dc29b4acc919b692683e9c1c3313  qtquick
+ sha256 edfe70e99be2a7c109d860b19204609e582720b211c50caedac729da372a1253 LICENSE.GPLv2
+ sha256 245248009fd0af1725d183248380e476c1283383909358a13686606352bf2a17 LICENSE.GPLv3
+ sha256 5ceb37d1c7c1d92878b82af3c0fd5558087f3d5a08a3a4d43850bad4ad265a52 LICENSE.LGPLv3
++sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 LICENSE.GPL2
++sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903 LICENSE.GPL3
++sha256 da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768 LICENSE.LGPL3
+ sha256 ed8742a95cb9db653a09b050e27ccff5e67ba69c14aa2c3137f2a4e1892f6c0d LICENSE.FDL
+diff --git a/package/qt5/qt5quickcontrols/qt5quickcontrols.mk b/package/qt5/qt5quickcontrols/qt5quickcontrols.mk
+index 88e767bcf9..87b855937a 100644
+--- a/package/qt5/qt5quickcontrols/qt5quickcontrols.mk
++++ b/package/qt5/qt5quickcontrols/qt5quickcontrols.mk
+@@ -11,7 +11,12 @@ QT5QUICKCONTROLS_DEPENDENCIES = qt5base qt5declarative
+ QT5QUICKCONTROLS_INSTALL_STAGING = YES
+ 
+ QT5QUICKCONTROLS_LICENSE = GPL-2.0 or GPL-3.0 or LGPL-3.0, GFDL-1.3 (docs)
++
++ifeq ($(BR2_PACKAGE_QT5_VERSION_LATEST),y)
++QT5QUICKCONTROLS_LICENSE_FILES = LICENSE.GPL2 LICENSE.GPL3 LICENSE.LGPL3 LICENSE.FDL
++else
+ QT5QUICKCONTROLS_LICENSE_FILES = LICENSE.GPLv2 LICENSE.GPLv3 LICENSE.LGPLv3 LICENSE.FDL
++endif
+ 
+ define QT5QUICKCONTROLS_CONFIGURE_CMDS
+ 	(cd $(@D); $(TARGET_MAKE_ENV) $(HOST_DIR)/bin/qmake)
+diff --git a/package/qt5/qt5webengine/chromium.inc b/package/qt5/qt5webengine/chromium-latest.inc
+similarity index 100%
+rename from package/qt5/qt5webengine/chromium.inc
+rename to package/qt5/qt5webengine/chromium-latest.inc
+diff --git a/package/qt5/qt5webengine/chromium-lts.inc b/package/qt5/qt5webengine/chromium-lts.inc
+new file mode 100644
+index 0000000000..bff7931656
+--- /dev/null
++++ b/package/qt5/qt5webengine/chromium-lts.inc
+@@ -0,0 +1,248 @@
++CHROMIUM_LICENSE_FILES = \
++	src/3rdparty/chromium/url/third_party/mozilla/LICENSE.txt \
++	src/3rdparty/chromium/sdch/open-vcdiff/COPYING \
++	src/3rdparty/chromium/tools/gyp/LICENSE \
++	src/3rdparty/chromium/v8/LICENSE.v8 \
++	src/3rdparty/chromium/v8/LICENSE.strongtalk \
++	src/3rdparty/chromium/v8/LICENSE.valgrind \
++	src/3rdparty/chromium/v8/LICENSE \
++	src/3rdparty/chromium/v8/src/third_party/fdlibm/LICENSE \
++	src/3rdparty/chromium/v8/src/third_party/valgrind/LICENSE \
++	src/3rdparty/chromium/v8/src/third_party/vtune/LICENSE \
++	src/3rdparty/chromium/base/third_party/nspr/LICENSE \
++	src/3rdparty/chromium/base/third_party/superfasthash/LICENSE \
++	src/3rdparty/chromium/base/third_party/xdg_mime/LICENSE \
++	src/3rdparty/chromium/base/third_party/dynamic_annotations/LICENSE \
++	src/3rdparty/chromium/base/third_party/xdg_user_dirs/LICENSE \
++	src/3rdparty/chromium/base/third_party/dmg_fp/LICENSE \
++	src/3rdparty/chromium/base/third_party/valgrind/LICENSE \
++	src/3rdparty/chromium/base/third_party/icu/LICENSE \
++	src/3rdparty/chromium/base/third_party/libevent/LICENSE \
++	src/3rdparty/chromium/base/third_party/symbolize/LICENSE \
++	src/3rdparty/chromium/testing/gtest/LICENSE \
++	src/3rdparty/chromium/testing/gmock/scripts/generator/LICENSE \
++	src/3rdparty/chromium/testing/gmock/LICENSE \
++	src/3rdparty/chromium/ppapi/LICENSE \
++	src/3rdparty/chromium/third_party/class-dump/LICENSE \
++	src/3rdparty/chromium/third_party/libxslt/linux/COPYING \
++	src/3rdparty/chromium/third_party/proguard/LICENSE \
++	src/3rdparty/chromium/third_party/pexpect/LICENSE \
++	src/3rdparty/chromium/third_party/webtreemap/src/COPYING \
++	src/3rdparty/chromium/third_party/usb_ids/LICENSE \
++	src/3rdparty/chromium/third_party/crashpad/crashpad/third_party/apple_cctools/cctools/APPLE_LICENSE \
++	src/3rdparty/chromium/third_party/crashpad/crashpad/third_party/apple_cf/APPLE_LICENSE \
++	src/3rdparty/chromium/third_party/crashpad/crashpad/third_party/getopt/LICENSE \
++	src/3rdparty/chromium/third_party/crashpad/crashpad/LICENSE \
++	src/3rdparty/chromium/third_party/Python-Markdown/LICENSE.md \
++	src/3rdparty/chromium/third_party/fips181/COPYING \
++	src/3rdparty/chromium/third_party/talloc/LICENSE \
++	src/3rdparty/chromium/third_party/libvpx_new/source/libvpx/third_party/libwebm/LICENSE.TXT \
++	src/3rdparty/chromium/third_party/libvpx_new/source/libvpx/third_party/googletest/src/LICENSE \
++	src/3rdparty/chromium/third_party/libvpx_new/source/libvpx/third_party/x86inc/LICENSE \
++	src/3rdparty/chromium/third_party/libvpx_new/source/libvpx/LICENSE \
++	src/3rdparty/chromium/third_party/devscripts/COPYING \
++	src/3rdparty/chromium/third_party/webdriver/COPYING \
++	src/3rdparty/chromium/third_party/webdriver/LICENSE \
++	src/3rdparty/chromium/third_party/cld/LICENSE \
++	src/3rdparty/chromium/third_party/jsoncpp/LICENSE \
++	src/3rdparty/chromium/third_party/bintrees/LICENSE.txt \
++	src/3rdparty/chromium/third_party/yasm/source/patched-yasm/COPYING \
++	src/3rdparty/chromium/third_party/libva/COPYING \
++	src/3rdparty/chromium/third_party/bspatch/LICENSE \
++	src/3rdparty/chromium/third_party/lzma_sdk/LICENSE \
++	src/3rdparty/chromium/third_party/v4l2capture/LICENSE \
++	src/3rdparty/chromium/third_party/boringssl/src/LICENSE \
++	src/3rdparty/chromium/third_party/cardboard-java/LICENSE \
++	src/3rdparty/chromium/third_party/errorprone/LICENSE \
++	src/3rdparty/chromium/third_party/fontconfig/LICENSE \
++	src/3rdparty/chromium/third_party/fontconfig/src/COPYING \
++	src/3rdparty/chromium/third_party/python_gflags/COPYING \
++	src/3rdparty/chromium/third_party/gif_player/LICENSE \
++	src/3rdparty/chromium/third_party/libexif/sources/COPYING \
++	src/3rdparty/chromium/third_party/sinonjs/LICENSE \
++	src/3rdparty/chromium/third_party/lcov/COPYING \
++	src/3rdparty/chromium/third_party/iaccessible2/LICENSE \
++	src/3rdparty/chromium/third_party/cros_system_api/LICENSE \
++	src/3rdparty/chromium/third_party/libpng/LICENSE \
++	src/3rdparty/chromium/third_party/speech-dispatcher/COPYING \
++	src/3rdparty/chromium/third_party/skia/third_party/libpng/LICENSE \
++	src/3rdparty/chromium/third_party/skia/third_party/etc1/LICENSE \
++	src/3rdparty/chromium/third_party/skia/platform_tools/android/third_party/ashmem/LICENSE \
++	src/3rdparty/chromium/third_party/skia/LICENSE \
++	src/3rdparty/chromium/third_party/drmemory/LICENSE \
++	src/3rdparty/chromium/third_party/v4l-utils/COPYING.libv4l \
++	src/3rdparty/chromium/third_party/iccjpeg/LICENSE \
++	src/3rdparty/chromium/third_party/wayland-protocols/LICENSE \
++	src/3rdparty/chromium/third_party/wayland-protocols/src/COPYING \
++	src/3rdparty/chromium/third_party/qunit/LICENSE \
++	src/3rdparty/chromium/third_party/zlib/LICENSE \
++	src/3rdparty/chromium/third_party/minigbm/LICENSE \
++	src/3rdparty/chromium/third_party/tlslite/LICENSE \
++	src/3rdparty/chromium/third_party/qcms/src/COPYING \
++	src/3rdparty/chromium/third_party/mach_override/LICENSE \
++	src/3rdparty/chromium/third_party/mesa/LICENSE \
++	src/3rdparty/chromium/third_party/mesa/src/docs/COPYING \
++	src/3rdparty/chromium/third_party/mesa/src/docs/license.html \
++	src/3rdparty/chromium/third_party/mesa/src/src/gallium/drivers/radeon/LICENSE.TXT \
++	src/3rdparty/chromium/third_party/mesa/src/src/mapi/glapi/gen/license.py \
++	src/3rdparty/chromium/third_party/usrsctp/usrsctplib/LICENSE.md \
++	src/3rdparty/chromium/third_party/usrsctp/LICENSE \
++	src/3rdparty/chromium/third_party/webrtc/examples/objc/AppRTCDemo/third_party/SocketRocket/LICENSE \
++	src/3rdparty/chromium/third_party/webrtc/examples/androidapp/third_party/autobanh/LICENSE.md \
++	src/3rdparty/chromium/third_party/webrtc/examples/androidapp/third_party/autobanh/LICENSE \
++	src/3rdparty/chromium/third_party/webrtc/LICENSE_THIRD_PARTY \
++	src/3rdparty/chromium/third_party/webrtc/LICENSE \
++	src/3rdparty/chromium/third_party/libwebp/LICENSE \
++	src/3rdparty/chromium/third_party/snappy/src/COPYING \
++	src/3rdparty/chromium/third_party/robolectric/licenses/extreme.indiana.edu.license.txt \
++	src/3rdparty/chromium/third_party/robolectric/licenses/javolution.license.txt \
++	src/3rdparty/chromium/third_party/robolectric/licenses/pivotal.labs.license.txt \
++	src/3rdparty/chromium/third_party/robolectric/LICENSE \
++	src/3rdparty/chromium/third_party/flot/LICENSE.txt \
++	src/3rdparty/chromium/third_party/openmax_dl/LICENSE \
++	src/3rdparty/chromium/third_party/safe_browsing/testing/LICENSE \
++	src/3rdparty/chromium/third_party/harfbuzz-ng/COPYING \
++	src/3rdparty/chromium/third_party/protobuf/COPYING.txt \
++	src/3rdparty/chromium/third_party/typ/LICENSE \
++	src/3rdparty/chromium/third_party/d3/src/LICENSE \
++	src/3rdparty/chromium/third_party/libjpeg_turbo/LICENSE.txt \
++	src/3rdparty/chromium/third_party/libwebm/source/LICENSE.TXT \
++	src/3rdparty/chromium/third_party/expat/files/COPYING \
++	src/3rdparty/chromium/third_party/smhasher/LICENSE \
++	src/3rdparty/chromium/third_party/gardiner_mod/LICENSE \
++	src/3rdparty/chromium/third_party/closure_compiler/compiler/COPYING \
++	src/3rdparty/chromium/third_party/closure_compiler/LICENSE \
++	src/3rdparty/chromium/third_party/WebKit/Source/core/LICENSE-APPLE \
++	src/3rdparty/chromium/third_party/WebKit/Source/core/LICENSE-LGPL-2.1 \
++	src/3rdparty/chromium/third_party/WebKit/Source/core/LICENSE-LGPL-2 \
++	src/3rdparty/chromium/third_party/WebKit/Source/devtools/scripts/closure/COPYING \
++	src/3rdparty/chromium/third_party/WebKit/Source/devtools/front_end/cm_modes/LICENSE \
++	src/3rdparty/chromium/third_party/WebKit/Source/devtools/front_end/acorn/LICENSE \
++	src/3rdparty/chromium/third_party/WebKit/Source/devtools/front_end/cm/LICENSE_python \
++	src/3rdparty/chromium/third_party/WebKit/Source/devtools/front_end/cm/LICENSE \
++	src/3rdparty/chromium/third_party/WebKit/Source/build/scripts/license.py \
++	src/3rdparty/chromium/third_party/WebKit/Source/wtf/dtoa/COPYING \
++	src/3rdparty/chromium/third_party/WebKit/Source/wtf/dtoa/LICENSE \
++	src/3rdparty/chromium/third_party/WebKit/LICENSE_FOR_ABOUT_CREDITS \
++	src/3rdparty/chromium/third_party/WebKit/LICENSE \
++	src/3rdparty/chromium/third_party/WebKit/Tools/Scripts/webkitpy/thirdparty/wpt/wpt/tools/LICENSE \
++	src/3rdparty/chromium/third_party/WebKit/Tools/Scripts/webkitpy/thirdparty/wpt/wpt/tools/wptserve/LICENSE \
++	src/3rdparty/chromium/third_party/WebKit/Tools/Scripts/webkitpy/thirdparty/wpt/wpt/LICENSE \
++	src/3rdparty/chromium/third_party/WebKit/Tools/Scripts/webkitpy/thirdparty/mod_pywebsocket/COPYING \
++	src/3rdparty/chromium/third_party/modp_b64/LICENSE \
++	src/3rdparty/chromium/third_party/freetype2/src/docs/LICENSE.TXT \
++	src/3rdparty/chromium/third_party/molokocacao/LICENSE \
++	src/3rdparty/chromium/third_party/wayland/LICENSE \
++	src/3rdparty/chromium/third_party/wayland/src/COPYING \
++	src/3rdparty/chromium/third_party/polymer/v1_0/components-chromium/polymer/LICENSE.txt \
++	src/3rdparty/chromium/third_party/ocmock/License.txt \
++	src/3rdparty/chromium/third_party/swiftshader/LICENSE \
++	src/3rdparty/chromium/third_party/hwcplus/LICENSE \
++	src/3rdparty/chromium/third_party/libsecret/LICENSE \
++	src/3rdparty/chromium/third_party/nss/nspr/LICENSE \
++	src/3rdparty/chromium/third_party/nss/nss/COPYING \
++	src/3rdparty/chromium/third_party/jinja2/LICENSE \
++	src/3rdparty/chromium/third_party/decklink/LICENSE \
++	src/3rdparty/chromium/third_party/hunspell/COPYING \
++	src/3rdparty/chromium/third_party/hunspell/COPYING.LGPL \
++	src/3rdparty/chromium/third_party/hunspell/COPYING.MPL \
++	src/3rdparty/chromium/third_party/hunspell/src/hunspell/license.myspell \
++	src/3rdparty/chromium/third_party/hunspell/src/hunspell/license.hunspell \
++	src/3rdparty/chromium/third_party/pyelftools/elftools/construct/LICENSE \
++	src/3rdparty/chromium/third_party/pyelftools/LICENSE \
++	src/3rdparty/chromium/third_party/jmake/LICENSE \
++	src/3rdparty/chromium/third_party/requests/LICENSE \
++	src/3rdparty/chromium/third_party/ijar/LICENSE \
++	src/3rdparty/chromium/third_party/pycoverage/LICENSE \
++	src/3rdparty/chromium/third_party/re2/LICENSE \
++	src/3rdparty/chromium/third_party/re2/src/LICENSE \
++	src/3rdparty/chromium/third_party/blanketjs/LICENSE \
++	src/3rdparty/chromium/third_party/pywebsocket/src/LICENSE \
++	src/3rdparty/chromium/third_party/closure_linter/LICENSE \
++	src/3rdparty/chromium/third_party/webpagereplay/COPYING \
++	src/3rdparty/chromium/third_party/webpagereplay/third_party/dns/LICENSE \
++	src/3rdparty/chromium/third_party/webpagereplay/third_party/ipfw_win32/LICENSE \
++	src/3rdparty/chromium/third_party/webpagereplay/third_party/ipaddr/COPYING \
++	src/3rdparty/chromium/third_party/libusb/src/COPYING \
++	src/3rdparty/chromium/third_party/libsrtp/srtp/LICENSE \
++	src/3rdparty/chromium/third_party/opus/src/LICENSE_PLEASE_READ.txt \
++	src/3rdparty/chromium/third_party/opus/src/COPYING \
++	src/3rdparty/chromium/third_party/isimpledom/LICENSE \
++	src/3rdparty/chromium/third_party/mt19937ar/LICENSE \
++	src/3rdparty/chromium/third_party/openh264/src/LICENSE \
++	src/3rdparty/chromium/third_party/markupsafe/LICENSE \
++	src/3rdparty/chromium/third_party/ply/license.patch \
++	src/3rdparty/chromium/third_party/ply/LICENSE \
++	src/3rdparty/chromium/third_party/khronos/LICENSE \
++	src/3rdparty/chromium/third_party/sfntly/COPYING.txt \
++	src/3rdparty/chromium/third_party/sfntly/src/cpp/COPYING.txt \
++	src/3rdparty/chromium/third_party/sfntly/src/java/COPYING \
++	src/3rdparty/chromium/third_party/ots/LICENSE \
++	src/3rdparty/chromium/third_party/libXNVCtrl/LICENSE \
++	src/3rdparty/chromium/third_party/brotli/LICENSE \
++	src/3rdparty/chromium/third_party/icu/license.html \
++	src/3rdparty/chromium/third_party/icu/LICENSE \
++	src/3rdparty/chromium/third_party/custom_tabs_client/LICENSE \
++	src/3rdparty/chromium/third_party/motemplate/LICENSE \
++	src/3rdparty/chromium/third_party/apple_apsl/LICENSE \
++	src/3rdparty/chromium/third_party/angle/LICENSE \
++	src/3rdparty/chromium/third_party/angle/src/third_party/murmurhash/LICENSE \
++	src/3rdparty/chromium/third_party/angle/src/third_party/compiler/LICENSE \
++	src/3rdparty/chromium/third_party/npapi/LICENSE \
++	src/3rdparty/chromium/third_party/sudden_motion_sensor/LICENSE \
++	src/3rdparty/chromium/third_party/libjpeg/LICENSE \
++	src/3rdparty/chromium/third_party/ub-uiautomator/LICENSE \
++	src/3rdparty/chromium/third_party/woff2/LICENSE \
++	src/3rdparty/chromium/third_party/appurify-python/LICENSE \
++	src/3rdparty/chromium/third_party/tcmalloc/vendor/COPYING \
++	src/3rdparty/chromium/third_party/tcmalloc/LICENSE \
++	src/3rdparty/chromium/third_party/jstemplate/COPYING \
++	src/3rdparty/chromium/third_party/dom_distiller_js/LICENSE \
++	src/3rdparty/chromium/third_party/mocha/LICENSE \
++	src/3rdparty/chromium/third_party/x86inc/LICENSE \
++	src/3rdparty/chromium/third_party/checkstyle/LICENSE.apache20 \
++	src/3rdparty/chromium/third_party/checkstyle/LICENSE \
++	src/3rdparty/chromium/third_party/ffmpeg/COPYING.LGPLv3 \
++	src/3rdparty/chromium/third_party/ffmpeg/COPYING.GPLv3 \
++	src/3rdparty/chromium/third_party/ffmpeg/chromium/scripts/license_texts/full_lgpl.txt \
++	src/3rdparty/chromium/third_party/ffmpeg/chromium/scripts/license_texts/jpeg.txt \
++	src/3rdparty/chromium/third_party/ffmpeg/chromium/scripts/license_texts/mips.txt \
++	src/3rdparty/chromium/third_party/ffmpeg/chromium/scripts/license_texts/oggparse_ahlberg_rullgayrd_2005.txt \
++	src/3rdparty/chromium/third_party/ffmpeg/COPYING.GPLv2 \
++	src/3rdparty/chromium/third_party/ffmpeg/COPYING.LGPLv2.1 \
++	src/3rdparty/chromium/third_party/ffmpeg/LICENSE.md \
++	src/3rdparty/chromium/third_party/flac/COPYING.Xiph \
++	src/3rdparty/chromium/third_party/flac/COPYING.GPL \
++	src/3rdparty/chromium/third_party/flac/COPYING.LGPL \
++	src/3rdparty/chromium/third_party/flac/COPYING.FDL \
++	src/3rdparty/chromium/third_party/pymock/LICENSE.txt \
++	src/3rdparty/chromium/third_party/sqlite/sqlite-src-3080704/autoconf/tea/license.terms \
++	src/3rdparty/chromium/third_party/sqlite/LICENSE \
++	src/3rdparty/chromium/third_party/sqlite/src/autoconf/tea/license.terms \
++	src/3rdparty/chromium/third_party/xdg-utils/LICENSE \
++	src/3rdparty/chromium/third_party/mockito/LICENSE \
++	src/3rdparty/chromium/third_party/simplejson/LICENSE.txt \
++	src/3rdparty/chromium/third_party/py_trace_event/src/LICENSE \
++	src/3rdparty/chromium/third_party/pyftpdlib/src/LICENSE \
++	src/3rdparty/chromium/third_party/libudev/LICENSE \
++	src/3rdparty/chromium/third_party/libyuv/LICENSE_THIRD_PARTY \
++	src/3rdparty/chromium/third_party/libyuv/third_party/gflags/LICENSE \
++	src/3rdparty/chromium/third_party/libyuv/LICENSE \
++	src/3rdparty/chromium/third_party/mojo/LICENSE \
++	src/3rdparty/chromium/third_party/leveldatabase/src/LICENSE \
++	src/3rdparty/chromium/third_party/chaijs/LICENSE \
++	src/3rdparty/chromium/third_party/web-animations-js/sources/COPYING \
++	src/3rdparty/chromium/third_party/web-animations-js/LICENSE \
++	src/3rdparty/chromium/third_party/mozilla/LICENSE \
++	src/3rdparty/chromium/third_party/libjingle/source/talk/LICENSE_THIRD_PARTY \
++	src/3rdparty/chromium/third_party/libjingle/source/talk/COPYING \
++	src/3rdparty/chromium/LICENSE.chromium_os \
++	src/3rdparty/chromium/net/third_party/mozilla_security_manager/LICENSE \
++	src/3rdparty/chromium/net/third_party/nss/LICENSE \
++	src/3rdparty/chromium/crypto/third_party/nss/LICENSE \
++	src/3rdparty/chromium/chrome/third_party/chromevox/third_party/closure-library/LICENSE \
++	src/3rdparty/chromium/chrome/third_party/chromevox/LICENSE \
++	src/3rdparty/chromium/LICENSE \
++	src/3rdparty/chromium/mojo/public/LICENSE \
++	src/3rdparty/chromium/buildtools/LICENSE \
++	src/3rdparty/ninja/COPYING
+diff --git a/package/qt5/qt5webengine/qt5webengine.mk b/package/qt5/qt5webengine/qt5webengine.mk
+index 4d423f8329..0efc34cc18 100644
+--- a/package/qt5/qt5webengine/qt5webengine.mk
++++ b/package/qt5/qt5webengine/qt5webengine.mk
+@@ -12,7 +12,11 @@ QT5WEBENGINE_DEPENDENCIES = ffmpeg libglib2 libvpx opus webp qt5base \
+ 	host-pkgconf host-python
+ QT5WEBENGINE_INSTALL_STAGING = YES
+ 
+-include package/qt5/qt5webengine/chromium.inc
++ifeq ($(BR2_PACKAGE_QT5_VERSION_LATEST),y)
++include package/qt5/qt5webengine/chromium-latest.inc
++else
++include package/qt5/qt5webengine/chromium-lts.inc
++endif
+ QT5WEBENGINE_LICENSE = GPL-2.0 or LGPL-3.0 or GPL-3.0 or GPL-3.0 with exception
+ QT5WEBENGINE_LICENSE_FILES = LICENSE.GPL2 LICENSE.GPL3 LICENSE.GPL3-EXCEPT \
+ 	LICENSE.GPLv3 LICENSE.LGPL3 $(CHROMIUM_LICENSE_FILES)
+diff --git a/package/screen/0010-comm-h-now-depends-on-term-h.patch b/package/screen/0010-comm-h-now-depends-on-term-h.patch
+new file mode 100644
+index 0000000000..6ff6f3da0b
+--- /dev/null
++++ b/package/screen/0010-comm-h-now-depends-on-term-h.patch
+@@ -0,0 +1,28 @@
++From 39c5f1c76f1fcef4b5958bf828a63f53426b6984 Mon Sep 17 00:00:00 2001
++From: Mike Gerwitz <mike@mikegerwitz.com>
++Date: Tue, 24 Dec 2013 22:16:31 -0500
++Subject: comm.h now depends on term.h
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Patch retrieved and updated from:
++http://git.savannah.gnu.org/cgit/screen.git/commit/?id=39c5f1c]
++---
++ src/Makefile.in | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/Makefile.in b/Makefile.in
++index e791e79..d4f7c0b 100644
++--- a/Makefile.in
+++++ b/Makefile.in
++@@ -113,7 +113,7 @@ term.h: term.c term.sh
++ 
++ kmapdef.c: term.h
++ 
++-comm.h: comm.c comm.sh config.h
+++comm.h: comm.c comm.sh config.h term.h
++ 	AWK=$(AWK) CC="$(CC) $(CFLAGS)" srcdir=${srcdir} sh $(srcdir)/comm.sh
++ 
++ docs:
++-- 
++cgit v1.0-41-gc330
++
+diff --git a/package/screen/0011-comm.h-needed-for-list_-display-generic-.o.patch b/package/screen/0011-comm.h-needed-for-list_-display-generic-.o.patch
+new file mode 100644
+index 0000000000..f406a1afac
+--- /dev/null
++++ b/package/screen/0011-comm.h-needed-for-list_-display-generic-.o.patch
+@@ -0,0 +1,35 @@
++From b719314d201a3e9e1e57c65746a468c47bfc847f Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Wed, 3 Oct 2018 22:29:32 +0200
++Subject: [PATCH] comm.h needed for list_{display,generic}.o
++
++comm.h is needed to build list_display.o and list_generic.o otherwise
++parallel builds will sometimes fail
++
++Fixes:
++ - http://autobuild.buildroot.org/results/43105f14857dbe72d8878fc7b3db67f7bdca93cc
++ - http://autobuild.buildroot.org/results/47f4ecbec1355285633df287fc9c4e7cccde9378
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Upstream status: https://savannah.gnu.org/bugs/index.php?54776]
++---
++ Makefile.in | 4 ++--
++ 1 file changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/Makefile.in b/Makefile.in
++index af5938b..e6d5247 100644
++--- a/Makefile.in
+++++ b/Makefile.in
++@@ -265,7 +265,7 @@  braille.h
++ viewport.o: layout.h viewport.h canvas.h viewport.c config.h screen.h os.h osdef.h ansi.h acls.h \
++  comm.h layer.h term.h image.h display.h window.h extern.h \
++  braille.h
++-list_generic.o: list_generic.h list_generic.c layer.h screen.h osdef.h
++-list_display.o: list_generic.h list_display.c layer.h screen.h osdef.h
+++list_generic.o: list_generic.h list_generic.c layer.h screen.h osdef.h comm.h
+++list_display.o: list_generic.h list_display.c layer.h screen.h osdef.h comm.h
++ list_window.o: list_generic.h list_window.c window.h layer.h screen.h osdef.h comm.h
++ 
++-- 
++2.17.1
++
+diff --git a/package/sdl2/0001-Fixed-the-DirectFB-renderer-not-being-enabled-in-aut.patch b/package/sdl2/0001-Fixed-the-DirectFB-renderer-not-being-enabled-in-aut.patch
+new file mode 100644
+index 0000000000..53926c03b5
+--- /dev/null
++++ b/package/sdl2/0001-Fixed-the-DirectFB-renderer-not-being-enabled-in-aut.patch
+@@ -0,0 +1,42 @@
++From a0acea5bcce3f47badbfeeab7bc2e36eba08fd84 Mon Sep 17 00:00:00 2001
++From: Sam Lantinga <slouken@libsdl.org>
++Date: Mon, 27 Aug 2018 11:51:05 -0700
++Subject: [PATCH] Fixed the DirectFB renderer not being enabled in autoconf
++ builds
++
++Upstream-url: https://hg.libsdl.org/SDL/raw-rev/751cdc74d55c
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ configure    | 3 +++
++ configure.in | 1 +
++ 2 files changed, 4 insertions(+)
++
++diff --git a/configure b/configure
++index e88b38001..40ac14d21 100755
++--- a/configure
+++++ b/configure
++@@ -21501,6 +21501,9 @@ fi
++ 
++ $as_echo "#define SDL_VIDEO_DRIVER_DIRECTFB 1" >>confdefs.h
++ 
+++
+++$as_echo "#define SDL_VIDEO_RENDER_DIRECTFB 1" >>confdefs.h
+++
++             SOURCES="$SOURCES $srcdir/src/video/directfb/*.c"
++             EXTRA_CFLAGS="$EXTRA_CFLAGS $DIRECTFB_CFLAGS"
++ 
++diff --git a/configure.in b/configure.in
++index 5bf5d717b..ce1d57ea1 100644
++--- a/configure.in
+++++ b/configure.in
++@@ -2163,6 +2163,7 @@ AC_HELP_STRING([--enable-directfb-shared], [dynamically load directfb support [[
++                               , enable_directfb_shared=yes)
++ 
++             AC_DEFINE(SDL_VIDEO_DRIVER_DIRECTFB, 1, [ ])
+++            AC_DEFINE(SDL_VIDEO_RENDER_DIRECTFB, 1, [ ])
++             SOURCES="$SOURCES $srcdir/src/video/directfb/*.c"
++             EXTRA_CFLAGS="$EXTRA_CFLAGS $DIRECTFB_CFLAGS"
++ 
++-- 
++2.11.0
++
+diff --git a/package/shairport-sync/0002-Include-a-definition-of-HAVE_LIBSOXR-with-using-pkg_config.patch b/package/shairport-sync/0002-Include-a-definition-of-HAVE_LIBSOXR-with-using-pkg_config.patch
+new file mode 100644
+index 0000000000..66ce961ab1
+--- /dev/null
++++ b/package/shairport-sync/0002-Include-a-definition-of-HAVE_LIBSOXR-with-using-pkg_config.patch
+@@ -0,0 +1,35 @@
++From cd6a99a7cfde1c5e1c1cc74ee6a77041bb4012d9 Mon Sep 17 00:00:00 2001
++From: Mike Brady <mikebrady@eircom.net>
++Date: Sat, 8 Sep 2018 15:06:18 +0100
++Subject: [PATCH] Include a definition of HAVE_LIBSOXR with using pkg_config
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++Commit e047dee241fe0660d92311a124757065c6c4c93d adds an upstream patch
++to fix a build issue with soxr.  The patch also adds detecting soxr
++using pkg-config. Upstream detected a config issue [1], where the
++resulting binary lacks soxr support, although libsoxr was correctly
++detected.
++
++Backported from: cd6a99a7cfde1c5e1c1cc74ee6a77041bb4012d9
++
++Signed-off-by: Jörg Krause <joerg.krause@embedded.rocks>
++---
++ configure.ac | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/configure.ac b/configure.ac
++index ceec4af..690a774 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -180,6 +180,7 @@ AC_ARG_WITH(soxr, [  --with-soxr = choose libsoxr for high-quality interpolation
++     PKG_CHECK_MODULES(
++         [SOXR], [soxr],
++         [LIBS="${SOXR_LIBS} ${LIBS}"])
+++    AC_DEFINE([HAVE_LIBSOXR],[1],[Define to 1 if you are including support for soxr interpolation])
++   else
++     AC_CHECK_LIB([avutil],[av_get_cpu_flags])
++     if  test "x${ac_cv_lib_avutil_av_get_cpu_flags}" = xyes ; then
++-- 
++2.18.0
+diff --git a/package/squashfs/0001-include-sysmacros.patch b/package/squashfs/0001-include-sysmacros.patch
+new file mode 100644
+index 0000000000..d794836c04
+--- /dev/null
++++ b/package/squashfs/0001-include-sysmacros.patch
+@@ -0,0 +1,47 @@
++From 968aa53dd6d2c0831a9af01873441767c06b88d0 Mon Sep 17 00:00:00 2001
++From: Thomas De Schampheleire <thomas.de_schampheleire@nokia.com>
++Date: Wed, 1 Aug 2018 12:17:10 +0200
++Subject: [PATCH] mksquashfs/unsquashfs: fix compilation with glibc 2.25+
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++From glibc 2.25 release notes:
++https://sourceware.org/ml/libc-alpha/2017-02/msg00079.html
++"* The inclusion of <sys/sysmacros.h> by <sys/types.h> is deprecated.
++  This means that in a future release, the macros “major”, “minor”, and
++  “makedev” will only be available from <sys/sysmacros.h>."
++
++See glibc bug https://sourceware.org/bugzilla/show_bug.cgi?id=19239 .
++
++Fetch from: https://github.com/plougher/squashfs-tools/pull/52.patch
++Signed-off-by: Richard Kunze <richard.kunze@web.de>
++---
++ squashfs-tools/mksquashfs.c | 1 +
++ squashfs-tools/unsquashfs.c | 1 +
++ 2 files changed, 2 insertions(+)
++
++diff --git a/squashfs-tools/mksquashfs.c b/squashfs-tools/mksquashfs.c
++index d696a51..8d57c3e 100644
++--- a/squashfs-tools/mksquashfs.c
+++++ b/squashfs-tools/mksquashfs.c
++@@ -35,6 +35,7 @@
++ #include <stddef.h>
++ #include <sys/types.h>
++ #include <sys/stat.h>
+++#include <sys/sysmacros.h>
++ #include <fcntl.h>
++ #include <errno.h>
++ #include <dirent.h>
++diff --git a/squashfs-tools/unsquashfs.c b/squashfs-tools/unsquashfs.c
++index a57f85c..a492b27 100644
++--- a/squashfs-tools/unsquashfs.c
+++++ b/squashfs-tools/unsquashfs.c
++@@ -33,6 +33,7 @@
++ #include "fnmatch_compat.h"
++ 
++ #include <sys/sysinfo.h>
+++#include <sys/sysmacros.h>
++ #include <sys/types.h>
++ #include <sys/time.h>
++ #include <sys/resource.h>
+diff --git a/package/squashfs/0001-musl.patch b/package/squashfs/0001-musl.patch
+deleted file mode 100644
+index 891b1717a2..0000000000
+--- a/package/squashfs/0001-musl.patch
++++ /dev/null
+@@ -1,71 +0,0 @@
+-Fix musl build
+-
+-Downloaded from
+-http://cgit.openembedded.org/openembedded-core/tree/meta/recipes-devtools/squashfs-tools/squashfs-tools/fix-compat.patch
+-and adjusted paths.
+-
+-Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+-
+-Define FNM_EXTMATCH if not defined its glibc specific define
+-include missing sys/stat.h for stat* function declarations
+-
+-Upstream-Status: Pending
+-Signed-off-by: Khem Raj <raj.khem@gmail.com>
+-
+-Index: squashfs-tools/action.c
+-===================================================================
+---- a/squashfs-tools.orig/action.c
+-+++ b/squashfs-tools/action.c
+-@@ -44,6 +44,10 @@
+- #include "action.h"
+- #include "error.h"
+- 
+-+#if !defined(FNM_EXTMATCH)
+-+#define FNM_EXTMATCH 0
+-+#endif
+-+
+- /*
+-  * code to parse actions
+-  */
+-Index: squashfs-tools/mksquashfs.c
+-===================================================================
+---- a/squashfs-tools.orig/mksquashfs.c
+-+++ b/squashfs-tools/mksquashfs.c
+-@@ -1286,6 +1286,10 @@ void write_dir(squashfs_inode *inode, st
+- 		dir_size + 3, directory_block, directory_offset, NULL, NULL,
+- 		dir, 0);
+- 
+-+#if !defined(FNM_EXTMATCH)
+-+#define FNM_EXTMATCH 0
+-+#endif
+-+
+- #ifdef SQUASHFS_TRACE
+- 	{
+- 		unsigned char *dirp;
+-Index: squashfs-tools/pseudo.c
+-===================================================================
+---- a/squashfs-tools.orig/pseudo.c
+-+++ b/squashfs-tools/pseudo.c
+-@@ -32,6 +32,7 @@
+- #include <stdlib.h>
+- #include <sys/types.h>
+- #include <sys/wait.h>
+-+#include <sys/stat.h>
+- #include <ctype.h>
+- 
+- #include "pseudo.h"
+-Index: squashfs-tools/unsquashfs.c
+-===================================================================
+---- a/squashfs-tools.orig/unsquashfs.c
+-+++ b/squashfs-tools/unsquashfs.c
+-@@ -38,6 +38,10 @@
+- #include <limits.h>
+- #include <ctype.h>
+- 
+-+#ifndef FNM_EXTMATCH
+-+#define FNM_EXTMATCH 0
+-+#endif
+-+
+- struct cache *fragment_cache, *data_cache;
+- struct queue *to_reader, *to_inflate, *to_writer, *from_writer;
+- pthread_t *thread, *inflator_thread;
+diff --git a/package/squashfs/squashfs.hash b/package/squashfs/squashfs.hash
+index 74fdb44354..4464e62c02 100644
+--- a/package/squashfs/squashfs.hash
++++ b/package/squashfs/squashfs.hash
+@@ -1,2 +1,5 @@
+ # Locally computed
+-sha256	2c49392816615b73bf5d6cdce9776cb66a01f5a1494b1d9af580667e32bab001  squashfs-3de1687d7432ea9b302c2db9521996f506c140a3.tar.gz
++sha256 bd0aa3011320b8ebee68aa406060de277bef16daf81bad5b9f70cbea6db1a779 squashfs-e38956b92f738518c29734399629e7cdb33072d3.tar.gz
++
++# License files
++sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643 COPYING
+diff --git a/package/squashfs/squashfs.mk b/package/squashfs/squashfs.mk
+index 9599d892b2..e656218f97 100644
+--- a/package/squashfs/squashfs.mk
++++ b/package/squashfs/squashfs.mk
+@@ -4,12 +4,12 @@
+ #
+ ################################################################################
+ 
+-SQUASHFS_VERSION = 3de1687d7432ea9b302c2db9521996f506c140a3
++SQUASHFS_VERSION = e38956b92f738518c29734399629e7cdb33072d3
+ SQUASHFS_SITE = https://git.kernel.org/pub/scm/fs/squashfs/squashfs-tools.git
+ SQUASHFS_SITE_METHOD = git
+ SQUASHFS_LICENSE = GPL-2.0+
+ SQUASHFS_LICENSE_FILES = COPYING
+-SQUASHFS_MAKE_ARGS = XATTR_SUPPORT=1
++SQUASHFS_MAKE_ARGS = XATTR_SUPPORT=1 ZSTD_SUPPORT=0
+ 
+ ifeq ($(BR2_PACKAGE_SQUASHFS_LZ4),y)
+ SQUASHFS_DEPENDENCIES += lz4
+@@ -54,7 +54,8 @@ HOST_SQUASHFS_MAKE_ARGS = \
+ 	GZIP_SUPPORT=1 \
+ 	LZ4_SUPPORT=1 \
+ 	LZO_SUPPORT=1 \
+-	LZMA_XZ_SUPPORT=1
++	LZMA_XZ_SUPPORT=1 \
++	ZSTD_SUPPORT=0
+ 
+ define SQUASHFS_BUILD_CMDS
+ 	$(TARGET_MAKE_ENV) $(MAKE) \
+diff --git a/package/strongswan/0001-af_alg-fix-crypt-definition-conflict.patch b/package/strongswan/0001-af_alg-fix-crypt-definition-conflict.patch
+deleted file mode 100644
+index 442e53eb9e..0000000000
+--- a/package/strongswan/0001-af_alg-fix-crypt-definition-conflict.patch
++++ /dev/null
+@@ -1,55 +0,0 @@
+-From 0b906cb025a506be1b73e5b485179585d1a90be2 Mon Sep 17 00:00:00 2001
+-From: Baruch Siach <baruch@tkos.co.il>
+-Date: Thu, 11 May 2017 14:04:47 +0300
+-Subject: [PATCH] af_alg: fix crypt() definition conflict
+-
+-Rename the crypt() method to avoid conflict with POSIX crypt(). Fixes the
+-following build failure with musl libc:
+-
+-In file included from ../../../../src/libstrongswan/utils/utils.h:53:0,
+-                 from ../../../../src/libstrongswan/library.h:101,
+-                 from af_alg_ops.h:24,
+-                 from af_alg_ops.c:16:
+-af_alg_ops.c:110:22: error: conflicting types for 'crypt'
+- METHOD(af_alg_ops_t, crypt, bool,
+-                      ^
+-../../../../src/libstrongswan/utils/utils/object.h:99:13: note: in definition of macro 'METHOD'
+-  static ret name(union {iface *_public; this;} \
+-             ^
+-In file included from af_alg_ops.c:18:0:
+-.../host/usr/x86_64-buildroot-linux-musl/sysroot/usr/include/unistd.h:144:7: note: previous declaration of 'crypt' was here
+- char *crypt(const char *, const char *);
+-       ^
+-
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: https://github.com/strongswan/strongswan/pull/72
+-
+- src/libstrongswan/plugins/af_alg/af_alg_ops.c | 4 ++--
+- 1 file changed, 2 insertions(+), 2 deletions(-)
+-
+-diff --git a/src/libstrongswan/plugins/af_alg/af_alg_ops.c b/src/libstrongswan/plugins/af_alg/af_alg_ops.c
+-index 331d1e8010aa..452cd1ac30c9 100644
+---- a/src/libstrongswan/plugins/af_alg/af_alg_ops.c
+-+++ b/src/libstrongswan/plugins/af_alg/af_alg_ops.c
+-@@ -107,7 +107,7 @@ METHOD(af_alg_ops_t, hash, bool,
+- 	return TRUE;
+- }
+- 
+--METHOD(af_alg_ops_t, crypt, bool,
+-+METHOD(af_alg_ops_t, crypt_, bool,
+- 	private_af_alg_ops_t *this, u_int32_t type, chunk_t iv, chunk_t data,
+- 	char *out)
+- {
+-@@ -224,7 +224,7 @@ af_alg_ops_t *af_alg_ops_create(char *type, char *alg)
+- 		.public = {
+- 			.hash = _hash,
+- 			.reset = _reset,
+--			.crypt = _crypt,
+-+			.crypt = _crypt_,
+- 			.set_key = _set_key,
+- 			.destroy = _destroy,
+- 		},
+--- 
+-2.11.0
+-
+diff --git a/package/strongswan/0002-strongswan-add-missing-include-of-stdint.h.patch b/package/strongswan/0002-strongswan-add-missing-include-of-stdint.h.patch
+deleted file mode 100644
+index d5ca690b2d..0000000000
+--- a/package/strongswan/0002-strongswan-add-missing-include-of-stdint.h.patch
++++ /dev/null
+@@ -1,32 +0,0 @@
+-From a8fd708ce89d5ffb64a5e8873d49a55094dde898 Mon Sep 17 00:00:00 2001
+-From: Matt Weber <matthew.weber@rockwellcollins.com>
+-Date: Mon, 2 Oct 2017 10:16:36 -0500
+-Subject: [PATCH] strongswan: add missing include of stdint.h
+-
+-Recent releases of glibc don't include the full stdint.h
+-header in some network headers included by utils.h.
+-Upstream is targetting a 5.6.1 release of the fix.
+-
+-Ustream: https://wiki.strongswan.org/issues/2425
+-
+-Signed-off-by: Matthew Weber <matthew.weber@rockwellcollins.com>
+----
+- src/libstrongswan/utils/utils/memory.h | 2 ++
+- 1 file changed, 2 insertions(+)
+-
+-diff --git a/src/libstrongswan/utils/utils/memory.h b/src/libstrongswan/utils/utils/memory.h
+-index aef318f..c11624d 100644
+---- a/src/libstrongswan/utils/utils/memory.h
+-+++ b/src/libstrongswan/utils/utils/memory.h
+-@@ -14,6 +14,8 @@
+-  * for more details.
+-  */
+- 
+-+#include <stdint.h> /* for uintptr_t */
+-+
+- /**
+-  * @defgroup memory_i memory
+-  * @{ @ingroup utils_i
+--- 
+-1.9.1
+-
+diff --git a/package/strongswan/strongswan.hash b/package/strongswan/strongswan.hash
+index 820c712843..4d1a593a5c 100644
+--- a/package/strongswan/strongswan.hash
++++ b/package/strongswan/strongswan.hash
+@@ -1,10 +1,9 @@
+-# From http://download.strongswan.org/strongswan-5.4.0.tar.bz2.md5
+-md5	9d7c77b0da9b69f859624897e5e9ebbf	strongswan-5.4.0.tar.bz2
++# From http://download.strongswan.org/strongswan-5.6.3.tar.bz2.md5
++md5	a6a28eeb22aa58080a7581771a5b63f9	strongswan-5.6.3.tar.bz2
+ # Calculated based on the hash above
+-sha256	f8288faaea6a9cd8a7d413c0b76b7922be5da3dfcd01fd05cb30d2c55d3bbe89	strongswan-5.4.0.tar.bz2
++sha256	c3c7dc8201f40625bba92ffd32eb602a8909210d8b3fac4d214c737ce079bf24	strongswan-5.6.3.tar.bz2
+ # Locally calculated
+-sha256	f5ba7f46cf7ae81dd81bc86f9e4cfa0c5c7c6987149b3bc9c0b8bf08598a1063  strongswan-4.4.0-5.5.2_gmp_mpz_powm_sec.patch
+-sha256	03db8c7a4133e877e8992e155c046dd27ec4810d50f239abf55595f0280caf31  strongswan-5.0.0-5.5.2_asn1_choice.patch
+-sha256	c80e02c9a5eeaf10f0a8bdde3be6375dd2833e515af03dad3a700e93c4fd041a  strongswan-4.4.0-5.5.3_gmp_mpz_export.patch
++sha256	e66c243593ee0713f5fd13bcd7f624bc50eebc54bf87f790ced429ff698077e7  strongswan-5.6.1-5.6.3_gmp-pkcs1-verify.patch
++sha256	415d104717cb0781770e9077d00b3df310b11e65e4b9c1d35b62fbba04549263  strongswan-4.4.0-5.7.0_gmp-pkcs1-overflow.patch
+ sha256	8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  COPYING
+ sha256	2292e21797754548dccdef9eef6aee7584e552fbd890fa914e1de8d3577d23f0  LICENSE
+diff --git a/package/strongswan/strongswan.mk b/package/strongswan/strongswan.mk
+index 65618af33b..30693de7cb 100644
+--- a/package/strongswan/strongswan.mk
++++ b/package/strongswan/strongswan.mk
+@@ -4,13 +4,12 @@
+ #
+ ################################################################################
+ 
+-STRONGSWAN_VERSION = 5.4.0
++STRONGSWAN_VERSION = 5.6.3
+ STRONGSWAN_SOURCE = strongswan-$(STRONGSWAN_VERSION).tar.bz2
+ STRONGSWAN_SITE = http://download.strongswan.org
+ STRONGSWAN_PATCH = \
+-	$(STRONGSWAN_SITE)/patches/21_gmp_mpz_powm_sec_patch/strongswan-4.4.0-5.5.2_gmp_mpz_powm_sec.patch \
+-	$(STRONGSWAN_SITE)/patches/22_asn1_choice_patch/strongswan-5.0.0-5.5.2_asn1_choice.patch \
+-	$(STRONGSWAN_SITE)/patches/23_gmp_mpz_export_patch/strongswan-4.4.0-5.5.3_gmp_mpz_export.patch
++	$(STRONGSWAN_SITE)/patches/27_gmp_pkcs1_verify_patch/strongswan-5.6.1-5.6.3_gmp-pkcs1-verify.patch \
++	$(STRONGSWAN_SITE)/patches/28_gmp_pkcs1_overflow_patch/strongswan-4.4.0-5.7.0_gmp-pkcs1-overflow.patch
+ STRONGSWAN_LICENSE = GPL-2.0+
+ STRONGSWAN_LICENSE_FILES = COPYING LICENSE
+ STRONGSWAN_DEPENDENCIES = host-pkgconf
+diff --git a/package/vboot-utils/0005-include-sys-sysmacros.h-for-major.patch b/package/vboot-utils/0005-include-sys-sysmacros.h-for-major.patch
+new file mode 100644
+index 0000000000..5d76428eb6
+--- /dev/null
++++ b/package/vboot-utils/0005-include-sys-sysmacros.h-for-major.patch
+@@ -0,0 +1,51 @@
++From 435fbcee218b37a87368e2b22fa33366875d458c Mon Sep 17 00:00:00 2001
++From: Mike Frysinger <vapier@chromium.org>
++Date: Tue, 19 Apr 2016 13:58:49 -0400
++Subject: [PATCH] include sys/sysmacros.h for major()
++
++The major() func is defined in the sys/sysmacros.h header, so include it
++explicitly for the prototype.  Upstream C libs are moving away from having
++sys/types.h include it all the time implicitly.
++
++BUG=None
++TEST=precq passes
++BRANCH=None
++
++Change-Id: I56b84138f08ded2376193403f9c9db22c5f24f71
++Reviewed-on: https://chromium-review.googlesource.com/339680
++Commit-Ready: Mike Frysinger <vapier@chromium.org>
++Tested-by: Mike Frysinger <vapier@chromium.org>
++Reviewed-by: Bill Richardson <wfrichar@google.com>
++Signed-off-by: Giulio Benetti <giulio.benetti@micronovasrl.com>
++---
++ cgpt/cgpt_wrapper.c               | 1 +
++ futility/dump_kernel_config_lib.c | 1 +
++ 2 files changed, 2 insertions(+)
++
++diff --git a/cgpt/cgpt_wrapper.c b/cgpt/cgpt_wrapper.c
++index dcfaab9c..1716cdde 100644
++--- a/cgpt/cgpt_wrapper.c
+++++ b/cgpt/cgpt_wrapper.c
++@@ -18,6 +18,7 @@
++ #include <stdio.h>
++ #include <string.h>
++ #include <sys/stat.h>
+++#include <sys/sysmacros.h>
++ #include <sys/types.h>
++ #include <unistd.h>
++ 
++diff --git a/futility/dump_kernel_config_lib.c b/futility/dump_kernel_config_lib.c
++index 4fe990c3..abf37ae1 100644
++--- a/futility/dump_kernel_config_lib.c
+++++ b/futility/dump_kernel_config_lib.c
++@@ -10,6 +10,7 @@
++ #include <string.h>
++ #include <sys/mman.h>
++ #include <sys/stat.h>
+++#include <sys/sysmacros.h>
++ #include <sys/types.h>
++ #include <unistd.h>
++ 
++-- 
++2.17.1
++
+diff --git a/package/webkitgtk/0001-ARM-Building-FELightingNEON.cpp-fails-due-to-missing.patch b/package/webkitgtk/0001-ARM-Building-FELightingNEON.cpp-fails-due-to-missing.patch
+new file mode 100644
+index 0000000000..6fb309d9fb
+--- /dev/null
++++ b/package/webkitgtk/0001-ARM-Building-FELightingNEON.cpp-fails-due-to-missing.patch
+@@ -0,0 +1,41 @@
++From b252c7aed3fa6f22db8a26c3ab0bfe66e3490eef Mon Sep 17 00:00:00 2001
++From: Adrian Perez de Castro <aperez@igalia.com>
++Date: Sun, 23 Sep 2018 02:34:26 +0300
++Subject: [PATCH xserver] [ARM] Building FELightingNEON.cpp fails due to
++ missing lightVector member https://bugs.webkit.org/show_bug.cgi?id=189890
++
++Reviewed by NOBODY (OOPS!).
++
++No new tests needed.
++
++* platform/graphics/cpu/arm/filters/FELightingNEON.h:
++(WebCore::FELighting::platformApplyNeon): Adapt to new layout of "struct PaintingData" after r225122.
++---
++ Source/WebCore/ChangeLog                             | 12 ++++++++++++
++ .../graphics/cpu/arm/filters/FELightingNEON.h        |  6 +++---
++ 2 files changed, 15 insertions(+), 3 deletions(-)
++
++Fetch from: https://bugs.webkit.org/show_bug.cgi?id=189890
++Upstream-Status: Pending
++Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
++
++diff --git a/Source/WebCore/platform/graphics/cpu/arm/filters/FELightingNEON.h b/Source/WebCore/platform/graphics/cpu/arm/filters/FELightingNEON.h
++index 42af922374b..b542a4c81aa 100644
++--- a/Source/WebCore/platform/graphics/cpu/arm/filters/FELightingNEON.h
+++++ b/Source/WebCore/platform/graphics/cpu/arm/filters/FELightingNEON.h
++@@ -144,9 +144,9 @@ inline void FELighting::platformApplyNeon(const LightingData& data, const LightS
++             neonData.flags |= FLAG_CONE_EXPONENT_IS_1;
++     } else {
++         ASSERT(m_lightSource->type() == LS_DISTANT);
++-        floatArguments.lightX = paintingData.lightVector.x();
++-        floatArguments.lightY = paintingData.lightVector.y();
++-        floatArguments.lightZ = paintingData.lightVector.z();
+++        floatArguments.lightX = paintingData.initialLightingData.lightVector.x();
+++        floatArguments.lightY = paintingData.initialLightingData.lightVector.y();
+++        floatArguments.lightZ = paintingData.initialLightingData.lightVector.z();
++         floatArguments.padding2 = 1;
++     }
++ 
++-- 
++2.19.0
++
+diff --git a/package/webkitgtk/Config.in b/package/webkitgtk/Config.in
+index 31794ed2a4..96a7ab0c94 100644
+--- a/package/webkitgtk/Config.in
++++ b/package/webkitgtk/Config.in
+@@ -11,19 +11,19 @@ config BR2_PACKAGE_WEBKITGTK_ARCH_SUPPORTS
+ 	depends on BR2_TOOLCHAIN_HAS_SYNC_4
+ 	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS # libgcrypt
+ 
+-comment "webkitgtk needs libgtk3 and a glibc toolchain w/ C++, gcc >= 5, host gcc >= 4.8"
++comment "webkitgtk needs libgtk3 and a glibc toolchain w/ C++, gcc >= 6, host gcc >= 4.8"
+ 	depends on BR2_PACKAGE_WEBKITGTK_ARCH_SUPPORTS
+ 	depends on !BR2_PACKAGE_LIBGTK3 || !BR2_INSTALL_LIBSTDCPP || \
+ 		!BR2_TOOLCHAIN_USES_GLIBC || \
+ 		!BR2_HOST_GCC_AT_LEAST_4_8 || \
+-		!BR2_TOOLCHAIN_GCC_AT_LEAST_5
++		!BR2_TOOLCHAIN_GCC_AT_LEAST_6
+ 	depends on BR2_USE_MMU
+ 
+ config BR2_PACKAGE_WEBKITGTK
+ 	bool "webkitgtk"
+ 	depends on BR2_INSTALL_LIBSTDCPP
+ 	depends on BR2_HOST_GCC_AT_LEAST_4_8 # icu
+-	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_5
++	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_6
+ 	depends on BR2_TOOLCHAIN_USES_GLIBC
+ 	depends on BR2_PACKAGE_LIBGTK3
+ 	depends on BR2_PACKAGE_WEBKITGTK_ARCH_SUPPORTS
+@@ -41,6 +41,8 @@ config BR2_PACKAGE_WEBKITGTK
+ 	select BR2_PACKAGE_LIBXSLT
+ 	select BR2_PACKAGE_SQLITE
+ 	select BR2_PACKAGE_WEBP
++	select BR2_PACKAGE_WEBP_DEMUX
++	select BR2_PACKAGE_WOFF2
+ 	select BR2_PACKAGE_XLIB_LIBXCOMPOSITE if BR2_PACKAGE_LIBGTK3_X11
+ 	select BR2_PACKAGE_XLIB_LIBXDAMAGE if BR2_PACKAGE_LIBGTK3_X11
+ 	select BR2_PACKAGE_XLIB_LIBXRENDER if BR2_PACKAGE_LIBGTK3_X11
+@@ -67,6 +69,8 @@ comment "webkitgtk https support needs a toolchain w/ dynamic library"
+ config BR2_PACKAGE_WEBKITGTK_MULTIMEDIA
+ 	bool "multimedia support"
+ 	select BR2_PACKAGE_GSTREAMER1
++	select BR2_PACKAGE_GST1_PLUGINS_BAD
++	select BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_MPEGTSDEMUX
+ 	select BR2_PACKAGE_GST1_PLUGINS_BASE
+ 	select BR2_PACKAGE_GST1_PLUGINS_BASE_PLUGIN_ALSA
+ 	select BR2_PACKAGE_GST1_PLUGINS_BASE_PLUGIN_APP
+diff --git a/package/webkitgtk/webkitgtk.hash b/package/webkitgtk/webkitgtk.hash
+index dd2b28d372..0b9b94ca49 100644
+--- a/package/webkitgtk/webkitgtk.hash
++++ b/package/webkitgtk/webkitgtk.hash
+@@ -1,7 +1,7 @@
+-# From https://webkitgtk.org/releases/webkitgtk-2.18.6.tar.xz.sums
+-md5 c1a548595135ee75ad3bf2e18ac83112 webkitgtk-2.18.6.tar.xz
+-sha1 fb0daa85142cfe8822de518dfaa7bd5c3cdd6c23 webkitgtk-2.18.6.tar.xz
+-sha256 93912cc2f40f12e452be1ca4babdbdaac0ec4f828d441257a6b06c2963bbac3c webkitgtk-2.18.6.tar.xz
++# From https://webkitgtk.org/releases/webkitgtk-2.22.2.tar.xz.sums
++md5 207d50d313c07b03726f3a7f22643934 webkitgtk-2.22.2.tar.xz
++sha1 ff0c40e81e240aa0743f7e6483f175defebd1417 webkitgtk-2.22.2.tar.xz
++sha256 345487d4d1896e711683f951d1e09387d3b90d7cf59295c0e634af7f515e99ba webkitgtk-2.22.2.tar.xz
+ 
+ # Hashes for license files:
+ sha256 0b5d3a7cc325942567373b0ecd757d07c132e0ebd7c97bfc63f7e1a76094edb4 Source/WebCore/LICENSE-APPLE
+diff --git a/package/webkitgtk/webkitgtk.mk b/package/webkitgtk/webkitgtk.mk
+index eb39664b1e..f28417ac73 100644
+--- a/package/webkitgtk/webkitgtk.mk
++++ b/package/webkitgtk/webkitgtk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WEBKITGTK_VERSION = 2.18.6
++WEBKITGTK_VERSION = 2.22.2
+ WEBKITGTK_SITE = http://www.webkitgtk.org/releases
+ WEBKITGTK_SOURCE = webkitgtk-$(WEBKITGTK_VERSION).tar.xz
+ WEBKITGTK_INSTALL_STAGING = YES
+@@ -14,7 +14,7 @@ WEBKITGTK_LICENSE_FILES = \
+ 	Source/WebCore/LICENSE-LGPL-2.1
+ WEBKITGTK_DEPENDENCIES = host-ruby host-flex host-bison host-gperf \
+ 	enchant harfbuzz icu jpeg libgcrypt libgtk3 libsecret libsoup \
+-	libtasn1 libxml2 libxslt sqlite webp
++	libtasn1 libxml2 libxslt sqlite webp woff2
+ WEBKITGTK_CONF_OPTS = \
+ 	-DENABLE_API_TESTS=OFF \
+ 	-DENABLE_GEOLOCATION=OFF \
+@@ -22,6 +22,7 @@ WEBKITGTK_CONF_OPTS = \
+ 	-DENABLE_INTROSPECTION=OFF \
+ 	-DENABLE_MINIBROWSER=ON \
+ 	-DENABLE_SPELLCHECK=ON \
++	-DENABLE_WOFF2=ON \
+ 	-DPORT=GTK \
+ 	-DUSE_LIBNOTIFY=OFF \
+ 	-DUSE_LIBHYPHEN=OFF
+diff --git a/package/wireguard/wireguard.hash b/package/wireguard/wireguard.hash
+index d0cd65ad4f..fe6439fbc2 100644
+--- a/package/wireguard/wireguard.hash
++++ b/package/wireguard/wireguard.hash
+@@ -1,4 +1,4 @@
+-# From https://lists.zx2c4.com/pipermail/wireguard/2018-July/003112.html
+-sha256 5e38d554f7d1e3a64e3a5319ca1a3b790c84ed89c896586c490a93ac1f953a91  WireGuard-0.0.20180708.tar.xz
++# From https://lists.zx2c4.com/pipermail/wireguard/2018-September/003395.html
++sha256 4a0488a07e40ec17e798f3e40a85cedf55f0560b1c3a8fd95806c7d4266cb0e8  WireGuard-0.0.20180925.tar.xz
+ # Locally calculated
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  COPYING
+diff --git a/package/wireguard/wireguard.mk b/package/wireguard/wireguard.mk
+index cc8ad7c4cc..faddbf93ad 100644
+--- a/package/wireguard/wireguard.mk
++++ b/package/wireguard/wireguard.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WIREGUARD_VERSION = 0.0.20180708
++WIREGUARD_VERSION = 0.0.20180925
+ WIREGUARD_SITE = https://git.zx2c4.com/WireGuard/snapshot
+ WIREGUARD_SOURCE = WireGuard-$(WIREGUARD_VERSION).tar.xz
+ WIREGUARD_LICENSE = GPL-2.0
+diff --git a/package/woff2/0001-CMake-Handle-multiple-libraries-being-returned-for-B.patch b/package/woff2/0001-CMake-Handle-multiple-libraries-being-returned-for-B.patch
+new file mode 100644
+index 0000000000..142eab2718
+--- /dev/null
++++ b/package/woff2/0001-CMake-Handle-multiple-libraries-being-returned-for-B.patch
+@@ -0,0 +1,80 @@
++From 9a6d50b3f355c1e4d72a235aa0bac4856dff1785 Mon Sep 17 00:00:00 2001
++From: Adrian Perez de Castro <aperez@igalia.com>
++Date: Tue, 27 Mar 2018 19:59:23 +0100
++Subject: [PATCH] CMake: Handle multiple libraries being returned for Brotli
++
++Brotli is built as three libraries: libbrotlienc, libbrotlidec, and
++libbrotlicommon. When requesting the linker flags using pkg-config for
++e.g. libbrotlidec, it will return both libbrotlidec and libbrotlicommon.
++The FindBrotli*.cmake files ignore the names of the libraries returned
++by pkg-config, and hardcode only the libbrotli{enc,dec} names. While
++this is fine when using shared libraries (they contain an entry for
++libbrotlicommon as required library in their headers), it will cause
++linker errors when Brotli has been built as static libraries, due to
++the missing symbols from libbrotlicommon being unknown to the linker.
++
++This fixes FindBrotli*.cmake files by using the library names reported
++by pkg-config (instead of hardcoding them), and applying find_library()
++to each of the libraries to find their absolute paths. If any of the
++libraries is missing, the corresponding BROTLI{ENC,DEC}_LIBRARIES is
++unset to let find_package_handle_standard_args() report an error.
++---
++ cmake/FindBrotliDec.cmake | 13 +++++++++----
++ cmake/FindBrotliEnc.cmake | 14 ++++++++++----
++ 2 files changed, 19 insertions(+), 8 deletions(-)
++
++Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
++Upstream-Status: Submitted [https://github.com/google/woff2/pull/112]
++
++diff --git a/cmake/FindBrotliDec.cmake b/cmake/FindBrotliDec.cmake
++index abb06f4..9cbb415 100644
++--- a/cmake/FindBrotliDec.cmake
+++++ b/cmake/FindBrotliDec.cmake
++@@ -18,10 +18,15 @@ find_path(BROTLIDEC_INCLUDE_DIRS
++     HINTS ${PC_BROTLIDEC_INCLUDEDIR}
++ )
++ 
++-find_library(BROTLIDEC_LIBRARIES
++-    NAMES brotlidec
++-    HINTS ${PC_BROTLIDEC_LIBDIR}
++-)
+++set(BROTLIDEC_LIBRARIES "")
+++foreach(_lib ${PC_BROTLIDEC_LIBRARIES})
+++	find_library(PC_BROTLIDEC_PATH_${_lib} ${_lib} HINTS ${PC_BROTLIDEC_LIBRARY_DIRS})
+++	if(NOT PC_BROTLIDEC_PATH_${_lib})
+++		unset(BROTLIDEC_LIBRARIES)
+++		break()
+++	endif()
+++	list(APPEND BROTLIDEC_LIBRARIES "${PC_BROTLIDEC_PATH_${_lib}}")
+++endforeach()
++ 
++ include(FindPackageHandleStandardArgs)
++ find_package_handle_standard_args(BrotliDec
++diff --git a/cmake/FindBrotliEnc.cmake b/cmake/FindBrotliEnc.cmake
++index 4be347d..55f3932 100644
++--- a/cmake/FindBrotliEnc.cmake
+++++ b/cmake/FindBrotliEnc.cmake
++@@ -18,10 +18,16 @@ find_path(BROTLIENC_INCLUDE_DIRS
++     HINTS ${PC_BROTLIENC_INCLUDEDIR}
++ )
++ 
++-find_library(BROTLIENC_LIBRARIES
++-    NAMES brotlienc
++-    HINTS ${PC_BROTLIENC_LIBDIR}
++-)
+++set(BROTLIENC_LIBRARIES "")
+++foreach(_lib ${PC_BROTLIENC_LIBRARIES})
+++	find_library(PC_BROTLIENC_PATH_${_lib} ${_lib}
+++		HINTS ${PC_BROTLIENC_LIBRARY_DIRS})
+++	if(NOT PC_BROTLIENC_PATH_${_lib})
+++		unset(BROTLIENC_LIBRARIES)
+++		break()
+++	endif()
+++	list(APPEND BROTLIENC_LIBRARIES "${PC_BROTLIENC_PATH_${_lib}}")
+++endforeach()
++ 
++ include(FindPackageHandleStandardArgs)
++ find_package_handle_standard_args(BrotliEnc
++-- 
++2.16.3
++
+diff --git a/package/woff2/Config.in b/package/woff2/Config.in
+new file mode 100644
+index 0000000000..48672570dd
+--- /dev/null
++++ b/package/woff2/Config.in
+@@ -0,0 +1,9 @@
++config BR2_PACKAGE_WOFF2
++	bool "woff2"
++	depends on BR2_INSTALL_LIBSTDCPP
++	select BR2_PACKAGE_BROTLI
++	help
++	  Reference implementation for the WOFF2 font file format,
++	  typically used for Web fonts
++
++	  https://github.com/google/woff2
+diff --git a/package/woff2/woff2.hash b/package/woff2/woff2.hash
+new file mode 100644
+index 0000000000..469071e3c2
+--- /dev/null
++++ b/package/woff2/woff2.hash
+@@ -0,0 +1,5 @@
++# Locally generated:
++sha512  c788bba1530aec463e755e901f9342f4b599e3a07f54645fef1dc388ab5d5c30625535e5dd38e9e792e04a640574baa50eeefb6b7338ab403755f4a4e0c3044d  v1.0.2.tar.gz
++
++# Hash for license files:
++sha512  8ee924da3fb5d16135adcf6a8fbe9e2e8f3d2d80468617e72ca4fa059a60f8455c9a5f68a8dc381b1297c8bf39c887a912d0f69246d2604ada74d3da9e8e490b  LICENSE
+diff --git a/package/woff2/woff2.mk b/package/woff2/woff2.mk
+new file mode 100644
+index 0000000000..2f0206c82b
+--- /dev/null
++++ b/package/woff2/woff2.mk
+@@ -0,0 +1,30 @@
++################################################################################
++#
++# woff2
++#
++################################################################################
++
++WOFF2_VERSION = 1.0.2
++WOFF2_SOURCE = v$(WOFF2_VERSION).tar.gz
++WOFF2_SITE = https://github.com/google/woff2/archive
++WOFF2_LICENSE = MIT
++WOFF2_LICENSE_FILES = LICENSE
++WOFF2_INSTALL_STAGING = YES
++WOFF2_DEPENDENCIES = brotli
++WOFF2_CONF_OPTS = \
++	-DNOISY_LOGGING=OFF
++
++# The CMake build files for woff2 manually set some RPATH handling options
++# which make the installation steps fail with static builds, so pass this
++# to prevent any attempt of mangling RPATH that CMake would do.
++ifneq ($(BR2_SHARED_LIBS),y)
++WOFF2_CONF_OPTS += -DCMAKE_SKIP_RPATH=ON
++endif
++
++# Internal error, aborting at dw2gencfi.c:215 in emit_expr_encoded
++# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=79509
++ifeq ($(BR2_m68k_cf),y)
++WOFF2_CONF_OPTS += -DCMAKE_CXX_FLAGS="$(TARGET_CXXFLAGS) -fno-dwarf2-cfi-asm"
++endif
++
++$(eval $(cmake-package))
+diff --git a/package/x11r7/xlib_libXfont/xlib_libXfont.mk b/package/x11r7/xlib_libXfont/xlib_libXfont.mk
+index 30163eec6f..420bbd1d50 100644
+--- a/package/x11r7/xlib_libXfont/xlib_libXfont.mk
++++ b/package/x11r7/xlib_libXfont/xlib_libXfont.mk
+@@ -9,7 +9,6 @@ XLIB_LIBXFONT_SOURCE = libXfont-$(XLIB_LIBXFONT_VERSION).tar.bz2
+ XLIB_LIBXFONT_SITE = http://xorg.freedesktop.org/releases/individual/lib
+ XLIB_LIBXFONT_LICENSE = MIT
+ XLIB_LIBXFONT_LICENSE_FILES = COPYING
+-XLIB_LIBXFONT_AUTORECONF = YES
+ XLIB_LIBXFONT_INSTALL_STAGING = YES
+ 
+ XLIB_LIBXFONT_DEPENDENCIES = freetype xlib_libfontenc xlib_xtrans xproto_fontsproto xproto_xproto xfont_encodings
+diff --git a/package/x11r7/xlib_libXft/xlib_libXft.mk b/package/x11r7/xlib_libXft/xlib_libXft.mk
+index de9b47093b..73fe6bb606 100644
+--- a/package/x11r7/xlib_libXft/xlib_libXft.mk
++++ b/package/x11r7/xlib_libXft/xlib_libXft.mk
+@@ -9,7 +9,6 @@ XLIB_LIBXFT_SOURCE = libXft-$(XLIB_LIBXFT_VERSION).tar.bz2
+ XLIB_LIBXFT_SITE = http://xorg.freedesktop.org/releases/individual/lib
+ XLIB_LIBXFT_LICENSE = MIT
+ XLIB_LIBXFT_LICENSE_FILES = COPYING
+-XLIB_LIBXFT_AUTORECONF = YES
+ XLIB_LIBXFT_INSTALL_STAGING = YES
+ XLIB_LIBXFT_DEPENDENCIES = fontconfig freetype xlib_libX11 xlib_libXext xlib_libXrender xproto_xproto
+ 
+diff --git a/package/x265/x265.mk b/package/x265/x265.mk
+index ae570e6e4c..86709e62b8 100644
+--- a/package/x265/x265.mk
++++ b/package/x265/x265.mk
+@@ -11,6 +11,7 @@ X265_LICENSE = GPL-2.0+
+ X265_LICENSE_FILES = COPYING
+ X265_SUBDIR = source
+ X265_INSTALL_STAGING = YES
++X265_MAKE = $(MAKE1)
+ 
+ ifeq ($(BR2_i386)$(BR2_x86_64),y)
+ X265_DEPENDENCIES += host-yasm
+diff --git a/package/xen/0003-memfd-fix-configure-test.patch b/package/xen/0003-memfd-fix-configure-test.patch
+deleted file mode 100644
+index 95cb49bcf7..0000000000
+--- a/package/xen/0003-memfd-fix-configure-test.patch
++++ /dev/null
+@@ -1,62 +0,0 @@
+-From 75e5b70e6b5dcc4f2219992d7cffa462aa406af0 Mon Sep 17 00:00:00 2001
+-From: Paolo Bonzini <pbonzini@redhat.com>
+-Date: Tue, 28 Nov 2017 11:51:27 +0100
+-Subject: [PATCH] memfd: fix configure test
+-MIME-Version: 1.0
+-Content-Type: text/plain; charset=UTF-8
+-Content-Transfer-Encoding: 8bit
+-
+-Recent glibc added memfd_create in sys/mman.h.  This conflicts with
+-the definition in util/memfd.c:
+-
+-    /builddir/build/BUILD/qemu-2.11.0-rc1/util/memfd.c:40:12: error: static declaration of memfd_create follows non-static declaration
+-
+-Fix the configure test, and remove the sys/memfd.h inclusion since the
+-file actually does not exist---it is a typo in the memfd_create(2) man
+-page.
+-
+-Cc: Marc-André Lureau <marcandre.lureau@redhat.com>
+-Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+-[ Changes by AF:
+- - Port the patch to the qemu-xen tree
+-]
+-Signed-off-by: Alistair Francis <alistair@alistair23.me>
+----
+-Upstream status: commit 75e5b70e6b5
+-
+- configure    | 2 +-
+- util/memfd.c | 4 +---
+- 2 files changed, 2 insertions(+), 4 deletions(-)
+-
+-diff --git a/configure b/configure
+-index 9c8aa5a98bd4..99ccc1725ace 100755
+---- a/tools/qemu-xen/configure
+-+++ b/tools/qemu-xen/configure
+-@@ -3923,7 +3923,7 @@ fi
+- # check if memfd is supported
+- memfd=no
+- cat > $TMPC << EOF
+--#include <sys/memfd.h>
+-+#include <sys/mman.h>
+- 
+- int main(void)
+- {
+-diff --git a/util/memfd.c b/util/memfd.c
+-index 4571d1aba866..412e94a405fc 100644
+---- a/tools/qemu-xen/util/memfd.c
+-+++ b/tools/qemu-xen/util/memfd.c
+-@@ -31,9 +31,7 @@
+- 
+- #include "qemu/memfd.h"
+- 
+--#ifdef CONFIG_MEMFD
+--#include <sys/memfd.h>
+--#elif defined CONFIG_LINUX
+-+#if defined CONFIG_LINUX && !defined CONFIG_MEMFD
+- #include <sys/syscall.h>
+- #include <asm/unistd.h>
+- 
+--- 
+-2.16.2
+-
+diff --git a/package/xen/xen.hash b/package/xen/xen.hash
+index 5daebd4d65..1b3fc12f94 100644
+--- a/package/xen/xen.hash
++++ b/package/xen/xen.hash
+@@ -1,3 +1,3 @@
+ # Locally computed
+-sha256 570d654f357d4085accdf752989c1cbc33e2075feac8fcc505d68bdb81b1a0cf xen-4.10.1.tar.gz
++sha256 d5a944a34e47e9d52b2837f616821eb4a9514c8fd0955dcc723111dba499acd4 xen-4.10.2.tar.gz
+ sha256 dba0d79260259c013c52e5d4daeaea564a2fbb9ff7fc6778c377a401ec3898de COPYING
+diff --git a/package/xen/xen.mk b/package/xen/xen.mk
+index 29699cf0f9..fb34d64c3f 100644
+--- a/package/xen/xen.mk
++++ b/package/xen/xen.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-XEN_VERSION = 4.10.1
++XEN_VERSION = 4.10.2
+ XEN_SITE = https://downloads.xenproject.org/release/xen/$(XEN_VERSION)
+ XEN_LICENSE = GPL-2.0
+ XEN_LICENSE_FILES = COPYING
+@@ -45,7 +45,7 @@ XEN_DEPENDENCIES += argp-standalone
+ endif
+ XEN_INSTALL_TARGET_OPTS += DESTDIR=$(TARGET_DIR) install-tools
+ XEN_MAKE_OPTS += dist-tools
+-XEN_CONF_OPTS += --with-extra-qemuu-configure-args="--disable-sdl"
++XEN_CONF_OPTS += --with-extra-qemuu-configure-args="--disable-sdl --disable-opengl"
+ 
+ define XEN_INSTALL_INIT_SYSV
+ 	mv $(TARGET_DIR)/etc/init.d/xencommons $(TARGET_DIR)/etc/init.d/S50xencommons
+diff --git a/support/scripts/mkusers b/support/scripts/mkusers
+index 5bbec3e10f..d00ba33823 100755
+--- a/support/scripts/mkusers
++++ b/support/scripts/mkusers
+@@ -75,6 +75,14 @@ get_gid() {
+         '$1 == group { printf( "%d\n", $3 ); }' "${GROUP}"
+ }
+ 
++#----------------------------------------------------------------------------
++get_members() {
++    local group="${1}"
++
++    awk -F: -v group="${group}"                             \
++        '$1 == group { printf( "%s\n", $4 ); }' "${GROUP}"
++}
++
+ #----------------------------------------------------------------------------
+ get_username() {
+     local uid="${1}"
+@@ -211,16 +219,17 @@ generate_gid() {
+ add_one_group() {
+     local group="${1}"
+     local gid="${2}"
+-    local _f
++    local members
+ 
+     # Generate a new GID if needed
+     if [ ${gid} -eq -1 ]; then
+         gid="$( generate_gid "${group}" )"
+     fi
+ 
++    members=$(get_members "$group")
+     # Remove any previous instance of this group, and re-add the new one
+     sed -i --follow-symlinks -e '/^'"${group}"':.*/d;' "${GROUP}"
+-    printf "%s:x:%d:\n" "${group}" "${gid}" >>"${GROUP}"
++    printf "%s:x:%d:%s\n" "${group}" "${gid}" "${members}" >>"${GROUP}"
+ 
+     # Ditto for /etc/gshadow if it exists
+     if [ -f "${GSHADOW}" ]; then

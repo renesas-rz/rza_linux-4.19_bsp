@@ -1,0 +1,51 @@
+#!/bin/sh
+
+SERIAL_TTY=/dev/ttySC0
+
+# Only run at system boot, not at system shutdown
+if [ "$1" != "start" ] ; then
+  exit
+fi
+
+CHECK=`date | grep "UTC 1970"`
+if [ "$CHECK" != "" ] ; then
+  # Set date/time to something other than 1970
+  date -s "2018-10-31 9:00:00"
+fi
+
+# unbind displaying console messages on the LCD (and blinking cursor)
+if [ -e /sys/class/vtconsole/vtcon1/bind ] ; then
+  echo 0 > /sys/class/vtconsole/vtcon1/bind
+  echo 0 > /sys/class/graphics/fbcon/cursor_blink
+fi
+
+# put splash image on LCD
+if [ -e /sys/devices/platform/fcff7400.display/graphics/fb0/bits_per_pixel ] ; then
+    # only if the file and fbv exists
+    CHECK=`which fbv`
+    if [ -e /root/images/renesas_logo-800x480.jpg ] && [ "$CHECK" != "" ] ; then
+      fbv -s 1 -c -f /root/images/renesas_logo-800x480.jpg
+    fi
+fi
+
+alias ll='ls -lap'
+
+# set prompt
+#PS1='$ '
+PS1='\[\e[1;32m\]$\[\e[00m\] '
+
+### ALSA Sound Settings ####
+QUIET='-q'
+
+# Set up ALSA sound paramters
+#  'alsactl restore' pulls from /var/lib/alsa/asound.state
+CHECK=`which alsactl`
+if [ "$CHECK" != "" ] ; then
+  alsactl restore
+fi
+#amixer $QUIET cset name="SSI0 Control" 1
+
+# Set LINE out volume (Left% , Right%)
+# amixer $QUIET sset 'Digital Audio Input',0 50%,50%
+
+

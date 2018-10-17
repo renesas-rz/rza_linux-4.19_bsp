@@ -1,0 +1,1486 @@
+diff --git a/CHANGES b/CHANGES
+index a632a93675..d006d9365b 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,33 @@
++2017.02.10, Released January 31st, 2018
++
++	Important / security related fixes.
++
++	nconfig: Fix for ncurses/ncursesw linking issue causing crashes.
++
++	System: Only show getty options when busybox init or sysvinit
++	are used.
++
++	Infrastructure: Fix build issue for autotools based packages
++	checking for C++ support on toolchains without C++ support and
++	on a distro lacking /lib/cpp (E.G. Arch Linux).
++
++	Updated/fixed packages: avahi, berkeleydb, bind, busybox,
++	ccache, clamav, coreutils, dovecot, eeprog, eudev, fis,
++	intel-microcode, iputils, irssi, kmsxx, liberation, libiio,
++	lz4, mariadb, matchbox-lib, mcookie, openocd, php, pound,
++	rpcbind, squid, tar, ti-cgt-pru, transmission, util-linux,
++	webkitgtk, wireshark, xen
++
++	Issues resolved (http://bugs.buildroot.org):
++
++	#9996: lz4 package does not install lz4 binaries in target
++	#10176: Rsyslog's S01logging is deleted by Busybox.mk from...
++	#10216: package/x11r7/mcookie/mcookie.c:207: bad size ?
++	#10301: systemd/getty unused options
++	#10331: kmsxx, host installation fails with BR2_SHARED_...
++	#10536: Finding non-relative paths in the ccache
++	#10641: avahi-autoipd not starting when using systemd-tmpfiles
++
+ 2017.02.9, Released January 1st, 2018
+ 
+ 	Important / security related fixes.
+diff --git a/DEVELOPERS b/DEVELOPERS
+index 09a0a6e85b..b21176e561 100644
+--- a/DEVELOPERS
++++ b/DEVELOPERS
+@@ -1624,6 +1624,7 @@ F:	package/libinput/
+ F:	package/libiscsi/
+ F:	package/libseccomp/
+ F:	package/linux-tools/
++F:	package/matchbox*
+ F:	package/mesa3d-headers/
+ F:	package/mke2img/
+ F:	package/nut/
+diff --git a/Makefile b/Makefile
+index f35b0a0acd..7d609ed8d9 100644
+--- a/Makefile
++++ b/Makefile
+@@ -86,9 +86,9 @@ else # umask / $(CURDIR) / $(O)
+ all:
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2017.02.9
++export BR2_VERSION := 2017.02.10
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1514805000
++BR2_VERSION_EPOCH = 1517426000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+diff --git a/package/Makefile.in b/package/Makefile.in
+index b32ad8e447..523cc67808 100644
+--- a/package/Makefile.in
++++ b/package/Makefile.in
+@@ -388,7 +388,7 @@ DISABLE_NLS :=--disable-nls
+ endif
+ 
+ ifneq ($(BR2_INSTALL_LIBSTDCPP),y)
+-TARGET_CONFIGURE_OPTS += CXX=false
++TARGET_CONFIGURE_OPTS += CXX=false CXXCPP=cpp
+ endif
+ 
+ ifeq ($(BR2_STATIC_LIBS),y)
+diff --git a/package/avahi/avahi_tmpfiles.conf b/package/avahi/avahi_tmpfiles.conf
+index f9aebdfd0d..da23c147fb 100644
+--- a/package/avahi/avahi_tmpfiles.conf
++++ b/package/avahi/avahi_tmpfiles.conf
+@@ -1 +1 @@
+-d /tmp/avahi-autopid 0755 avahi avahi
++d /tmp/avahi-autoipd 0755 avahi avahi
+diff --git a/package/berkeleydb/0001-cwd-db_config.patch b/package/berkeleydb/0001-cwd-db_config.patch
+new file mode 100644
+index 0000000000..08ce5a3931
+--- /dev/null
++++ b/package/berkeleydb/0001-cwd-db_config.patch
+@@ -0,0 +1,21 @@
++Do not access DB_CONFIG when db_home is not set
++
++Fixes CVE-2017-10140:
++https://bugzilla.redhat.com/show_bug.cgi?id=1464032#c9
++
++Downloaded from
++http://pkgs.fedoraproject.org/cgit/rpms/libdb.git/commit/?id=8047fa8580659fcae740c25e91b490539b8453eb
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++
++--- db-5.3.28/src/env/env_open.c.old	2017-06-26 10:32:11.011419981 +0200
+++++ db-5.3.28/src/env/env_open.c	2017-06-26 10:32:46.893721233 +0200
++@@ -473,7 +473,7 @@
++ 	env->db_mode = mode == 0 ? DB_MODE_660 : mode;
++ 
++ 	/* Read the DB_CONFIG file. */
++-	if ((ret = __env_read_db_config(env)) != 0)
+++	if (env->db_home != NULL && (ret = __env_read_db_config(env)) != 0)
++ 		return (ret);
++ 
++ 	/*
+diff --git a/package/berkeleydb/berkeleydb.hash b/package/berkeleydb/berkeleydb.hash
+index e47c578cbe..7529329748 100644
+--- a/package/berkeleydb/berkeleydb.hash
++++ b/package/berkeleydb/berkeleydb.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+ sha256	76a25560d9e52a198d37a31440fd07632b5f1f8f9f2b6d5438f4bc3e7c9013ef  db-5.3.28.NC.tar.gz
++sha256	b78815181a53241f9347c6b47d1031fd669946f863e1edc807a291354cec024b  LICENSE
+diff --git a/package/bind/bind.hash b/package/bind/bind.hash
+index 95362309e1..199db704fe 100644
+--- a/package/bind/bind.hash
++++ b/package/bind/bind.hash
+@@ -1,3 +1,3 @@
+-# Verified from http://ftp.isc.org/isc/bind9/9.11.2/bind-9.11.2.tar.gz.sha256.asc
+-sha256 7f46ad8620f7c3b0ac375d7a5211b15677708fda84ce25d7aeb7222fe2e3c77a bind-9.11.2.tar.gz
++# Verified from http://ftp.isc.org/isc/bind9/9.11.2-P1/bind-9.11.2-P1.tar.gz.sha256.asc
++sha256 cec31548832fca3f85d95178d4019b7d702039e8595d4c93914feba337df1212 bind-9.11.2-P1.tar.gz
+ sha256 d3906dfe153e2c48440d3ca1d5319f5e89b4b820cdfc5d0779c23d7ac2b175e9 COPYRIGHT
+diff --git a/package/bind/bind.mk b/package/bind/bind.mk
+index 4465a2f73c..570f719dcd 100644
+--- a/package/bind/bind.mk
++++ b/package/bind/bind.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-BIND_VERSION = 9.11.2
++BIND_VERSION = 9.11.2-P1
+ BIND_SITE = http://ftp.isc.org/isc/bind9/$(BIND_VERSION)
+ # bind does not support parallel builds.
+ BIND_MAKE = $(MAKE1)
+diff --git a/package/busybox/busybox.mk b/package/busybox/busybox.mk
+index 577f2f2470..3f4260be96 100644
+--- a/package/busybox/busybox.mk
++++ b/package/busybox/busybox.mk
+@@ -175,7 +175,7 @@ define BUSYBOX_INSTALL_LOGGING_SCRIPT
+ 	if grep -q CONFIG_SYSLOGD=y $(@D)/.config; then \
+ 		$(INSTALL) -m 0755 -D package/busybox/S01logging \
+ 			$(TARGET_DIR)/etc/init.d/S01logging; \
+-	else rm -f $(TARGET_DIR)/etc/init.d/S01logging; fi
++	fi
+ endef
+ 
+ ifeq ($(BR2_INIT_BUSYBOX),y)
+diff --git a/package/ccache/ccache.hash b/package/ccache/ccache.hash
+index bde53f794d..c22394b13b 100644
+--- a/package/ccache/ccache.hash
++++ b/package/ccache/ccache.hash
+@@ -1,2 +1,3 @@
+-# Verified key https://samba.org/ftp/ccache/ccache-3.3.3.tar.xz.asc - sha256 computed locally
+-sha256  3b02a745da1cfa9eb438af7147e0fd3545e2f6163de9e5b07da86f58859f04ec  ccache-3.3.3.tar.xz
++# Verified key https://samba.org/ftp/ccache/ccache-3.3.4.tar.xz.asc - sha256 computed locally
++sha256  24f15bf389e38c41548c9c259532187774ec0cb9686c3497bbb75504c8dc404f  ccache-3.3.4.tar.xz
++sha256  190576a6e938760ec8113523e6fd380141117303e90766cc4802e770422b30c6  ccache-3.3.5.tar.xz
+diff --git a/package/ccache/ccache.mk b/package/ccache/ccache.mk
+index 55a913259f..6af2d8e547 100644
+--- a/package/ccache/ccache.mk
++++ b/package/ccache/ccache.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-CCACHE_VERSION = 3.3.3
+-CCACHE_SITE = https://samba.org/ftp/ccache
++CCACHE_VERSION = 3.3.5
++CCACHE_SITE = https://www.samba.org/ftp/ccache
+ CCACHE_SOURCE = ccache-$(CCACHE_VERSION).tar.xz
+ CCACHE_LICENSE = GPLv3+, others
+ CCACHE_LICENSE_FILES = LICENSE.txt GPL-3.0.txt
+diff --git a/package/clamav/0003-backtrace-uClibc.patch b/package/clamav/0002-backtrace-uClibc.patch
+similarity index 100%
+rename from package/clamav/0003-backtrace-uClibc.patch
+rename to package/clamav/0002-backtrace-uClibc.patch
+diff --git a/package/clamav/Config.in b/package/clamav/Config.in
+index 7ec402d9de..f832341a02 100644
+--- a/package/clamav/Config.in
++++ b/package/clamav/Config.in
+@@ -1,6 +1,7 @@
+ config BR2_PACKAGE_CLAMAV
+ 	bool "clamav"
+ 	select BR2_PACKAGE_GETTEXT if BR2_NEEDS_GETTEXT_IF_LOCALE
++	select BR2_PACKAGE_LIBTOOL
+ 	select BR2_PACKAGE_OPENSSL
+ 	select BR2_PACKAGE_ZLIB
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS
+diff --git a/package/clamav/clamav.hash b/package/clamav/clamav.hash
+index d2a1a1299e..fe873bddfc 100644
+--- a/package/clamav/clamav.hash
++++ b/package/clamav/clamav.hash
+@@ -1,2 +1,14 @@
+ # Locally calculated
+-sha256	167bd6a13e05ece326b968fdb539b05c2ffcfef6018a274a10aeda85c2c0027a	clamav-0.99.2.tar.gz
++sha256 00fa5292a6e00a3a4035b826267748965d5d2c4943d8ff417d740238263e8e84  clamav-0.99.3.tar.gz
++sha256 0c4fd2fa9733fc9122503797648710851e4ee6d9e4969dd33fcbd8c63cd2f584  COPYING
++sha256 d72a145c90918184a05ef65a04c9e6f7466faa59bc1b82c8f6a8ddc7ddcb9bed  COPYING.bzip2
++sha256 dfb818a0d41411c6fb1c193c68b73018ceadd1994bda41ad541cbff292894bc6  COPYING.file
++sha256 6dce638b76399e7521ad8e182d3e33e4496c85b3b69b6ff434b53017101e82ad  COPYING.getopt
++sha256 a9bdde5616ecdd1e980b44f360600ee8783b1f99b8cc83a2beb163a0a390e861  COPYING.LGPL
++sha256 e3a9b913515a42f8ff3ef1551c3a2cdba383c39ed959729e0e2911219496ad74  COPYING.llvm
++sha256 d96d71b66aa32c4a2d1619b9ca3347dafa9460bcf0fb5ac2408916067ad31dfc  COPYING.lzma
++sha256 accdcf2455c07b99abea59016b3663eaef926a92092d103bfaa25fed27cf6b24  COPYING.pcre
++sha256 e2c1395a3d9fea6d5d25847c9d783db6e2cc8b085b4025861f459139c5dfd90b  COPYING.regex
++sha256 1faccc6b5c7b958fb807a3f573d5be9bf7889fe898f7e0617c544b05a81bfd00  COPYING.unrar
++sha256 a20d6317c5384e8d4c05f9c31097878675d9429ec46090656166039cc10bc957  COPYING.YARA
++sha256 c2f77553f8d870c5635b0dace0519253233f172b33ce1fdf6578610706294eee  COPYING.zlib
+diff --git a/package/clamav/clamav.mk b/package/clamav/clamav.mk
+index 36ab8be0e9..e7e782dc06 100644
+--- a/package/clamav/clamav.mk
++++ b/package/clamav/clamav.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-CLAMAV_VERSION = 0.99.2
++CLAMAV_VERSION = 0.99.3
+ CLAMAV_SITE = https://www.clamav.net/downloads/production
+ CLAMAV_LICENSE = GPLv2
+ CLAMAV_LICENSE_FILES = COPYING COPYING.bzip2 COPYING.file COPYING.getopt \
+@@ -12,6 +12,7 @@ CLAMAV_LICENSE_FILES = COPYING COPYING.bzip2 COPYING.file COPYING.getopt \
+ 	COPYING.unrar COPYING.zlib
+ CLAMAV_DEPENDENCIES = \
+ 	host-pkgconf \
++	libtool \
+ 	openssl \
+ 	zlib \
+ 	$(if $(BR2_NEEDS_GETTEXT_IF_LOCALE),gettext)
+@@ -24,6 +25,8 @@ CLAMAV_CONF_ENV = \
+ # UCLIBC_HAS_FTS is disabled, therefore disable fanotify (missing fts.h)
+ CLAMAV_CONF_OPTS = \
+ 	--with-dbdir=/var/lib/clamav \
++	--with-ltdl-include=$(STAGING_DIR)/usr/include \
++	--with-ltdl-lib=$(STAGING_DIR)/usr/lib \
+ 	--with-openssl=$(STAGING_DIR)/usr \
+ 	--with-zlib=$(STAGING_DIR)/usr \
+ 	--disable-zlib-vcheck \
+@@ -45,6 +48,13 @@ else
+ CLAMAV_CONF_OPTS += --disable-bzip2
+ endif
+ 
++ifeq ($(BR2_PACKAGE_JSON_C),y)
++CLAMAV_CONF_OPTS += --with-libjson=$(STAGING_DIR)/usr
++CLAMAV_DEPENDENCIES += json-c
++else
++CLAMAV_CONF_OPTS += --without-libjson
++endif
++
+ ifeq ($(BR2_PACKAGE_LIBXML2),y)
+ CLAMAV_CONF_OPTS += --with-xml=$(STAGING_DIR)/usr
+ CLAMAV_DEPENDENCIES += libxml2
+diff --git a/package/coreutils/coreutils.mk b/package/coreutils/coreutils.mk
+index 409089c332..4e0b1f7b96 100644
+--- a/package/coreutils/coreutils.mk
++++ b/package/coreutils/coreutils.mk
+@@ -56,8 +56,8 @@ COREUTILS_CONF_ENV = ac_cv_c_restrict=no \
+ 	INSTALL_PROGRAM=$(INSTALL)
+ 
+ COREUTILS_BIN_PROGS = cat chgrp chmod chown cp date dd df dir echo false \
+-	ln ls mkdir mknod mv pwd rm rmdir vdir sleep stty sync touch true \
+-	uname join
++	kill link ln ls mkdir mknod mktemp mv nice printenv pwd rm rmdir \
++	vdir sleep stty sync touch true uname join
+ 
+ # If both coreutils and busybox are selected, make certain coreutils
+ # wins the fight over who gets to have their utils actually installed.
+diff --git a/package/dovecot/0001-byteorder.h-fix-uclibc-build.patch b/package/dovecot/0001-byteorder.h-fix-uclibc-build.patch
+new file mode 100644
+index 0000000000..b6d3ed3ec0
+--- /dev/null
++++ b/package/dovecot/0001-byteorder.h-fix-uclibc-build.patch
+@@ -0,0 +1,32 @@
++From 902917880ca29f1007750a70cf46e7246b2d0a2a Mon Sep 17 00:00:00 2001
++From: Josef 'Jeff' Sipek <jeff.sipek@dovecot.fi>
++Date: Tue, 14 Nov 2017 06:01:21 +0100
++Subject: [PATCH] byteorder.h: fix uclibc build
++
++Patch suggested on upstream mailinglist:
++https://www.dovecot.org/pipermail/dovecot/2017-November/110019.html
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++---
++ src/lib/byteorder.h | 5 +++++
++ 1 file changed, 5 insertions(+)
++
++diff --git a/src/lib/byteorder.h b/src/lib/byteorder.h
++index 2f5dc7c17..4ffe8da21 100644
++--- a/src/lib/byteorder.h
+++++ b/src/lib/byteorder.h
++@@ -23,6 +23,11 @@
++ #ifndef BYTEORDER_H
++ #define BYTEORDER_H
++ 
+++#undef bswap_8
+++#undef bswap_16
+++#undef bswap_32
+++#undef bswap_64
+++
++ /*
++  * These prototypes exist to catch bugs in the code generating macros below.
++  */
++-- 
++2.11.0
++
+diff --git a/package/dovecot/0002-lib-auth-Fix-memory-leak-in-auth_client_request_abor.patch b/package/dovecot/0002-lib-auth-Fix-memory-leak-in-auth_client_request_abor.patch
+new file mode 100644
+index 0000000000..babccd3acf
+--- /dev/null
++++ b/package/dovecot/0002-lib-auth-Fix-memory-leak-in-auth_client_request_abor.patch
+@@ -0,0 +1,33 @@
++From 1a29ed2f96da1be22fa5a4d96c7583aa81b8b060 Mon Sep 17 00:00:00 2001
++From: Timo Sirainen <timo.sirainen@dovecot.fi>
++Date: Mon, 18 Dec 2017 16:50:51 +0200
++Subject: [PATCH] lib-auth: Fix memory leak in auth_client_request_abort()
++
++This caused memory leaks when authentication was aborted. For example
++with IMAP:
++
++a AUTHENTICATE PLAIN
++*
++
++Broken by 9137c55411aa39d41c1e705ddc34d5bd26c65021
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/lib-auth/auth-client-request.c | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/src/lib-auth/auth-client-request.c b/src/lib-auth/auth-client-request.c
++index 480fb42b3..046f7c307 100644
++--- a/src/lib-auth/auth-client-request.c
+++++ b/src/lib-auth/auth-client-request.c
++@@ -186,6 +186,7 @@ void auth_client_request_abort(struct auth_client_request **_request)
++ 
++ 	auth_client_send_cancel(request->conn->client, request->id);
++ 	call_callback(request, AUTH_REQUEST_STATUS_ABORT, NULL, NULL);
+++	pool_unref(&request->pool);
++ }
++ 
++ unsigned int auth_client_request_get_id(struct auth_client_request *request)
++-- 
++2.11.0
++
+diff --git a/package/dovecot/dovecot.hash b/package/dovecot/dovecot.hash
+index 46e7c5aa8a..33163d6d8c 100644
+--- a/package/dovecot/dovecot.hash
++++ b/package/dovecot/dovecot.hash
+@@ -1,2 +1,5 @@
+ # Locally computed after checking signature
+-sha256 ccfa9ffb7eb91e9e87c21c108324b911250c9ffa838bffb64b1caafadcb0f388  dovecot-2.2.29.1.tar.gz
++sha256 fe1e3b78609a56ee22fc209077e4b75348fa1bbd54c46f52bde2472a4c4cee84  dovecot-2.2.33.2.tar.gz
++sha256 a363b132e494f662d98c820d1481297e6ae72f194c2c91b6c39e1518b86240a8  COPYING
++sha256 dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551  COPYING.LGPL
++sha256 52b8c95fabb19575281874b661ef7968ea47e8f5d74ba0dd40ce512e52b3fc97  COPYING.MIT
+diff --git a/package/dovecot/dovecot.mk b/package/dovecot/dovecot.mk
+index 36a6494895..f8fbaaab65 100644
+--- a/package/dovecot/dovecot.mk
++++ b/package/dovecot/dovecot.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ DOVECOT_VERSION_MAJOR = 2.2
+-DOVECOT_VERSION = $(DOVECOT_VERSION_MAJOR).29.1
++DOVECOT_VERSION = $(DOVECOT_VERSION_MAJOR).33.2
+ DOVECOT_SITE = http://www.dovecot.org/releases/$(DOVECOT_VERSION_MAJOR)
+ DOVECOT_INSTALL_STAGING = YES
+ DOVECOT_LICENSE = LGPLv2.1
+diff --git a/package/eeprog/Config.in b/package/eeprog/Config.in
+index ff313bdbae..73582c70f9 100644
+--- a/package/eeprog/Config.in
++++ b/package/eeprog/Config.in
+@@ -3,4 +3,4 @@ config BR2_PACKAGE_EEPROG
+ 	help
+ 	  Simple tool to read/write i2c eeprom chips.
+ 
+-	  http://codesink.org/eeprog.html
++	  http://www.codesink.org/eeprog.html
+diff --git a/package/eudev/S10udev b/package/eudev/S10udev
+index 8382bec2bb..640fec625b 100755
+--- a/package/eudev/S10udev
++++ b/package/eudev/S10udev
+@@ -27,9 +27,9 @@ test -r $UDEV_CONFIG || exit 6
+ 
+ case "$1" in
+     start)
+-        printf "Populating ${udev_root:-/dev} using udev: "
++        printf "Populating %s using udev: " "${udev_root:-/dev}"
+         printf '\000\000\000\000' > /proc/sys/kernel/hotplug
+-        $UDEV_BIN -d || (echo "FAIL" && exit 1)
++        $UDEV_BIN -d || { echo "FAIL"; exit 1; }
+         udevadm trigger --type=subsystems --action=add
+         udevadm trigger --type=devices --action=add
+         udevadm settle --timeout=30 || echo "udevadm settle failed"
+diff --git a/package/fis/fis.mk b/package/fis/fis.mk
+index 876b127268..f559bdf7ce 100644
+--- a/package/fis/fis.mk
++++ b/package/fis/fis.mk
+@@ -12,7 +12,7 @@ FIS_LICENSE_FILES = fis.c
+ 
+ define FIS_BUILD_CMDS
+ 	$(TARGET_CC) $(TARGET_CFLAGS) -std=c99 -o $(@D)/fis \
+-		$(@D)/fis.c $(@D)/crc.c $(TARGE_LDFLAGS)
++		$(@D)/fis.c $(@D)/crc.c $(TARGET_LDFLAGS)
+ endef
+ 
+ define FIS_INSTALL_TARGET_CMDS
+diff --git a/package/intel-microcode/intel-microcode.hash b/package/intel-microcode/intel-microcode.hash
+index 7925209b22..12e1dfbf8f 100644
+--- a/package/intel-microcode/intel-microcode.hash
++++ b/package/intel-microcode/intel-microcode.hash
+@@ -1,2 +1,3 @@
+ # Locally computed
+-sha256	096e39489eef67666be652e81fa372a06b74f39ea3d565dc0287242c668717e7	microcode-20151106.tgz
++sha256 063f1aa3a546cb49323a5e0b516894e4b040007107b8c8ff017aca8a86204130  microcode-20180108.tgz
++sha256 6d4deb65ca688d930e188bf93f78430f134097b161e6df4a2ef00728e14965e3  license.txt
+diff --git a/package/intel-microcode/intel-microcode.mk b/package/intel-microcode/intel-microcode.mk
+index aefa99a1c9..d6c35b21c7 100644
+--- a/package/intel-microcode/intel-microcode.mk
++++ b/package/intel-microcode/intel-microcode.mk
+@@ -4,9 +4,9 @@
+ #
+ ################################################################################
+ 
+-INTEL_MICROCODE_VERSION = 20151106
++INTEL_MICROCODE_VERSION = 20180108
+ INTEL_MICROCODE_SOURCE = microcode-$(INTEL_MICROCODE_VERSION).tgz
+-INTEL_MICROCODE_SITE = http://downloadmirror.intel.com/25512/eng
++INTEL_MICROCODE_SITE = http://downloadmirror.intel.com/27431/eng
+ INTEL_MICROCODE_STRIP_COMPONENTS = 0
+ INTEL_MICROCODE_LICENSE = PROPRIETARY
+ INTEL_MICROCODE_LICENSE_FILES = license.txt
+diff --git a/package/iputils/iputils.mk b/package/iputils/iputils.mk
+index 21f5dcbe06..d3a12ac62c 100644
+--- a/package/iputils/iputils.mk
++++ b/package/iputils/iputils.mk
+@@ -76,4 +76,9 @@ define IPUTILS_INSTALL_TARGET_CMDS
+ 	$(INSTALL) -D -m 755 $(@D)/traceroute6 $(TARGET_DIR)/bin/traceroute6
+ endef
+ 
++define IPUTILS_PERMISSIONS
++	/bin/ping        f 4755 0 0 - - - - -
++	/bin/traceroute6 f 4755 0 0 - - - - -
++endef
++
+ $(eval $(generic-package))
+diff --git a/package/irssi/irssi.hash b/package/irssi/irssi.hash
+index 0a6c3f614a..83dde00352 100644
+--- a/package/irssi/irssi.hash
++++ b/package/irssi/irssi.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated after checking pgp signature
+-sha256	c2556427e12eb06cabfed40839ac6f57eb8b1aa6365fab6dfcd331b7a04bb914  irssi-1.0.5.tar.xz
++sha256	029e884f3ebf337f7266d8ed4e1a035ca56d9f85015d74c868b488f279de8585  irssi-1.0.6.tar.xz
+ # Locally calculated
+ sha256	a1a27cb2ecee8d5378fbb3562f577104a445d6d66fee89286e16758305e63e2b  COPYING
+diff --git a/package/irssi/irssi.mk b/package/irssi/irssi.mk
+index 3ea81a95db..d29d4f0e9b 100644
+--- a/package/irssi/irssi.mk
++++ b/package/irssi/irssi.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-IRSSI_VERSION = 1.0.5
++IRSSI_VERSION = 1.0.6
+ IRSSI_SOURCE = irssi-$(IRSSI_VERSION).tar.xz
+ # Do not use the github helper here. The generated tarball is *NOT* the
+ # same as the one uploaded by upstream for the release.
+diff --git a/package/kmsxx/kmsxx.mk b/package/kmsxx/kmsxx.mk
+index c06d20be61..4932f47951 100644
+--- a/package/kmsxx/kmsxx.mk
++++ b/package/kmsxx/kmsxx.mk
+@@ -44,12 +44,15 @@ define KMSXX_INSTALL_TARGET_CMDS
+ 	$(KMSXX_INSTALL_TARGET_TESTS)
+ endef
+ 
++# kmsxx only builds shared or static libraries, so when
++# BR2_SHARED_STATIC_LIBS=y, we don't have any static library to
++# install
+ define KMSXX_INSTALL_STAGING_CMDS
+ 	$(foreach l,$(KMSXX_LIBS),\
+ 		$(if $(BR2_SHARED_LIBS)$(BR2_SHARED_STATIC_LIBS),
+ 			$(INSTALL) -D -m 0755 $(@D)/lib/lib$(l).so \
+ 				$(STAGING_DIR)/usr/lib/lib$(l).so)
+-		$(if $(BR2_STATIC_LIBS)$(BR2_SHARED_STATIC_LIBS),
++		$(if $(BR2_STATIC_LIBS),
+ 			$(INSTALL) -D -m 0755 $(@D)/lib/lib$(l).a \
+ 				$(STAGING_DIR)/usr/lib/lib$(l).a)
+ 		mkdir -p $(STAGING_DIR)/usr/include/$(l)
+diff --git a/package/libcurl/libcurl.hash b/package/libcurl/libcurl.hash
+index 275a5a373f..b1afe1891d 100644
+--- a/package/libcurl/libcurl.hash
++++ b/package/libcurl/libcurl.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated after checking pgp signature
+-# https://curl.haxx.se/download/curl-7.57.0.tar.xz.asc
+-sha256 f5f6fd3c72b7b8389969f4fb671ed8532fa9b5bb7a5cae7ca89bc1cea45c7878  curl-7.57.0.tar.xz
+-sha256 cbcf511f5702f7baf5424193a792bc9c18fab22bcbec2e6a587598389dc632c2  COPYING
++# https://curl.haxx.se/download/curl-7.58.0.tar.xz.asc
++sha256 6a813875243609eb75f37fa72044e4ad618b55ec15a4eafdac2df6a7e800e3e3  curl-7.58.0.tar.xz
++sha256 5f3849ec38ddb927e79f514bf948890c41b8d1407286a49609b8fb1585931095  COPYING
+diff --git a/package/libcurl/libcurl.mk b/package/libcurl/libcurl.mk
+index 0aab58a7de..a1d2aa7a60 100644
+--- a/package/libcurl/libcurl.mk
++++ b/package/libcurl/libcurl.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBCURL_VERSION = 7.57.0
++LIBCURL_VERSION = 7.58.0
+ LIBCURL_SOURCE = curl-$(LIBCURL_VERSION).tar.xz
+ LIBCURL_SITE = https://curl.haxx.se/download
+ LIBCURL_DEPENDENCIES = host-pkgconf \
+diff --git a/package/liberation/liberation.mk b/package/liberation/liberation.mk
+index dfed086f6a..a77c014a05 100644
+--- a/package/liberation/liberation.mk
++++ b/package/liberation/liberation.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ LIBERATION_VERSION = 2.00.1
+-LIBERATION_SITE = http://www.fedorahosted.org/releases/l/i/liberation-fonts
++LIBERATION_SITE = https://releases.pagure.org/liberation-fonts
+ LIBERATION_SOURCE = liberation-fonts-ttf-$(LIBERATION_VERSION).tar.gz
+ LIBERATION_TARGET_DIR = $(TARGET_DIR)/usr/share/fonts/liberation
+ LIBERATION_LICENSE = OFLv1.1
+diff --git a/package/libiio/libiio.mk b/package/libiio/libiio.mk
+index aaa6c7060d..d7d7f5973a 100644
+--- a/package/libiio/libiio.mk
++++ b/package/libiio/libiio.mk
+@@ -54,8 +54,8 @@ else
+ LIBIIO_CONF_OPTS += -DWITH_IIOD_USBD=OFF
+ endif
+ 
+-# Avahi support in libiio requires avahi-client, which needs avahi-daemon
+-ifeq ($(BR2_PACKAGE_AVAHI)$(BR2_PACKAGE_AVAHI_DAEMON),yy)
++# Avahi support in libiio requires avahi-client, which needs avahi-daemon and dbus
++ifeq ($(BR2_PACKAGE_AVAHI_DAEMON)$(BR2_PACKAGE_DBUS),yy)
+ LIBIIO_DEPENDENCIES += avahi
+ endif
+ 
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index ee9f0e9f1c..5e36121928 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -214,15 +214,15 @@ endchoice
+ 
+ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+-	default "3.2.96"	if BR2_KERNEL_HEADERS_3_2
++	default "3.2.98"	if BR2_KERNEL_HEADERS_3_2
+ 	default "3.4.113"	if BR2_KERNEL_HEADERS_3_4
+ 	default "3.10.108"	if BR2_KERNEL_HEADERS_3_10
+ 	default "3.12.74"	if BR2_KERNEL_HEADERS_3_12
+ 	default "3.18.72"	if BR2_KERNEL_HEADERS_3_18
+ 	default "3.19.8"	if BR2_KERNEL_HEADERS_3_19
+ 	default "4.0.9"		if BR2_KERNEL_HEADERS_4_0
+-	default "4.1.48"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.108"	if BR2_KERNEL_HEADERS_4_4
++	default "4.1.49"	if BR2_KERNEL_HEADERS_4_1
++	default "4.4.114"	if BR2_KERNEL_HEADERS_4_4
+ 	default "4.8.17"	if BR2_KERNEL_HEADERS_4_8
+-	default "4.9.73"	if BR2_KERNEL_HEADERS_4_9
++	default "4.9.79"	if BR2_KERNEL_HEADERS_4_9
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/lz4/lz4.mk b/package/lz4/lz4.mk
+index 9d7f56bbf6..b0d45474cd 100644
+--- a/package/lz4/lz4.mk
++++ b/package/lz4/lz4.mk
+@@ -18,26 +18,26 @@ LZ4_POST_PATCH_HOOKS += LZ4_DISABLE_SHARED
+ endif
+ 
+ define HOST_LZ4_BUILD_CMDS
+-	$(HOST_MAKE_ENV) $(MAKE) $(HOST_CONFIGURE_OPTS) -C $(@D)
++	$(HOST_MAKE_ENV) $(HOST_CONFIGURE_OPTS) $(MAKE) -C $(@D) all
+ endef
+ 
+ define HOST_LZ4_INSTALL_CMDS
+-	$(HOST_MAKE_ENV) $(MAKE) $(HOST_CONFIGURE_OPTS) PREFIX=$(HOST_DIR)/usr \
++	$(HOST_MAKE_ENV) $(HOST_CONFIGURE_OPTS) $(MAKE) PREFIX=$(HOST_DIR)/usr \
+ 		install -C $(@D)
+ endef
+ 
+ define LZ4_BUILD_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) $(TARGET_CONFIGURE_OPTS) -C $(@D)/lib
++	$(TARGET_MAKE_ENV) $(TARGET_CONFIGURE_OPTS) $(MAKE) -C $(@D) all
+ endef
+ 
+ define LZ4_INSTALL_STAGING_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) $(TARGET_CONFIGURE_OPTS) DESTDIR=$(STAGING_DIR) \
++	$(TARGET_MAKE_ENV) $(TARGET_CONFIGURE_OPTS) $(MAKE) DESTDIR=$(STAGING_DIR) \
+ 		PREFIX=/usr install -C $(@D)
+ endef
+ 
+ define LZ4_INSTALL_TARGET_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) $(TARGET_CONFIGURE_OPTS) DESTDIR=$(TARGET_DIR) \
+-		PREFIX=/usr install -C $(@D)/lib
++	$(TARGET_MAKE_ENV) $(TARGET_CONFIGURE_OPTS) $(MAKE) DESTDIR=$(TARGET_DIR) \
++		PREFIX=/usr install -C $(@D)
+ endef
+ 
+ $(eval $(generic-package))
+diff --git a/package/mariadb/mariadb.hash b/package/mariadb/mariadb.hash
+index fcca9be6e4..f8e1c6ce10 100644
+--- a/package/mariadb/mariadb.hash
++++ b/package/mariadb/mariadb.hash
+@@ -1,5 +1,5 @@
+-# From https://downloads.mariadb.org/mariadb/10.1.29/
+-sha256 73bbd5602f52ab5aa4d83f465134871b6c87bda25371d098f6da5a3d98517ed4  mariadb-10.1.29.tar.gz
++# From https://downloads.mariadb.org/mariadb/10.1.30/
++sha256 173a5e5a24819e0a469c3bd09b5c98491676c37c6095882a2ea34c5af0996c88  mariadb-10.1.30.tar.gz
+ 
+ # Hash for license files
+ sha256 69ce89a0cadbe35a858398c258be93c388715e84fc0ca04e5a1fd1aa9770dd3a  README
+diff --git a/package/mariadb/mariadb.mk b/package/mariadb/mariadb.mk
+index 97a1b034e0..dc88696e34 100644
+--- a/package/mariadb/mariadb.mk
++++ b/package/mariadb/mariadb.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MARIADB_VERSION = 10.1.29
++MARIADB_VERSION = 10.1.30
+ MARIADB_SITE = https://downloads.mariadb.org/interstitial/mariadb-$(MARIADB_VERSION)/source
+ MARIADB_LICENSE = GPLv2 (server), GPLv2 with FLOSS exception (GPL client library), LGPLv2 (LGPL client library)
+ # Tarball no longer contains LGPL license text
+diff --git a/package/matchbox-fakekey/matchbox-fakekey.mk b/package/matchbox-fakekey/matchbox-fakekey.mk
+index ea8e6dcd61..d694e61c12 100644
+--- a/package/matchbox-fakekey/matchbox-fakekey.mk
++++ b/package/matchbox-fakekey/matchbox-fakekey.mk
+@@ -14,8 +14,8 @@ MATCHBOX_FAKEKEY_DEPENDENCIES = matchbox-lib xlib_libXtst
+ MATCHBOX_FAKEKEY_CONF_OPTS = --enable-expat
+ 
+ define MATCHBOX_FAKEKEY_POST_CONFIGURE_FIXES
+-	$(SED) 's:-I[^$$].*/usr/include/freetype2:-I/usr/include/freetype2:' $(STAGING_DIR)/usr/lib/pkgconfig/libmb.pc
+-	$(SED) 's:^SUBDIRS = fakekey src tests.*:SUBDIRS = fakekey src:g' $(MATCHBOX_FAKEKEY_DIR)/Makefile
++	$(SED) 's:^SUBDIRS = fakekey src tests.*:SUBDIRS = fakekey src:g' \
++		$(@D)/Makefile
+ endef
+ 
+ MATCHBOX_FAKEKEY_POST_CONFIGURE_HOOKS += MATCHBOX_FAKEKEY_POST_CONFIGURE_FIXES
+diff --git a/package/matchbox-lib/Config.in b/package/matchbox-lib/Config.in
+index e50a5436c1..d758ab35a8 100644
+--- a/package/matchbox-lib/Config.in
++++ b/package/matchbox-lib/Config.in
+@@ -1,4 +1,5 @@
+ config BR2_PACKAGE_MATCHBOX_LIB
+ 	bool "matchbox-lib"
++	select BR2_PACKAGE_XLIB_LIBXEXT
+ 	help
+ 	  Matchbox common functionality library.
+diff --git a/package/matchbox-lib/matchbox-lib.mk b/package/matchbox-lib/matchbox-lib.mk
+index 451279e6d4..ea6abf1151 100644
+--- a/package/matchbox-lib/matchbox-lib.mk
++++ b/package/matchbox-lib/matchbox-lib.mk
+@@ -10,12 +10,13 @@ MATCHBOX_LIB_SITE = http://downloads.yoctoproject.org/releases/matchbox/libmatch
+ MATCHBOX_LIB_LICENSE = LGPLv2.1+
+ MATCHBOX_LIB_LICENSE_FILES = COPYING
+ MATCHBOX_LIB_INSTALL_STAGING = YES
+-MATCHBOX_LIB_DEPENDENCIES = host-pkgconf expat xlib_libXext
+-MATCHBOX_LIB_CONF_OPTS = --enable-expat --disable-doxygen-docs
++MATCHBOX_LIB_DEPENDENCIES = host-pkgconf xlib_libXext
++MATCHBOX_LIB_CONF_OPTS = --disable-doxygen-docs
+ MATCHBOX_LIB_CONF_ENV = LIBS="-lX11"
+ 
+ define MATCHBOX_LIB_POST_INSTALL_FIXES
+-	$(SED) 's:-I[^$$].*/usr/include/freetype2:-I/usr/include/freetype2:' \
++	$(SED) 's:-I$(STAGING_DIR)/:-I/:g' \
++		-e 's:-I/usr/include\( \|$$\)::g' \
+ 		$(STAGING_DIR)/usr/lib/pkgconfig/libmb.pc
+ endef
+ 
+diff --git a/package/openocd/0003-CVE-2018-5704-Prevent-some-forms-of-Cross-Protocol-S.patch b/package/openocd/0003-CVE-2018-5704-Prevent-some-forms-of-Cross-Protocol-S.patch
+new file mode 100644
+index 0000000000..ba19bf5735
+--- /dev/null
++++ b/package/openocd/0003-CVE-2018-5704-Prevent-some-forms-of-Cross-Protocol-S.patch
+@@ -0,0 +1,50 @@
++From 3a223ca3ebc7ac24d7726a0cd58e5695bc813657 Mon Sep 17 00:00:00 2001
++From: Andreas Fritiofson <andreas.fritiofson@gmail.com>
++Date: Sat, 13 Jan 2018 21:00:47 +0100
++Subject: [PATCH] CVE-2018-5704: Prevent some forms of Cross Protocol Scripting
++ attacks
++
++OpenOCD can be targeted by a Cross Protocol Scripting attack from
++a web browser running malicious code, such as the following PoC:
++
++var x = new XMLHttpRequest();
++x.open("POST", "http://127.0.0.1:4444", true);
++x.send("exec xcalc\r\n");
++
++This mitigation should provide some protection from browser-based
++attacks and is based on the corresponding fix in Redis:
++
++https://github.com/antirez/redis/blob/8075572207b5aebb1385c4f233f5302544439325/src/networking.c#L1758
++
++
++Upstream-status: Under review: http://openocd.zylin.com/#/c/4335/
++Change-Id: Ia96ebe19b74b5805dc228bf7364c7971a90a4581
++Signed-off-by: Andreas Fritiofson <andreas.fritiofson@gmail.com>
++Reported-by: Josef Gajdusek <atx@atx.name>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/server/startup.tcl | 11 +++++++++++
++ 1 file changed, 11 insertions(+)
++
++diff --git a/src/server/startup.tcl b/src/server/startup.tcl
++index 64ace407..dd1b31e4 100644
++--- a/src/server/startup.tcl
+++++ b/src/server/startup.tcl
++@@ -8,3 +8,14 @@ proc ocd_gdb_restart {target_id} {
++ 	# one target
++ 	reset halt
++ }
+++
+++proc prevent_cps {} {
+++	echo "Possible SECURITY ATTACK detected."
+++	echo "It looks like somebody is sending POST or Host: commands to OpenOCD."
+++	echo "This is likely due to an attacker attempting to use Cross Protocol Scripting"
+++	echo "to compromise your OpenOCD instance. Connection aborted."
+++	exit
+++}
+++
+++proc POST {args} { prevent_cps }
+++proc Host: {args} { prevent_cps }
++-- 
++2.11.0
++
+diff --git a/package/php/0009-Call-apxs-with-correct-prefix.patch b/package/php/0008-Call-apxs-with-correct-prefix.patch
+similarity index 100%
+rename from package/php/0009-Call-apxs-with-correct-prefix.patch
+rename to package/php/0008-Call-apxs-with-correct-prefix.patch
+diff --git a/package/php/0008-fix-asm-constraints-in-aarch64-multiply-macro.patch b/package/php/0008-fix-asm-constraints-in-aarch64-multiply-macro.patch
+deleted file mode 100644
+index f4812daaa5..0000000000
+--- a/package/php/0008-fix-asm-constraints-in-aarch64-multiply-macro.patch
++++ /dev/null
+@@ -1,28 +0,0 @@
+-From 1622f24fde4220967bd907bf8f0325d444bf9339 Mon Sep 17 00:00:00 2001
+-From: Andy Postnikov <apostnikov@gmail.com>
+-Date: Sat, 10 Dec 2016 23:51:17 +0300
+-Subject: [PATCH] Fix bug #70015 - Compilation failure on aarch64
+-
+-Fixes build at -O0.
+-
+-[From pull request https://github.com/php/php-src/pull/2236.]
+-Signed-off-by: Tatsuyuki Ishi <ishitatsuyuki@gmail.com>
+----
+- Zend/zend_multiply.h | 4 ++--
+- 1 file changed, 2 insertions(+), 2 deletions(-)
+-
+-diff --git a/Zend/zend_multiply.h b/Zend/zend_multiply.h
+-index 75769db..fbd69ab 100644
+---- a/Zend/zend_multiply.h
+-+++ b/Zend/zend_multiply.h
+-@@ -75,8 +75,8 @@
+- 	__asm__("mul %0, %2, %3\n"										\
+- 		"smulh %1, %2, %3\n"										\
+- 		"sub %1, %1, %0, asr #63\n"									\
+--			: "=X"(__tmpvar), "=X"(usedval)							\
+--			: "X"(a), "X"(b));										\
+-+			: "=&r"(__tmpvar), "=&r"(usedval)						\
+-+			: "r"(a), "r"(b));										\
+- 	if (usedval) (dval) = (double) (a) * (double) (b);				\
+- 	else (lval) = __tmpvar;											\
+- } while (0)
+diff --git a/package/php/php.hash b/package/php/php.hash
+index c724f6d8ce..3b3c97bd38 100644
+--- a/package/php/php.hash
++++ b/package/php/php.hash
+@@ -1,5 +1,5 @@
+ # From http://php.net/downloads.php
+-sha256 0d42089729be7b2bb0308cbe189c2782f9cb4b07078c8a235495be5874fff729  php-7.1.7.tar.xz
++sha256 1a0b3f2fb61959b57a3ee01793a77ed3f19bde5aa90c43dcacc85ea32f64fc10  php-7.1.13.tar.xz
+ 
+ # License file
+ sha256 a44951f93b10c87c3f7cd9f311d95999c57c95ed950eec32b14c1c7ea6baf25e  LICENSE
+diff --git a/package/php/php.mk b/package/php/php.mk
+index 0733bc9a2c..b684fa1593 100644
+--- a/package/php/php.mk
++++ b/package/php/php.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-PHP_VERSION = 7.1.7
++PHP_VERSION = 7.1.13
+ PHP_SITE = http://www.php.net/distributions
+ PHP_SOURCE = php-$(PHP_VERSION).tar.xz
+ PHP_INSTALL_STAGING = YES
+diff --git a/package/pound/0001-fix-openssl-1.0.2.patch b/package/pound/0001-fix-openssl-1.0.2.patch
+new file mode 100644
+index 0000000000..b20fdb36f1
+--- /dev/null
++++ b/package/pound/0001-fix-openssl-1.0.2.patch
+@@ -0,0 +1,127 @@
++From eb471de8f26e0367dd08d299d2252fa8b2b958a9 Mon Sep 17 00:00:00 2001
++From: Emilio <emilio.campos@zevenet.com>
++Date: Mon, 17 Jul 2017 09:41:32 +0200
++Subject: [PATCH] [Improvement] Added support to compile pound with openssl
++ 1.0.2
++
++Signed-off-by: Emilio <emilio.campos@zevenet.com>
++
++	new file:   dh2048.h
++	modified:   svc.c
++
++Patch was downloaded from 3rd-party repo:
++https://github.com/zevenet/pound/commit/eb471de8f26e0367dd08d299d2252fa8b2b958a9
++
++This repo was announced on upstream mailinglist:
++http://www.apsis.ch/pound/pound_list/archive/2017/2017-07/1500287626000#1500287626000
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++---
++ dh2048.h | 53 +++++++++++++++++++++++++++++++++++++++++++++++++++++
++ svc.c    | 33 +++++++++++++++++++++++++++++++++
++ 2 files changed, 86 insertions(+)
++ create mode 100644 dh2048.h
++
++diff --git a/dh2048.h b/dh2048.h
++new file mode 100644
++index 0000000..79c693c
++--- /dev/null
+++++ b/dh2048.h
++@@ -0,0 +1,53 @@
+++#ifndef HEADER_DH_H
+++# include <openssl/dh.h>
+++#endif
+++
+++DH *get_dh2048()
+++{
+++    static unsigned char dhp_2048[] = {
+++	0xBF, 0x6C, 0xC6, 0xBD, 0xEA, 0x10, 0x84, 0x59, 0x40, 0xC2, 
+++	0xC6, 0xA2, 0x9B, 0x19, 0xD3, 0x2E, 0x2F, 0xAB, 0xE6, 0xE4, 
+++	0x1E, 0x91, 0x0D, 0x59, 0xDC, 0x96, 0x3F, 0x6E, 0x65, 0x38, 
+++	0xB9, 0xBE, 0xBB, 0x8F, 0xDF, 0x73, 0xAC, 0xAC, 0xB3, 0x2F, 
+++	0xA7, 0x02, 0x0B, 0x87, 0xB7, 0x3F, 0x3A, 0x42, 0x8A, 0x94, 
+++	0xDD, 0xEC, 0x33, 0xA4, 0x25, 0xB1, 0xBF, 0x84, 0x91, 0x87, 
+++	0xD8, 0x1C, 0x42, 0xB9, 0x8E, 0x00, 0x1F, 0x49, 0xED, 0x57, 
+++	0xA4, 0x48, 0xB0, 0xCC, 0xD8, 0xB8, 0x83, 0xCA, 0x3E, 0xDF, 
+++	0xA2, 0xF2, 0x07, 0x71, 0x71, 0x18, 0x1F, 0x50, 0x45, 0x3A, 
+++	0x66, 0x04, 0x7F, 0x15, 0xB2, 0xA8, 0x02, 0x77, 0xCE, 0xC6, 
+++	0xF9, 0x7C, 0x63, 0xE4, 0x52, 0x41, 0xFA, 0x62, 0xB9, 0x0D, 
+++	0xDC, 0x08, 0x62, 0xEC, 0x00, 0xAB, 0xB0, 0xF7, 0x79, 0x48, 
+++	0x75, 0x22, 0x85, 0xCC, 0x67, 0x3C, 0xEA, 0x09, 0x32, 0xAC, 
+++	0x30, 0xED, 0x1E, 0x67, 0xDC, 0x74, 0xF8, 0xD9, 0xC3, 0xD0, 
+++	0xA0, 0x60, 0x4D, 0xCE, 0x52, 0xBC, 0xA3, 0xE5, 0x18, 0x7B, 
+++	0x0B, 0xC8, 0xCE, 0x70, 0xA2, 0xC8, 0x21, 0xCA, 0xCE, 0xA5, 
+++	0xD4, 0xCB, 0x85, 0xFC, 0xC7, 0x07, 0x5C, 0x05, 0x87, 0xFC, 
+++	0x2F, 0x67, 0x4D, 0x2D, 0x4F, 0xA4, 0xEE, 0x63, 0x98, 0x49, 
+++	0xE4, 0x2E, 0xD7, 0x3F, 0x7D, 0x69, 0x68, 0x0A, 0xA2, 0x3E, 
+++	0x5A, 0x04, 0xD4, 0xDD, 0xBB, 0xC7, 0xB4, 0x34, 0xB7, 0x21, 
+++	0xD3, 0xAC, 0x99, 0xD7, 0x87, 0x45, 0x5E, 0x18, 0x68, 0x16, 
+++	0x3A, 0xAF, 0xE2, 0x04, 0x57, 0xB8, 0x6A, 0xB8, 0x2F, 0x75, 
+++	0xD5, 0x79, 0x96, 0x60, 0x8D, 0xD1, 0xCC, 0xD1, 0x33, 0x85, 
+++	0x53, 0x88, 0x87, 0x34, 0xA6, 0x4B, 0x49, 0x24, 0x53, 0xD6, 
+++	0xF1, 0x1E, 0x4E, 0x98, 0x4D, 0x6B, 0x44, 0x31, 0x94, 0xFF, 
+++	0x46, 0xC2, 0x38, 0x2E, 0xEA, 0xBB
+++    };
+++    static unsigned char dhg_2048[] = {
+++	0x05
+++    };
+++    DH *dh = DH_new();
+++    BIGNUM *dhp_bn, *dhg_bn;
+++
+++    if (dh == NULL)
+++        return NULL;
+++    dhp_bn = BN_bin2bn(dhp_2048, sizeof (dhp_2048), NULL);
+++    dhg_bn = BN_bin2bn(dhg_2048, sizeof (dhg_2048), NULL);
+++    if (dhp_bn == NULL || dhg_bn == NULL
+++            || !DH_set0_pqg(dh, dhp_bn, NULL, dhg_bn)) {
+++        DH_free(dh);
+++        BN_free(dhp_bn);
+++        BN_free(dhg_bn);
+++        return NULL;
+++    }
+++    return dh;
+++}
++diff --git a/svc.c b/svc.c
++index 1341397..758dfbd 100644
++--- a/svc.c
+++++ b/svc.c
++@@ -1512,6 +1512,39 @@ do_RSAgen(void)
++     return;
++ }
++ 
+++
+++#if OPENSSL_VERSION_NUMBER < 0x10100000
+++static inline int DH_set0_pqg(DH *dh, BIGNUM *p, BIGNUM *q, BIGNUM *g)
+++{
+++	/* If the fields p and g in d are NULL, the corresponding input
+++	 * parameters MUST be non-NULL.  q may remain NULL.
+++	 */
+++	if ((dh->p == NULL && p == NULL)
+++	    || (dh->g == NULL && g == NULL))
+++		return 0;
+++
+++	if (p != NULL) {
+++		BN_free(dh->p);
+++		dh->p = p;
+++	}
+++	if (q != NULL) {
+++		BN_free(dh->q);
+++		dh->q = q;
+++	}
+++	if (g != NULL) {
+++		BN_free(dh->g);
+++		dh->g = g;
+++	}
+++
+++	if (q != NULL) {
+++		dh->length = BN_num_bits(q);
+++	}
+++
+++	return 1;
+++}
+++#endif
+++
+++
++ #include    "dh512.h"
++ 
++ #if DH_LEN == 1024
+diff --git a/package/rpcbind/0005-rpcbproc_callit_com-Stop-freeing-a-static-pointer.patch b/package/rpcbind/0005-rpcbproc_callit_com-Stop-freeing-a-static-pointer.patch
+new file mode 100644
+index 0000000000..c482af5dae
+--- /dev/null
++++ b/package/rpcbind/0005-rpcbproc_callit_com-Stop-freeing-a-static-pointer.patch
+@@ -0,0 +1,98 @@
++From 4e201b75928ff7d4894cd30ab0f5f67b9cd95f5c Mon Sep 17 00:00:00 2001
++From: Steve Dickson <steved@redhat.com>
++Date: Thu, 18 Jan 2018 17:33:56 +0000
++Subject: [PATCH] rpcbproc_callit_com: Stop freeing a static pointer
++
++commit 7ea36ee introduced a svc_freeargs() call
++that ended up freeing static pointer.
++
++It turns out the allocations for the rmt_args
++is not necessary . The xdr routines (xdr_bytes) will
++handle the memory management and the largest
++possible message size is UDPMSGSIZE (due to UDP only)
++which is smaller than RPC_BUF_MAX
++
++Signed-off-by: Steve Dickson <steved@redhat.com>
++(cherry picked from commit 7c7590ad536c0e24bef790cb1e65702fc54db566)
++Signed-off-by: Ed Blake <ed.blake@sondrel.com>
++---
++ src/rpcb_svc_com.c | 39 ++++++---------------------------------
++ 1 file changed, 6 insertions(+), 33 deletions(-)
++
++diff --git a/src/rpcb_svc_com.c b/src/rpcb_svc_com.c
++index 0432b6f..64f1104 100644
++--- a/src/rpcb_svc_com.c
+++++ b/src/rpcb_svc_com.c
++@@ -616,9 +616,9 @@ rpcbproc_callit_com(struct svc_req *rqstp, SVCXPRT *transp,
++ 	struct netconfig *nconf;
++ 	struct netbuf *caller;
++ 	struct r_rmtcall_args a;
++-	char *buf_alloc = NULL, *outbufp;
+++	char *outbufp;
++ 	char *outbuf_alloc = NULL;
++-	char buf[RPC_BUF_MAX], outbuf[RPC_BUF_MAX];
+++	char  outbuf[RPC_BUF_MAX];
++ 	struct netbuf *na = (struct netbuf *) NULL;
++ 	struct rpc_msg call_msg;
++ 	int outlen;
++@@ -639,36 +639,10 @@ rpcbproc_callit_com(struct svc_req *rqstp, SVCXPRT *transp,
++ 	}
++ 	if (si.si_socktype != SOCK_DGRAM)
++ 		return;	/* Only datagram type accepted */
++-	sendsz = __rpc_get_t_size(si.si_af, si.si_proto, UDPMSGSIZE);
++-	if (sendsz == 0) {	/* data transfer not supported */
++-		if (reply_type == RPCBPROC_INDIRECT)
++-			svcerr_systemerr(transp);
++-		return;
++-	}
++-	/*
++-	 * Should be multiple of 4 for XDR.
++-	 */
++-	sendsz = ((sendsz + 3) / 4) * 4;
++-	if (sendsz > RPC_BUF_MAX) {
++-#ifdef	notyet
++-		buf_alloc = alloca(sendsz);		/* not in IDR2? */
++-#else
++-		buf_alloc = malloc(sendsz);
++-#endif	/* notyet */
++-		if (buf_alloc == NULL) {
++-			if (debugging)
++-				xlog(LOG_DEBUG,
++-					"rpcbproc_callit_com:  No Memory!\n");
++-			if (reply_type == RPCBPROC_INDIRECT)
++-				svcerr_systemerr(transp);
++-			return;
++-		}
++-		a.rmt_args.args = buf_alloc;
++-	} else {
++-		a.rmt_args.args = buf;
++-	}
+++	sendsz = UDPMSGSIZE;
++ 
++ 	call_msg.rm_xid = 0;	/* For error checking purposes */
+++	memset(&a, 0, sizeof(a)); /* Zero out the input buffer */
++ 	if (!svc_getargs(transp, (xdrproc_t) xdr_rmtcall_args, (char *) &a)) {
++ 		if (reply_type == RPCBPROC_INDIRECT)
++ 			svcerr_decode(transp);
++@@ -708,7 +682,8 @@ rpcbproc_callit_com(struct svc_req *rqstp, SVCXPRT *transp,
++ 	if (rbl == (rpcblist_ptr)NULL) {
++ #ifdef RPCBIND_DEBUG
++ 		if (debugging)
++-			xlog(LOG_DEBUG, "not found\n");
+++			xlog(LOG_DEBUG, "prog %lu vers %lu: not found\n", 
+++				a.rmt_prog, a.rmt_vers);
++ #endif
++ 		if (reply_type == RPCBPROC_INDIRECT)
++ 			svcerr_noprog(transp);
++@@ -941,8 +916,6 @@ out:
++ 	}
++ 	if (local_uaddr)
++ 		free(local_uaddr);
++-	if (buf_alloc)
++-		free(buf_alloc);
++ 	if (outbuf_alloc)
++ 		free(outbuf_alloc);
++ 	if (na) {
++-- 
++2.11.0
++
+diff --git a/package/rpcbind/0006-pmapproc_dump-Fixed-typo-in-memory-leak-patch.patch b/package/rpcbind/0006-pmapproc_dump-Fixed-typo-in-memory-leak-patch.patch
+new file mode 100644
+index 0000000000..11ce6a84a2
+--- /dev/null
++++ b/package/rpcbind/0006-pmapproc_dump-Fixed-typo-in-memory-leak-patch.patch
+@@ -0,0 +1,31 @@
++From d3f1f55e50e3c436a2ea91d60da84c3a94e6c53f Mon Sep 17 00:00:00 2001
++From: Steve Dickson <steved@redhat.com>
++Date: Thu, 18 Jan 2018 17:41:49 +0000
++Subject: [PATCH] pmapproc_dump: Fixed typo in memory leak patch
++
++commit 7ea36eee introduce a typo that caused
++NIS (aka ypbind) to fail.
++
++Signed-off-by: Steve Dickson <steved@redhat.com>
++(cherry picked from commit c49a7ea639eb700823e174fd605bbbe183e229aa)
++Signed-off-by: Ed Blake <ed.blake@sondrel.com>
++---
++ src/pmap_svc.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/src/pmap_svc.c b/src/pmap_svc.c
++index bb57b05..ffca7df 100644
++--- a/src/pmap_svc.c
+++++ b/src/pmap_svc.c
++@@ -384,7 +384,7 @@ pmapproc_dump(struct svc_req *rqstp /*__unused*/, SVCXPRT *xprt)
++ 	}
++ 
++ done:
++-	if (!svc_freeargs(xprt, (xdrproc_t) xdr_pmap, (char *)NULL)) {
+++	if (!svc_freeargs(xprt, (xdrproc_t) xdr_void, (char *)NULL)) {
++ 		if (debugging) {
++ 			(void) xlog(LOG_DEBUG, "unable to free arguments\n");
++ 			if (doabort) {
++-- 
++2.11.0
++
+diff --git a/package/squid/0003-ESI-make-sure-endofName-never-exceeds-tagEnd-130.patch b/package/squid/0003-ESI-make-sure-endofName-never-exceeds-tagEnd-130.patch
+new file mode 100644
+index 0000000000..6e71677a19
+--- /dev/null
++++ b/package/squid/0003-ESI-make-sure-endofName-never-exceeds-tagEnd-130.patch
+@@ -0,0 +1,35 @@
++From eb2db98a676321b814fc4a51c4fb7928a8bb45d9 Mon Sep 17 00:00:00 2001
++From: Amos Jeffries <yadij@users.noreply.github.com>
++Date: Fri, 19 Jan 2018 13:54:14 +1300
++Subject: [PATCH] ESI: make sure endofName never exceeds tagEnd (#130)
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/esi/CustomParser.cc | 4 ++--
++ 1 file changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/src/esi/CustomParser.cc b/src/esi/CustomParser.cc
++index d86d2d309..db634d921 100644
++--- a/src/esi/CustomParser.cc
+++++ b/src/esi/CustomParser.cc
++@@ -121,7 +121,7 @@ ESICustomParser::parse(char const *dataToParse, size_t const lengthOfData, bool
++ 
++             char * endofName = strpbrk(const_cast<char *>(tag), w_space);
++ 
++-            if (endofName > tagEnd)
+++            if (!endofName || endofName > tagEnd)
++                 endofName = const_cast<char *>(tagEnd);
++ 
++             *endofName = '\0';
++@@ -214,7 +214,7 @@ ESICustomParser::parse(char const *dataToParse, size_t const lengthOfData, bool
++ 
++             char * endofName = strpbrk(const_cast<char *>(tag), w_space);
++ 
++-            if (endofName > tagEnd)
+++            if (!endofName || endofName > tagEnd)
++                 endofName = const_cast<char *>(tagEnd);
++ 
++             *endofName = '\0';
++-- 
++2.11.0
++
+diff --git a/package/squid/0004-Fix-indirect-IP-logging-for-transactions-without-a-c.patch b/package/squid/0004-Fix-indirect-IP-logging-for-transactions-without-a-c.patch
+new file mode 100644
+index 0000000000..51fff30034
+--- /dev/null
++++ b/package/squid/0004-Fix-indirect-IP-logging-for-transactions-without-a-c.patch
+@@ -0,0 +1,31 @@
++From 8232b83d3fa47a1399f155cb829db829369fbae9 Mon Sep 17 00:00:00 2001
++From: squidadm <squidadm@users.noreply.github.com>
++Date: Sun, 21 Jan 2018 08:07:08 +1300
++Subject: [PATCH] Fix indirect IP logging for transactions without a client
++ connection (#129) (#136)
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/client_side_request.cc | 6 +++---
++ 1 file changed, 3 insertions(+), 3 deletions(-)
++
++diff --git a/src/client_side_request.cc b/src/client_side_request.cc
++index be124f355..203f89d46 100644
++--- a/src/client_side_request.cc
+++++ b/src/client_side_request.cc
++@@ -488,9 +488,9 @@ clientFollowXForwardedForCheck(allow_t answer, void *data)
++         * Ensure that the access log shows the indirect client
++         * instead of the direct client.
++         */
++-        ConnStateData *conn = http->getConn();
++-        conn->log_addr = request->indirect_client_addr;
++-        http->al->cache.caddr = conn->log_addr;
+++        http->al->cache.caddr = request->indirect_client_addr;
+++        if (ConnStateData *conn = http->getConn())
+++            conn->log_addr = request->indirect_client_addr;
++     }
++     request->x_forwarded_for_iterator.clean();
++     request->flags.done_follow_x_forwarded_for = true;
++-- 
++2.11.0
++
+diff --git a/package/squid/squid.hash b/package/squid/squid.hash
+index d9b7924de1..8787cb25ef 100644
+--- a/package/squid/squid.hash
++++ b/package/squid/squid.hash
+@@ -1,3 +1,5 @@
+-# From http://www.squid-cache.org/Versions/v3/3.5/squid-3.5.24.tar.xz.asc
+-md5 3fae511e16b6379b61c011914673973d  squid-3.5.24.tar.xz
+-sha1 f203637783301a4b86e554b6dd226de721762ae5  squid-3.5.24.tar.xz
++# From http://www.squid-cache.org/Versions/v3/3.5/squid-3.5.27.tar.xz.asc
++md5 39ef8199675d48a314b540f92c00c545 squid-3.5.27.tar.xz
++sha1 1e69c96d13cd49844da3bcf33a0b428fbe7b6f77 squid-3.5.27.tar.xz
++# Locally calculated
++sha256 58f5d05257af1fb964fde20e134d660fac9afa86b6fd8c70d63ead63068378fa COPYING
+diff --git a/package/squid/squid.mk b/package/squid/squid.mk
+index 9abf3cd8e6..cd91600e49 100644
+--- a/package/squid/squid.mk
++++ b/package/squid/squid.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ SQUID_VERSION_MAJOR = 3.5
+-SQUID_VERSION = $(SQUID_VERSION_MAJOR).24
++SQUID_VERSION = $(SQUID_VERSION_MAJOR).27
+ SQUID_SOURCE = squid-$(SQUID_VERSION).tar.xz
+ SQUID_SITE = http://www.squid-cache.org/Versions/v3/$(SQUID_VERSION_MAJOR)
+ SQUID_LICENSE = GPLv2+
+diff --git a/package/tar/tar.mk b/package/tar/tar.mk
+index 26f113a4d2..4ba28339ce 100644
+--- a/package/tar/tar.mk
++++ b/package/tar/tar.mk
+@@ -44,4 +44,7 @@ define HOST_TAR_EXTRACT_CMDS
+ 	mv $(@D)/tar-$(TAR_VERSION)/* $(@D)
+ 	rmdir $(@D)/tar-$(TAR_VERSION)
+ endef
++
++HOST_TAR_CONF_OPTS = --without-selinux
++
+ $(eval $(host-autotools-package))
+diff --git a/package/ti-cgt-pru/ti-cgt-pru.hash b/package/ti-cgt-pru/ti-cgt-pru.hash
+index 1c19b33fd6..1975d8d1e6 100644
+--- a/package/ti-cgt-pru/ti-cgt-pru.hash
++++ b/package/ti-cgt-pru/ti-cgt-pru.hash
+@@ -1,2 +1,4 @@
+ # Locally calculated
+-sha256	df85cd1ed3aea12d577854ece11bf5f2af6ace8c39959eea4cf2fa5973924e0e	ti_cgt_pru_2.1.3_linux_installer_x86.bin
++sha256	7dc37fd689d1d506bf410d2a00af658b93a58d4bc10ac32c2210129dab617377	ti_cgt_pru_2.2.1_linux_installer_x86.bin
++sha256	eb646f4f8b14351110992b40ba24d12803bcc150a76e7298705f51088b0a09cc	PRU_Code_Generation_Tools_2.2.x_manifest.html
++sha256	6b98f9262abd1ae9a3731e6feee02a56b6e290542dea119eeeeaf88bf802aabc	pru_rts_2_2_0_82167478-F8C9-49b2-82BD-12F8550770F9.spdx
+diff --git a/package/ti-cgt-pru/ti-cgt-pru.mk b/package/ti-cgt-pru/ti-cgt-pru.mk
+index d94f09197f..4849543eea 100644
+--- a/package/ti-cgt-pru/ti-cgt-pru.mk
++++ b/package/ti-cgt-pru/ti-cgt-pru.mk
+@@ -4,14 +4,14 @@
+ #
+ ################################################################################
+ 
+-TI_CGT_PRU_VERSION = 2.1.3
++TI_CGT_PRU_VERSION = 2.2.1
+ TI_CGT_PRU_SOURCE = ti_cgt_pru_$(TI_CGT_PRU_VERSION)_linux_installer_x86.bin
+-TI_CGT_PRU_SITE = http://software-dl.ti.com/codegen/esd/cgt_public_sw/PRU/$(TI_CGT_PRU_VERSION)
++TI_CGT_PRU_SITE = http://downloads.ti.com/codegen/esd/cgt_public_sw/PRU/$(TI_CGT_PRU_VERSION)
+ TI_CGT_PRU_LICENSE = TI Technology and Software Publicly Available License (compiler + PRU library), \
+ 	Boost Software License 1.0 (compiler), \
+ 	BSD-2c, BSD-3c, MIT, Academic Free License 3.0, Hewlett-Packard (PRU library)
+-TI_CGT_PRU_LICENSE_FILES = PRU_Code_Generation_Tools_2.1.x_manifest.html \
+-	PRU_CodeGen_Library_2.1_0222433C-30C1-442d-B5C6-2073BD97F80F.spdx.tag
++TI_CGT_PRU_LICENSE_FILES = PRU_Code_Generation_Tools_2.2.x_manifest.html \
++	pru_rts_2_2_0_82167478-F8C9-49b2-82BD-12F8550770F9.spdx
+ 
+ define HOST_TI_CGT_PRU_EXTRACT_CMDS
+ 	chmod +x $(DL_DIR)/$(TI_CGT_PRU_SOURCE)
+diff --git a/package/transmission/transmission.hash b/package/transmission/transmission.hash
+index 849a722d2b..4c1c3f9a3a 100644
+--- a/package/transmission/transmission.hash
++++ b/package/transmission/transmission.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+-sha256	3a8d045c306ad9acb7bf81126939b9594553a388482efa0ec1bfb67b22acd35f	transmission-2.92.tar.xz
++sha256 8815920e0a4499bcdadbbe89a4115092dab42ce5199f71ff9a926cfd12b9b90b  transmission-2.93.tar.xz
++sha256 20801783bf59e27d03ed6aab625b32a34e221ae95bf801db87827c8023398495  COPYING
+diff --git a/package/transmission/transmission.mk b/package/transmission/transmission.mk
+index e4a36805c2..34b310bffc 100644
+--- a/package/transmission/transmission.mk
++++ b/package/transmission/transmission.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-TRANSMISSION_VERSION = 2.92
++TRANSMISSION_VERSION = 2.93
+ TRANSMISSION_SITE = https://github.com/transmission/transmission-releases/raw/master
+ TRANSMISSION_SOURCE = transmission-$(TRANSMISSION_VERSION).tar.xz
+ TRANSMISSION_DEPENDENCIES = \
+diff --git a/package/util-linux/util-linux.mk b/package/util-linux/util-linux.mk
+index 05e1398937..d7358fe581 100644
+--- a/package/util-linux/util-linux.mk
++++ b/package/util-linux/util-linux.mk
+@@ -167,8 +167,37 @@ HOST_UTIL_LINUX_CONF_OPTS += \
+ 
+ ifeq ($(BR2_PACKAGE_HOST_UTIL_LINUX),y)
+ HOST_UTIL_LINUX_CONF_OPTS += --disable-makeinstall-chown
+-# disable more command because of ncurses dependency
+-HOST_UTIL_LINUX_CONF_OPTS += --disable-more
++# disable commands that have ncurses dependency, as well as
++# other ones that are useless on the host
++HOST_UTIL_LINUX_CONF_OPTS += \
++	--disable-agetty \
++	--disable-chfn-chsh \
++	--disable-chmem \
++	--disable-login \
++	--disable-lslogins \
++	--disable-mesg \
++	--disable-more \
++	--disable-newgrp \
++	--disable-nologin \
++	--disable-nsenter \
++	--disable-pg \
++	--disable-rfkill \
++	--disable-schedutils \
++	--disable-setpriv \
++	--disable-setterm \
++	--disable-su \
++	--disable-sulogin \
++	--disable-tunelp \
++	--disable-ul \
++	--disable-unshare \
++	--disable-uuidd \
++	--disable-vipw \
++	--disable-wall \
++	--disable-wdctl \
++	--disable-write \
++	--disable-zramctl
++# Used by cramfs utils
++HOST_UTIL_LINUX_DEPENDENCIES += host-zlib
+ else
+ HOST_UTIL_LINUX_CONF_OPTS += --disable-all-programs
+ endif
+diff --git a/package/webkitgtk/Config.in b/package/webkitgtk/Config.in
+index bfe344419b..93f286bb39 100644
+--- a/package/webkitgtk/Config.in
++++ b/package/webkitgtk/Config.in
+@@ -34,6 +34,7 @@ config BR2_PACKAGE_WEBKITGTK
+ 	select BR2_PACKAGE_LIBGCRYPT
+ 	select BR2_PACKAGE_LIBSECRET
+ 	select BR2_PACKAGE_LIBSOUP
++	select BR2_PACKAGE_LIBTASN1
+ 	select BR2_PACKAGE_LIBXML2
+ 	select BR2_PACKAGE_LIBXSLT
+ 	select BR2_PACKAGE_SQLITE
+diff --git a/package/webkitgtk/webkitgtk.hash b/package/webkitgtk/webkitgtk.hash
+index 3d64b6f5a9..dd2b28d372 100644
+--- a/package/webkitgtk/webkitgtk.hash
++++ b/package/webkitgtk/webkitgtk.hash
+@@ -1,7 +1,7 @@
+-# From https://webkitgtk.org/releases/webkitgtk-2.18.4.tar.xz.sums
+-md5 c4686971eac2760bab685e21ac8849be webkitgtk-2.18.4.tar.xz
+-sha1 709616b445158dc3163a64bb59e95aadbe58949c webkitgtk-2.18.4.tar.xz
+-sha256 87b6bb9a6065b949ecbe6191313c43e57ad28efdf1f2b5e763405093520632b8 webkitgtk-2.18.4.tar.xz
++# From https://webkitgtk.org/releases/webkitgtk-2.18.6.tar.xz.sums
++md5 c1a548595135ee75ad3bf2e18ac83112 webkitgtk-2.18.6.tar.xz
++sha1 fb0daa85142cfe8822de518dfaa7bd5c3cdd6c23 webkitgtk-2.18.6.tar.xz
++sha256 93912cc2f40f12e452be1ca4babdbdaac0ec4f828d441257a6b06c2963bbac3c webkitgtk-2.18.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 0b5d3a7cc325942567373b0ecd757d07c132e0ebd7c97bfc63f7e1a76094edb4 Source/WebCore/LICENSE-APPLE
+diff --git a/package/webkitgtk/webkitgtk.mk b/package/webkitgtk/webkitgtk.mk
+index 00f7920a5f..99b2b49956 100644
+--- a/package/webkitgtk/webkitgtk.mk
++++ b/package/webkitgtk/webkitgtk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WEBKITGTK_VERSION = 2.18.4
++WEBKITGTK_VERSION = 2.18.6
+ WEBKITGTK_SITE = http://www.webkitgtk.org/releases
+ WEBKITGTK_SOURCE = webkitgtk-$(WEBKITGTK_VERSION).tar.xz
+ WEBKITGTK_INSTALL_STAGING = YES
+@@ -14,7 +14,7 @@ WEBKITGTK_LICENSE_FILES = \
+ 	Source/WebCore/LICENSE-LGPL-2.1
+ WEBKITGTK_DEPENDENCIES = host-ruby host-flex host-bison host-gperf \
+ 	enchant harfbuzz icu jpeg libgcrypt libgtk3 libsecret libsoup \
+-	libxml2 libxslt sqlite webp
++	libtasn1 libxml2 libxslt sqlite webp
+ WEBKITGTK_CONF_OPTS = \
+ 	-DENABLE_API_TESTS=OFF \
+ 	-DENABLE_GEOLOCATION=OFF \
+diff --git a/package/wireshark/wireshark.hash b/package/wireshark/wireshark.hash
+index cffdab2a24..93421c6498 100644
+--- a/package/wireshark/wireshark.hash
++++ b/package/wireshark/wireshark.hash
+@@ -1,2 +1,4 @@
+-# From: https://www.wireshark.org/download/src/all-versions/SIGNATURES-2.2.11.txt
+-sha256 a9f11621e85d7e1d72259157edd94825e72af3fd72e184b8474459f92ad5fc40  wireshark-2.2.11.tar.bz2
++# From: https://www.wireshark.org/download/src/all-versions/SIGNATURES-2.2.12.txt
++sha256 3274458d1bb1658a5001465ecb07c7cbfc709571ef36bd062897570d4bab3ebc  wireshark-2.2.12.tar.bz2
++# Locally calculated
++sha256 7cdbed2b697efaa45576a033f1ac0e73cd045644a91c79bbf41d4a7d81dac7bf  COPYING
+diff --git a/package/wireshark/wireshark.mk b/package/wireshark/wireshark.mk
+index 76c0db3826..2bbbbf267c 100644
+--- a/package/wireshark/wireshark.mk
++++ b/package/wireshark/wireshark.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WIRESHARK_VERSION = 2.2.11
++WIRESHARK_VERSION = 2.2.12
+ WIRESHARK_SOURCE = wireshark-$(WIRESHARK_VERSION).tar.bz2
+ WIRESHARK_SITE = https://www.wireshark.org/download/src/all-versions
+ WIRESHARK_LICENSE = wireshark license
+diff --git a/package/x11r7/mcookie/mcookie.c b/package/x11r7/mcookie/mcookie.c
+index 902d92fc47..3c38f6f3b3 100644
+--- a/package/x11r7/mcookie/mcookie.c
++++ b/package/x11r7/mcookie/mcookie.c
+@@ -204,7 +204,7 @@ void MD5Final(unsigned char digest[16], struct MD5Context *ctx)
+     MD5Transform(ctx->buf, (uint32 *) ctx->in);
+     byteReverse((unsigned char *) ctx->buf, 4);
+     memcpy(digest, ctx->buf, 16);
+-    memset(ctx, 0, sizeof(ctx));	/* In case it's sensitive */
++    memset(ctx, 0, sizeof(*ctx));	/* In case it's sensitive */
+ }
+ 
+ /* The four core functions - F1 is optimized somewhat */
+diff --git a/package/xen/xen.mk b/package/xen/xen.mk
+index 2a87d8f90c..66b81dfb30 100644
+--- a/package/xen/xen.mk
++++ b/package/xen/xen.mk
+@@ -54,6 +54,7 @@ XEN_DEPENDENCIES += argp-standalone
+ endif
+ XEN_INSTALL_TARGET_OPTS += DESTDIR=$(TARGET_DIR) install-tools
+ XEN_MAKE_OPTS += dist-tools
++XEN_CONF_OPTS += --with-extra-qemuu-configure-args="--disable-sdl"
+ 
+ define XEN_INSTALL_INIT_SYSV
+ 	mv $(TARGET_DIR)/etc/init.d/xencommons $(TARGET_DIR)/etc/init.d/S50xencommons
+diff --git a/support/kconfig/Makefile b/support/kconfig/Makefile
+index 7eb4071b4e..af62023863 100644
+--- a/support/kconfig/Makefile
++++ b/support/kconfig/Makefile
+@@ -220,7 +220,8 @@ HOSTCFLAGS_gconf.o	= `pkg-config --cflags gtk+-2.0 gmodule-2.0 libglade-2.0` \
+ HOSTLOADLIBES_mconf   = $(shell $(CONFIG_SHELL) $(check-lxdialog) -ldflags $(HOSTCC))
+ 
+ HOSTLOADLIBES_nconf	= $(shell \
+-				pkg-config --libs menu panel ncurses 2>/dev/null \
++				pkg-config --libs menuw panelw ncursesw 2>/dev/null \
++				|| pkg-config --libs menu panel ncurses 2>/dev/null \
+ 				|| echo "-lmenu -lpanel -lncurses"  )
+ $(obj)/qconf.o: $(obj)/.tmp_qtcheck
+ 
+diff --git a/support/kconfig/patches/18-kconfig-nconfig-fix-multi-byte-UTF-handling.patch b/support/kconfig/patches/18-kconfig-nconfig-fix-multi-byte-UTF-handling.patch
+new file mode 100644
+index 0000000000..3ca48d0714
+--- /dev/null
++++ b/support/kconfig/patches/18-kconfig-nconfig-fix-multi-byte-UTF-handling.patch
+@@ -0,0 +1,45 @@
++From 7285996aa0006d671bb01f0d35991d254b2b2b01 Mon Sep 17 00:00:00 2001
++From: Brian Norris <computersforpeace@gmail.com>
++Date: Wed, 4 Jun 2014 00:52:31 -0700
++Subject: kconfig: nconfig: fix multi-byte UTF handling
++
++Currently, Kconfig descriptions that use multi-byte UTF-8 characters
++(such as MTD_NAND_CAFE) will have their menu entries dropped from the
++'make nconfig' ncurses menu, and all subsequent entries in the same
++window will be omitted. This seems to be due to the ncurses 'menu'
++library, which does not traditionally handle UTF-8 >8-bit characters
++properly.
++
++The ncursesw library ('w' is for "wide") is written to handle these
++UTF-8 characters, and is practically a drop-in replacement at the source
++level. Use it by default, if available.
++
++Link: https://bugzilla.kernel.org/show_bug.cgi?id=43067
++Signed-off-by: Brian Norris <computersforpeace@gmail.com>
++Cc: "Yann E. MORIN" <yann.morin.1998@free.fr>
++Cc: Martin Walch <walch.martin@web.de>
++Acked-by: Sam Ravnborg <sam@ravnborg.org>
++Signed-off-by: Michal Marek <mmarek@suse.cz>
++---
++ scripts/kconfig/Makefile | 3 ++-
++ 1 file changed, 2 insertions(+), 1 deletion(-)
++
++(limited to 'scripts/kconfig/Makefile')
++
++diff --git a/scripts/kconfig/Makefile b/scripts/kconfig/Makefile
++index e7bf38e..c059385 100644
++--- a/scripts/kconfig/Makefile
+++++ b/scripts/kconfig/Makefile
++@@ -191,7 +191,8 @@ HOSTCFLAGS_gconf.o	= `pkg-config --cflags gtk+-2.0 gmodule-2.0 libglade-2.0` \
++ HOSTLOADLIBES_mconf   = $(shell $(CONFIG_SHELL) $(check-lxdialog) -ldflags $(HOSTCC))
++ 
++ HOSTLOADLIBES_nconf	= $(shell \
++-				pkg-config --libs menu panel ncurses 2>/dev/null \
+++				pkg-config --libs menuw panelw ncursesw 2>/dev/null \
+++				|| pkg-config --libs menu panel ncurses 2>/dev/null \
++ 				|| echo "-lmenu -lpanel -lncurses"  )
++ $(obj)/qconf.o: $(obj)/.tmp_qtcheck
++ 
++-- 
++cgit v1.1
++
+diff --git a/support/kconfig/patches/series b/support/kconfig/patches/series
+index e25375ea28..1a53ba9958 100644
+--- a/support/kconfig/patches/series
++++ b/support/kconfig/patches/series
+@@ -7,3 +7,4 @@
+ 15-fix-qconf-moc-rule.patch
+ 16-fix-space-to-de-select-options.patch
+ 17-kconfig-lxdialog-get-ncurses-CFLAGS-with-pkg-config.patch
++18-kconfig-nconfig-fix-multi-byte-UTF-handling.patch
+diff --git a/system/Config.in b/system/Config.in
+index b47ae43844..2d2bb87275 100644
+--- a/system/Config.in
++++ b/system/Config.in
+@@ -346,12 +346,16 @@ config BR2_TARGET_GENERIC_GETTY_BAUDRATE
+ config BR2_TARGET_GENERIC_GETTY_TERM
+ 	string "TERM environment variable"
+ 	default "vt100"
++	# currently observed only by busybox and sysvinit
++	depends on BR2_INIT_BUSYBOX || BR2_INIT_SYSV
+ 	help
+ 	  Specify a TERM type.
+ 
+ config BR2_TARGET_GENERIC_GETTY_OPTIONS
+ 	string "other options to pass to getty"
+ 	default ""
++	# currently observed only by busybox and sysvinit
++	depends on BR2_INIT_BUSYBOX || BR2_INIT_SYSV
+ 	help
+ 	  Any other flags you want to pass to getty,
+ 	  Refer to getty --help for details.

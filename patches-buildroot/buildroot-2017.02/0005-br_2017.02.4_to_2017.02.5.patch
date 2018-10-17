@@ -1,0 +1,3820 @@
+diff --git a/CHANGES b/CHANGES
+index 90d409f2c..73936428e 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,26 @@
++2017.02.5, Released July 27th, 2017
++
++	Important / security related fixes.
++
++	Webkitgtk bumped to the 2.16.x series, fixing a large number
++	of security issues.
++
++	host-aespipe compile fix for Debian/Gentoo/Ubuntu toolchains
++	which default to PIE mode.
++
++	Updated/fixed packages: aespipe, apache, bind, binutils,
++	ccache, collectd, efibootmgr, efivar, expat, ffmpeg, gcc,
++	heimdal, iproute2, irssi, libglib2, libmemcached, libosip2,
++	libtirpc, libxml-parser-perl, linux-fusion, linux-zigbee,
++	mpg123, nodejs, orc, pcre, php, pulseaudio,
++	python-setproctitle, qt5base, rpi-firmware, samba4, syslinux,
++	systemd, spice, tiff, webkitgtk, x265, xen,
++	xserver_xorg-server, xvisor
++
++	Issues resolved (http://bugs.buildroot.org):
++
++	#10061: gcc5.4 buildroot toolchain for powerpc libsanitizer...
++
+ 2017.02.4, Released July 4th, 2017
+ 
+ 	Important / security related fixes.
+diff --git a/Config.in b/Config.in
+index bd8f0d1a1..434935bff 100644
+--- a/Config.in
++++ b/Config.in
+@@ -57,6 +57,11 @@ config BR2_HOST_GCC_AT_LEAST_6
+ 	default y if BR2_HOST_GCC_VERSION = "6"
+ 	select BR2_HOST_GCC_AT_LEAST_5
+ 
++config BR2_HOST_GCC_AT_LEAST_7
++	bool
++	default y if BR2_HOST_GCC_VERSION = "7"
++	select BR2_HOST_GCC_AT_LEAST_6
++
+ # Hidden boolean selected by packages in need of Java in order to build
+ # (example: xbmc)
+ config BR2_NEEDS_HOST_JAVA
+diff --git a/Makefile b/Makefile
+index 321b30738..9b517904e 100644
+--- a/Makefile
++++ b/Makefile
+@@ -86,9 +86,9 @@ else # umask / $(CURDIR) / $(O)
+ all:
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2017.02.4
++export BR2_VERSION := 2017.02.5
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1499186000
++BR2_VERSION_EPOCH = 1501100000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+diff --git a/arch/Config.in.arm b/arch/Config.in.arm
+index 2617976f1..596921dfe 100644
+--- a/arch/Config.in.arm
++++ b/arch/Config.in.arm
+@@ -534,15 +534,9 @@ config BR2_GCC_TARGET_CPU
+ 	default "strongarm"	if BR2_strongarm
+ 	default "xscale"	if BR2_xscale
+ 	default "iwmmxt"	if BR2_iwmmxt
+-	default "cortex-a53"		if (BR2_cortex_a53 && !BR2_ARCH_IS_64)
+-	default "cortex-a53+fp"		if (BR2_cortex_a53 && BR2_ARCH_IS_64 && BR2_ARM_FPU_FP_ARMV8)
+-	default "cortex-a53+fp+simd" 	if (BR2_cortex_a53 && BR2_ARCH_IS_64 && BR2_ARM_FPU_NEON_FP_ARMV8)
+-	default "cortex-a57"		if (BR2_cortex_a57 && !BR2_ARCH_IS_64)
+-	default "cortex-a57+fp"		if (BR2_cortex_a57 && BR2_ARCH_IS_64 && BR2_ARM_FPU_FP_ARMV8)
+-	default "cortex-a57+fp+simd" 	if (BR2_cortex_a57 && BR2_ARCH_IS_64 && BR2_ARM_FPU_NEON_FP_ARMV8)
+-	default "cortex-a72"		if (BR2_cortex_a72 && !BR2_ARCH_IS_64)
+-	default "cortex-a72+fp"		if (BR2_cortex_a72 && BR2_ARCH_IS_64 && BR2_ARM_FPU_FP_ARMV8)
+-	default "cortex-a72+fp+simd" 	if (BR2_cortex_a72 && BR2_ARCH_IS_64 && BR2_ARM_FPU_NEON_FP_ARMV8)
++	default "cortex-a53"	if BR2_cortex_a53
++	default "cortex-a57"	if BR2_cortex_a57
++	default "cortex-a72"	if BR2_cortex_a72
+ 
+ config BR2_GCC_TARGET_ABI
+ 	default "aapcs-linux"	if BR2_arm || BR2_armeb
+diff --git a/boot/syslinux/Config.in b/boot/syslinux/Config.in
+index 299a559fd..da035498d 100644
+--- a/boot/syslinux/Config.in
++++ b/boot/syslinux/Config.in
+@@ -35,6 +35,7 @@ config BR2_TARGET_SYSLINUX_PXELINUX
+ 
+ config BR2_TARGET_SYSLINUX_MBR
+ 	bool "install mbr"
++	depends on !BR2_TOOLCHAIN_HAS_BINUTILS_BUG_19615
+ 	select BR2_TARGET_SYSLINUX_LEGACY_BIOS
+ 	help
+ 	  Install the legacy-BIOS 'mbr' image, to boot off a
+diff --git a/boot/syslinux/syslinux.mk b/boot/syslinux/syslinux.mk
+index a88885bcb..f07e3b97c 100644
+--- a/boot/syslinux/syslinux.mk
++++ b/boot/syslinux/syslinux.mk
+@@ -13,7 +13,8 @@ SYSLINUX_LICENSE_FILES = COPYING
+ 
+ SYSLINUX_INSTALL_IMAGES = YES
+ 
+-SYSLINUX_DEPENDENCIES = host-nasm host-upx util-linux
++# host-util-linux needed to provide libuuid when building host tools
++SYSLINUX_DEPENDENCIES = host-nasm host-upx util-linux host-util-linux
+ 
+ ifeq ($(BR2_TARGET_SYSLINUX_LEGACY_BIOS),y)
+ SYSLINUX_TARGET += bios
+diff --git a/docs/manual/adding-packages-generic.txt b/docs/manual/adding-packages-generic.txt
+index a08283c5a..e5f165d9b 100644
+--- a/docs/manual/adding-packages-generic.txt
++++ b/docs/manual/adding-packages-generic.txt
+@@ -315,7 +315,10 @@ information is (assuming the package name is +libfoo+) :
+   ** +local+ for a local source code directory. One should use this
+      when +LIBFOO_SITE+ specifies a local directory path containing
+      the package source code. Buildroot copies the contents of the
+-     source directory into the package's build directory.
++     source directory into the package's build directory. Note that
++     for +local+ packages, no patches are applied. If you need to
++     still patch the source code, use +LIBFOO_POST_RSYNC_HOOKS+, see
++     xref:hooks-rsync[].
+ 
+ * +LIBFOO_GIT_SUBMODULES+ can be set to +YES+ to create an archive
+   with the git submodules in the repository.  This is only available
+diff --git a/docs/manual/adding-packages-hooks.txt b/docs/manual/adding-packages-hooks.txt
+index d25092ac2..0ce79f890 100644
+--- a/docs/manual/adding-packages-hooks.txt
++++ b/docs/manual/adding-packages-hooks.txt
+@@ -59,6 +59,7 @@ endef
+ LIBFOO_POST_PATCH_HOOKS += LIBFOO_POST_PATCH_FIXUP
+ ----------------------
+ 
++[[hooks-rsync]]
+ ==== Using the +POST_RSYNC+ hook
+ The +POST_RSYNC+ hook is run only for packages that use a local source,
+ either through the +local+ site method or the +OVERRIDE_SRCDIR+
+diff --git a/package/Makefile.in b/package/Makefile.in
+index c1dc71433..b32ad8e44 100644
+--- a/package/Makefile.in
++++ b/package/Makefile.in
+@@ -223,6 +223,27 @@ HOST_CFLAGS   += $(HOST_CPPFLAGS)
+ HOST_CXXFLAGS += $(HOST_CFLAGS)
+ HOST_LDFLAGS  += -L$(HOST_DIR)/lib -L$(HOST_DIR)/usr/lib -Wl,-rpath,$(HOST_DIR)/usr/lib
+ 
++# The macros below are taken from linux 4.11 and adapted slightly.
++# Copy more when needed.
++
++# try-run
++# Usage: option = $(call try-run, $(CC)...-o "$$TMP",option-ok,otherwise)
++# Exit code chooses option. "$$TMP" is can be used as temporary file and
++# is automatically cleaned up.
++try-run = $(shell set -e;               \
++	TMP="$$(tempfile)";             \
++	if ($(1)) >/dev/null 2>&1;      \
++	then echo "$(2)";               \
++	else echo "$(3)";               \
++	fi;                             \
++	rm -f "$$TMP")
++
++# host-cc-option
++# Usage: HOST_FOO_CFLAGS += $(call host-cc-option,-no-pie,)
++host-cc-option = $(call try-run,\
++        $(HOSTCC) $(HOST_CFLAGS) $(1) -c -x c /dev/null -o "$$TMP",$(1),$(2))
++
++
+ # host-intltool should be executed with the system perl, so we save
+ # the path to the system perl, before a host-perl built by Buildroot
+ # might get installed into $(HOST_DIR)/usr/bin and therefore appears
+diff --git a/package/aespipe/aespipe.mk b/package/aespipe/aespipe.mk
+index 6a38556ef..5ef95d520 100644
+--- a/package/aespipe/aespipe.mk
++++ b/package/aespipe/aespipe.mk
+@@ -9,5 +9,15 @@ AESPIPE_SOURCE = aespipe-v$(AESPIPE_VERSION).tar.bz2
+ AESPIPE_SITE = http://loop-aes.sourceforge.net/aespipe
+ AESPIPE_LICENSE = GPL
+ 
++# Recent Debian, Gentoo and Ubuntu enable -fPIE by default, breaking the build:
++# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=837393
++# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=835148
++# Older gcc versions however don't support the -no-pie flag, so we have to
++# check its availability.
++HOST_AESPIPE_NO_PIE_FLAG = $(call host-cc-option,-no-pie)
++HOST_AESPIPE_CONF_ENV = \
++	CFLAGS="$(HOST_CFLAGS) $(HOST_AESPIPE_NO_PIE_FLAG)" \
++	LDFLAGS="$(HOST_LDFLAGS) $(HOST_AESPIPE_NO_PIE_FLAG)"
++
+ $(eval $(autotools-package))
+ $(eval $(host-autotools-package))
+diff --git a/package/apache/apache.hash b/package/apache/apache.hash
+index fe7174a4d..f29ae4518 100644
+--- a/package/apache/apache.hash
++++ b/package/apache/apache.hash
+@@ -1,2 +1,2 @@
+-# From http://www.apache.org/dist/httpd/httpd-2.4.26.tar.bz2.sha256
+-sha256 a07eb52fafc879e0149d31882f7da63173e72df4478db4dc69f7a775b663d387 httpd-2.4.26.tar.bz2
++# From http://www.apache.org/dist/httpd/httpd-2.4.27.tar.bz2.sha256
++sha256 71fcc128238a690515bd8174d5330a5309161ef314a326ae45c7c15ed139c13a httpd-2.4.27.tar.bz2
+diff --git a/package/apache/apache.mk b/package/apache/apache.mk
+index b276b8d49..857e53834 100644
+--- a/package/apache/apache.mk
++++ b/package/apache/apache.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-APACHE_VERSION = 2.4.26
++APACHE_VERSION = 2.4.27
+ APACHE_SOURCE = httpd-$(APACHE_VERSION).tar.bz2
+ APACHE_SITE = http://archive.apache.org/dist/httpd
+ APACHE_LICENSE = Apache-2.0
+diff --git a/package/bind/bind.hash b/package/bind/bind.hash
+index 5dd15cb86..3a631def6 100644
+--- a/package/bind/bind.hash
++++ b/package/bind/bind.hash
+@@ -1,2 +1,3 @@
+-# Verified from http://ftp.isc.org/isc/bind9/9.11.1-P1/bind-9.11.1-P2.tar.gz.sha256.asc
+-sha256 bf53c6431575ae1612ddef66d18ef9baf2a22d842fa5b0cadc971919fd81fea5 bind-9.11.1-P2.tar.gz
++# Verified from http://ftp.isc.org/isc/bind9/9.11.1-P3/bind-9.11.1-P3.tar.gz.sha256.asc
++sha256 52426e75432e46996dc90f24fca027805a341c38fbbb022b60dc9acd2677ccf4 bind-9.11.1-P3.tar.gz
++sha256 d3906dfe153e2c48440d3ca1d5319f5e89b4b820cdfc5d0779c23d7ac2b175e9 COPYRIGHT
+diff --git a/package/bind/bind.mk b/package/bind/bind.mk
+index ee7621cb5..acc09119c 100644
+--- a/package/bind/bind.mk
++++ b/package/bind/bind.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-BIND_VERSION = 9.11.1-P2
++BIND_VERSION = 9.11.1-P3
+ BIND_SITE = ftp://ftp.isc.org/isc/bind9/$(BIND_VERSION)
+ # bind does not support parallel builds.
+ BIND_MAKE = $(MAKE1)
+diff --git a/package/binutils/2.27/0907-Automatically-enable-CRC-instructions-on-supported-A.patch b/package/binutils/2.27/0907-Automatically-enable-CRC-instructions-on-supported-A.patch
+new file mode 100644
+index 000000000..3b7fcfc95
+--- /dev/null
++++ b/package/binutils/2.27/0907-Automatically-enable-CRC-instructions-on-supported-A.patch
+@@ -0,0 +1,88 @@
++From 29a4659015ca7044c2d425d32a0b828e0fbb5ac1 Mon Sep 17 00:00:00 2001
++From: Richard Earnshaw <Richard.Earnshaw@arm.com>
++Date: Wed, 7 Sep 2016 17:14:54 +0100
++Subject: [PATCH] Automatically enable CRC instructions on supported ARMv8-A
++ CPUs.
++
++2016-09-07  Richard Earnshaw  <rearnsha@arm.com>
++
++	* opcode/arm.h (ARM_ARCH_V8A_CRC): New architecture.
++
++2016-09-07  Richard Earnshaw  <rearnsha@arm.com>
++
++	* config/tc-arm.c ((arm_cpus): Use ARM_ARCH_V8A_CRC for all
++	ARMv8-A CPUs except xgene1.
++
++Upstream: https://sourceware.org/git/gitweb.cgi?p=binutils-gdb.git;a=patch;h=27e5a270962fb92c07e7d476966ba380fa3bb68e
++Signed-off-by: Peter Seiderer <ps.report@gmx.net>
++---
++ gas/config/tc-arm.c  | 18 +++++++++---------
++ include/opcode/arm.h |  2 ++
++ 2 files changed, 11 insertions(+), 9 deletions(-)
++
++diff --git a/gas/config/tc-arm.c b/gas/config/tc-arm.c
++index 73d05316..7c86184d 100644
++--- a/gas/config/tc-arm.c
+++++ b/gas/config/tc-arm.c
++@@ -25332,17 +25332,17 @@ static const struct arm_cpu_option_table arm_cpus[] =
++ 								  "Cortex-A15"),
++   ARM_CPU_OPT ("cortex-a17",	ARM_ARCH_V7VE,   FPU_ARCH_NEON_VFP_V4,
++ 								  "Cortex-A17"),
++-  ARM_CPU_OPT ("cortex-a32",    ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+++  ARM_CPU_OPT ("cortex-a32",    ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
++ 								  "Cortex-A32"),
++-  ARM_CPU_OPT ("cortex-a35",    ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+++  ARM_CPU_OPT ("cortex-a35",    ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
++ 								  "Cortex-A35"),
++-  ARM_CPU_OPT ("cortex-a53",    ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+++  ARM_CPU_OPT ("cortex-a53",    ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
++ 								  "Cortex-A53"),
++-  ARM_CPU_OPT ("cortex-a57",    ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+++  ARM_CPU_OPT ("cortex-a57",    ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
++ 								  "Cortex-A57"),
++-  ARM_CPU_OPT ("cortex-a72",    ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+++  ARM_CPU_OPT ("cortex-a72",    ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
++ 								  "Cortex-A72"),
++-  ARM_CPU_OPT ("cortex-a73",    ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+++  ARM_CPU_OPT ("cortex-a73",    ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
++ 								  "Cortex-A73"),
++   ARM_CPU_OPT ("cortex-r4",	ARM_ARCH_V7R,	 FPU_NONE,	  "Cortex-R4"),
++   ARM_CPU_OPT ("cortex-r4f",	ARM_ARCH_V7R,	 FPU_ARCH_VFP_V3D16,
++@@ -25361,10 +25361,10 @@ static const struct arm_cpu_option_table arm_cpus[] =
++   ARM_CPU_OPT ("cortex-m1",	ARM_ARCH_V6SM,	 FPU_NONE,	  "Cortex-M1"),
++   ARM_CPU_OPT ("cortex-m0",	ARM_ARCH_V6SM,	 FPU_NONE,	  "Cortex-M0"),
++   ARM_CPU_OPT ("cortex-m0plus",	ARM_ARCH_V6SM,	 FPU_NONE,	  "Cortex-M0+"),
++-  ARM_CPU_OPT ("exynos-m1",	ARM_ARCH_V8A,	 FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+++  ARM_CPU_OPT ("exynos-m1",	ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
++ 								  "Samsung " \
++ 								  "Exynos M1"),
++-  ARM_CPU_OPT ("qdf24xx",	ARM_ARCH_V8A,	 FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+++  ARM_CPU_OPT ("qdf24xx",	ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
++ 								  "Qualcomm "
++ 								  "QDF24XX"),
++ 
++@@ -25389,7 +25389,7 @@ static const struct arm_cpu_option_table arm_cpus[] =
++   /* APM X-Gene family.  */
++   ARM_CPU_OPT ("xgene1",        ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
++ 	                                                          "APM X-Gene 1"),
++-  ARM_CPU_OPT ("xgene2",        ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+++  ARM_CPU_OPT ("xgene2",        ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
++ 	                                                          "APM X-Gene 2"),
++ 
++   { NULL, 0, ARM_ARCH_NONE, ARM_ARCH_NONE, NULL }
++diff --git a/include/opcode/arm.h b/include/opcode/arm.h
++index 60715cf8..feace5cd 100644
++--- a/include/opcode/arm.h
+++++ b/include/opcode/arm.h
++@@ -263,6 +263,8 @@
++ #define ARM_ARCH_V7M	ARM_FEATURE_CORE (ARM_AEXT_V7M, ARM_EXT2_V6T2_V8M)
++ #define ARM_ARCH_V7EM	ARM_FEATURE_CORE (ARM_AEXT_V7EM, ARM_EXT2_V6T2_V8M)
++ #define ARM_ARCH_V8A	ARM_FEATURE_CORE (ARM_AEXT_V8A, ARM_AEXT2_V8A)
+++#define ARM_ARCH_V8A_CRC ARM_FEATURE (ARM_AEXT_V8A, ARM_AEXT2_V8A, \
+++				      CRC_EXT_ARMV8)
++ #define ARM_ARCH_V8_1A	ARM_FEATURE (ARM_AEXT_V8A, ARM_AEXT2_V8_1A,	\
++ 				     CRC_EXT_ARMV8 | FPU_NEON_EXT_RDMA)
++ #define ARM_ARCH_V8_2A	ARM_FEATURE (ARM_AEXT_V8A, ARM_AEXT2_V8_2A,	\
++-- 
++2.11.0
++
+diff --git a/package/busybox/busybox-minimal.config b/package/busybox/busybox-minimal.config
+index 2abf458b7..0c8e63e62 100644
+--- a/package/busybox/busybox-minimal.config
++++ b/package/busybox/busybox-minimal.config
+@@ -22,7 +22,7 @@ CONFIG_FEATURE_INSTALLER=y
+ # CONFIG_PAM is not set
+ CONFIG_LONG_OPTS=y
+ CONFIG_FEATURE_DEVPTS=y
+-CONFIG_FEATURE_CLEAN_UP=y
++# CONFIG_FEATURE_CLEAN_UP is not set
+ CONFIG_FEATURE_UTMP=y
+ CONFIG_FEATURE_WTMP=y
+ # CONFIG_FEATURE_PIDFILE is not set
+diff --git a/package/busybox/busybox.config b/package/busybox/busybox.config
+index c45de2180..508128d5e 100644
+--- a/package/busybox/busybox.config
++++ b/package/busybox/busybox.config
+@@ -22,7 +22,7 @@ CONFIG_FEATURE_INSTALLER=y
+ # CONFIG_PAM is not set
+ CONFIG_LONG_OPTS=y
+ CONFIG_FEATURE_DEVPTS=y
+-CONFIG_FEATURE_CLEAN_UP=y
++# CONFIG_FEATURE_CLEAN_UP is not set
+ CONFIG_FEATURE_UTMP=y
+ CONFIG_FEATURE_WTMP=y
+ # CONFIG_FEATURE_PIDFILE is not set
+diff --git a/package/ccache/ccache.mk b/package/ccache/ccache.mk
+index f174a5d01..55a913259 100644
+--- a/package/ccache/ccache.mk
++++ b/package/ccache/ccache.mk
+@@ -28,9 +28,13 @@ HOST_CCACHE_CONF_OPTS += --with-bundled-zlib
+ #    BR2_CCACHE_DIR.
+ #  - Change hard-coded last-ditch default to match path in .config, to avoid
+ #    the need to specify BR_CACHE_DIR when invoking ccache directly.
++#    CCache replaces "%s" with the home directory of the current user,
++#    So rewrite BR_CACHE_DIR to take that into consideration for SDK purpose
++HOST_CCACHE_DEFAULT_CCACHE_DIR = $(patsubst $(HOME)/%,\%s/%,$(BR_CACHE_DIR))
++
+ define HOST_CCACHE_PATCH_CONFIGURATION
+ 	sed -i 's,getenv("CCACHE_DIR"),getenv("BR_CACHE_DIR"),' $(@D)/ccache.c
+-	sed -i 's,"%s/.ccache","$(BR_CACHE_DIR)",' $(@D)/conf.c
++	sed -i 's,"%s/.ccache","$(HOST_CCACHE_DEFAULT_CCACHE_DIR)",' $(@D)/conf.c
+ endef
+ 
+ HOST_CCACHE_POST_PATCH_HOOKS += HOST_CCACHE_PATCH_CONFIGURATION
+diff --git a/package/collectd/0001-libcollectdclient-increase-error-buffer.patch b/package/collectd/0001-libcollectdclient-increase-error-buffer.patch
+new file mode 100644
+index 000000000..247d32b59
+--- /dev/null
++++ b/package/collectd/0001-libcollectdclient-increase-error-buffer.patch
+@@ -0,0 +1,87 @@
++From e170f3559fcda6d37a012aba187a96b1f42e8f9d Mon Sep 17 00:00:00 2001
++From: Ruben Kerkhof <ruben@rubenkerkhof.com>
++Date: Sun, 2 Jul 2017 21:52:14 +0200
++Subject: [PATCH] libcollectdclient: increase error buffer
++MIME-Version: 1.0
++Content-Type: text/plain; charset=utf8
++Content-Transfer-Encoding: 8bit
++
++make[1]: Entering directory '/home/ruben/src/collectd'
++  CC       src/libcollectdclient/libcollectdclient_la-client.lo
++src/libcollectdclient/client.c: In function âlcc_getvalâ:
++src/libcollectdclient/client.c:621:23: warning: â%sâ directive output may be truncated writing up to 1023 bytes into a region of size 1010 [-Wformat-truncation=]
++     LCC_SET_ERRSTR(c, "Server error: %s", res.message);
++                       ^                   ~
++src/libcollectdclient/client.c:94:48: note: in definition of macro âLCC_SET_ERRSTRâ
++     snprintf((c)->errbuf, sizeof((c)->errbuf), __VA_ARGS__);                   \
++                                                ^~~~~~~~~~~
++src/libcollectdclient/client.c:94:5: note: âsnprintfâ output between 15 and 1038 bytes into a destination of size 1024
++     snprintf((c)->errbuf, sizeof((c)->errbuf), __VA_ARGS__);                   \
++     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++src/libcollectdclient/client.c:621:5: note: in expansion of macro âLCC_SET_ERRSTRâ
++     LCC_SET_ERRSTR(c, "Server error: %s", res.message);
++     ^~~~~~~~~~~~~~
++src/libcollectdclient/client.c: In function âlcc_putvalâ:
++src/libcollectdclient/client.c:754:23: warning: â%sâ directive output may be truncated writing up to 1023 bytes into a region of size 1010 [-Wformat-truncation=]
++     LCC_SET_ERRSTR(c, "Server error: %s", res.message);
++                       ^                   ~
++src/libcollectdclient/client.c:94:48: note: in definition of macro âLCC_SET_ERRSTRâ
++     snprintf((c)->errbuf, sizeof((c)->errbuf), __VA_ARGS__);                   \
++                                                ^~~~~~~~~~~
++src/libcollectdclient/client.c:94:5: note: âsnprintfâ output between 15 and 1038 bytes into a destination of size 1024
++     snprintf((c)->errbuf, sizeof((c)->errbuf), __VA_ARGS__);                   \
++     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++src/libcollectdclient/client.c:754:5: note: in expansion of macro âLCC_SET_ERRSTRâ
++     LCC_SET_ERRSTR(c, "Server error: %s", res.message);
++     ^~~~~~~~~~~~~~
++src/libcollectdclient/client.c: In function âlcc_flushâ:
++src/libcollectdclient/client.c:802:23: warning: â%sâ directive output may be truncated writing up to 1023 bytes into a region of size 1010 [-Wformat-truncation=]
++     LCC_SET_ERRSTR(c, "Server error: %s", res.message);
++                       ^                   ~
++src/libcollectdclient/client.c:94:48: note: in definition of macro âLCC_SET_ERRSTRâ
++     snprintf((c)->errbuf, sizeof((c)->errbuf), __VA_ARGS__);                   \
++                                                ^~~~~~~~~~~
++src/libcollectdclient/client.c:94:5: note: âsnprintfâ output between 15 and 1038 bytes into a destination of size 1024
++     snprintf((c)->errbuf, sizeof((c)->errbuf), __VA_ARGS__);                   \
++     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++src/libcollectdclient/client.c:802:5: note: in expansion of macro âLCC_SET_ERRSTRâ
++     LCC_SET_ERRSTR(c, "Server error: %s", res.message);
++     ^~~~~~~~~~~~~~
++src/libcollectdclient/client.c: In function âlcc_listvalâ:
++src/libcollectdclient/client.c:834:23: warning: â%sâ directive output may be truncated writing up to 1023 bytes into a region of size 1010 [-Wformat-truncation=]
++     LCC_SET_ERRSTR(c, "Server error: %s", res.message);
++                       ^                   ~
++src/libcollectdclient/client.c:94:48: note: in definition of macro âLCC_SET_ERRSTRâ
++     snprintf((c)->errbuf, sizeof((c)->errbuf), __VA_ARGS__);                   \
++                                                ^~~~~~~~~~~
++src/libcollectdclient/client.c:94:5: note: âsnprintfâ output between 15 and 1038 bytes into a destination of size 1024
++     snprintf((c)->errbuf, sizeof((c)->errbuf), __VA_ARGS__);                   \
++     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++src/libcollectdclient/client.c:834:5: note: in expansion of macro âLCC_SET_ERRSTRâ
++     LCC_SET_ERRSTR(c, "Server error: %s", res.message);
++     ^~~~~~~~~~~~~~
++
++Fixes #2200
++
++[Upstream commit: https://git.octo.it/?p=collectd.git;a=commitdiff;h=e170f3559fcda6d37a012aba187a96b1f42e8f9d]
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++---
++ src/libcollectdclient/client.c |    2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/src/libcollectdclient/client.c b/src/libcollectdclient/client.c
++index 51a4ab2..3ae2e71 100644
++--- a/src/libcollectdclient/client.c
+++++ b/src/libcollectdclient/client.c
++@@ -99,7 +99,7 @@
++  */
++ struct lcc_connection_s {
++   FILE *fh;
++-  char errbuf[1024];
+++  char errbuf[2048];
++ };
++ 
++ struct lcc_response_s {
++-- 
++1.7.10.4
++
+diff --git a/package/efibootmgr/0003-Remove-extra-const-keywords-gcc-7-gripes-about.patch b/package/efibootmgr/0003-Remove-extra-const-keywords-gcc-7-gripes-about.patch
+new file mode 100644
+index 000000000..8bc6f01ef
+--- /dev/null
++++ b/package/efibootmgr/0003-Remove-extra-const-keywords-gcc-7-gripes-about.patch
+@@ -0,0 +1,51 @@
++From a542b169003c2ef95ce6c00d40050eb10568b612 Mon Sep 17 00:00:00 2001
++From: Peter Jones <pjones@redhat.com>
++Date: Mon, 6 Feb 2017 16:34:54 -0500
++Subject: [PATCH] Remove extra const keywords gcc 7 gripes about.
++
++Signed-off-by: Peter Jones <pjones@redhat.com>
++[Backported from upstream commit a542b169003c2ef95ce6c00d40050eb10568b612]
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++---
++ src/efibootdump.c | 2 +-
++ src/efibootmgr.c  | 4 ++--
++ 2 files changed, 3 insertions(+), 3 deletions(-)
++
++diff --git a/src/efibootdump.c b/src/efibootdump.c
++index 6ff8360..30a1943 100644
++--- a/src/efibootdump.c
+++++ b/src/efibootdump.c
++@@ -39,7 +39,7 @@ print_boot_entry(efi_load_option *loadopt, size_t data_size)
++ 	uint8_t *optional_data = NULL;
++ 	size_t optional_data_len = 0;
++ 	uint16_t pathlen;
++-	const unsigned char const *desc;
+++	const unsigned char *desc;
++ 	char *raw;
++ 	size_t raw_len;
++ 
++diff --git a/src/efibootmgr.c b/src/efibootmgr.c
++index 493f2cf..90a0998 100644
++--- a/src/efibootmgr.c
+++++ b/src/efibootmgr.c
++@@ -221,7 +221,7 @@ warn_duplicate_name(list_t *var_list)
++ 	list_t *pos;
++ 	var_entry_t *entry;
++ 	efi_load_option *load_option;
++-	const unsigned char const *desc;
+++	const unsigned char *desc;
++ 
++ 	list_for_each(pos, var_list) {
++ 		entry = list_entry(pos, var_entry_t, list);
++@@ -873,7 +873,7 @@ show_vars(const char *prefix)
++ {
++ 	list_t *pos;
++ 	var_entry_t *boot;
++-	const unsigned char const *description;
+++	const unsigned char *description;
++ 	efi_load_option *load_option;
++ 	efidp dp = NULL;
++ 	unsigned char *optional_data = NULL;
++-- 
++2.9.4
++
+diff --git a/package/efivar/0003-Remove-some-extra-const-that-gcc-complains-about.patch b/package/efivar/0003-Remove-some-extra-const-that-gcc-complains-about.patch
+new file mode 100644
+index 000000000..6b9f77eb8
+--- /dev/null
++++ b/package/efivar/0003-Remove-some-extra-const-that-gcc-complains-about.patch
+@@ -0,0 +1,47 @@
++From 1c7c0f71c9d22efda4156881eb187b8c69d1cca7 Mon Sep 17 00:00:00 2001
++From: Peter Jones <pjones@redhat.com>
++Date: Mon, 6 Feb 2017 14:28:19 -0500
++Subject: [PATCH] Remove some extra "const" that gcc complains about.
++
++One of these days I'll get these right.
++
++Signed-off-by: Peter Jones <pjones@redhat.com>
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream commit 1c7c0f71c9d22e.
++
++ src/include/efivar/efiboot-loadopt.h | 4 ++--
++ src/loadopt.c                        | 2 +-
++ 2 files changed, 3 insertions(+), 3 deletions(-)
++
++diff --git a/src/include/efivar/efiboot-loadopt.h b/src/include/efivar/efiboot-loadopt.h
++index 07db5c4c53e3..efc29c69d47e 100644
++--- a/src/include/efivar/efiboot-loadopt.h
+++++ b/src/include/efivar/efiboot-loadopt.h
++@@ -32,8 +32,8 @@ extern ssize_t efi_loadopt_create(uint8_t *buf, ssize_t size,
++ 
++ extern efidp efi_loadopt_path(efi_load_option *opt, ssize_t limit)
++ 	__attribute__((__nonnull__ (1)));
++-extern const unsigned char const * efi_loadopt_desc(efi_load_option *opt,
++-						    ssize_t limit)
+++extern const unsigned char * efi_loadopt_desc(efi_load_option *opt,
+++					      ssize_t limit)
++ 	__attribute__((__visibility__ ("default")))
++ 	__attribute__((__nonnull__ (1)));
++ extern uint32_t efi_loadopt_attrs(efi_load_option *opt)
++diff --git a/src/loadopt.c b/src/loadopt.c
++index a63ca792d2dc..ce889867fd29 100644
++--- a/src/loadopt.c
+++++ b/src/loadopt.c
++@@ -357,7 +357,7 @@ teardown(void)
++ 
++ __attribute__((__nonnull__ (1)))
++ __attribute__((__visibility__ ("default")))
++-const unsigned char const *
+++const unsigned char *
++ efi_loadopt_desc(efi_load_option *opt, ssize_t limit)
++ {
++ 	if (last_desc) {
++-- 
++2.13.2
++
+diff --git a/package/expat/0001-configure.ac-Fix-mis-detection-of-getrandom-on-Debia.patch b/package/expat/0001-configure.ac-Fix-mis-detection-of-getrandom-on-Debia.patch
+deleted file mode 100644
+index 44f43e1cb..000000000
+--- a/package/expat/0001-configure.ac-Fix-mis-detection-of-getrandom-on-Debia.patch
++++ /dev/null
+@@ -1,29 +0,0 @@
+-From 602e6c78ca750c082b72f8cdf4a38839b312959f Mon Sep 17 00:00:00 2001
+-From: Sebastian Pipping <sebastian@pipping.org>
+-Date: Sun, 18 Jun 2017 18:55:10 +0200
+-Subject: [PATCH] configure.ac: Fix mis-detection of getrandom on Debian
+- GNU/kFreeBSD (#50)
+-
+-There is no such thing but we need to link (not just compile) to realize.
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- expat/configure.ac | 2 +-
+- 1 file changed, 1 insertion(+), 1 deletion(-)
+-
+-diff --git a/configure.ac b/configure.ac
+-index 1357c9a..444c002 100644
+---- a/configure.ac
+-+++ b/configure.ac
+-@@ -130,7 +130,7 @@ AC_LINK_IFELSE([AC_LANG_SOURCE([
+- 
+- 
+- AC_MSG_CHECKING([for getrandom (Linux 3.17+, glibc 2.25+)])
+--AC_COMPILE_IFELSE([AC_LANG_SOURCE([
+-+AC_LINK_IFELSE([AC_LANG_SOURCE([
+-   #include <stdlib.h>  /* for NULL */
+-   #include <sys/random.h>
+-   int main() {
+--- 
+-2.11.0
+-
+diff --git a/package/expat/expat.hash b/package/expat/expat.hash
+index 595597b6f..f1e19193e 100644
+--- a/package/expat/expat.hash
++++ b/package/expat/expat.hash
+@@ -1,5 +1,5 @@
+-# From https://sourceforge.net/projects/expat/files/expat/2.2.1/
+-md5	d9c3baeab58774cefc2f04faf29f2cf8	expat-2.2.1.tar.bz2
+-sha1	f45eb724f182776a9cacec9ed70d549e87198987	expat-2.2.1.tar.bz2
++# From https://sourceforge.net/projects/expat/files/expat/2.2.2/
++md5	1ede9a41223c78528b8c5d23e69a2667	expat-2.2.2.tar.bz2
++sha1	891cee988b38d5d66953f62f94c3150b8810a70a	expat-2.2.2.tar.bz2
+ # Calculated based on the hashes above
+-sha256	1868cadae4c82a018e361e2b2091de103cd820aaacb0d6cfa49bd2cd83978885	expat-2.2.1.tar.bz2
++sha256	4376911fcf81a23ebd821bbabc26fd933f3ac74833f74924342c29aad2c86046	expat-2.2.2.tar.bz2
+diff --git a/package/expat/expat.mk b/package/expat/expat.mk
+index bb6e627e5..a78d326d7 100644
+--- a/package/expat/expat.mk
++++ b/package/expat/expat.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-EXPAT_VERSION = 2.2.1
++EXPAT_VERSION = 2.2.2
+ EXPAT_SITE = http://downloads.sourceforge.net/project/expat/expat/$(EXPAT_VERSION)
+ EXPAT_SOURCE = expat-$(EXPAT_VERSION).tar.bz2
+ EXPAT_INSTALL_STAGING = YES
+@@ -14,8 +14,15 @@ EXPAT_DEPENDENCIES = host-pkgconf
+ HOST_EXPAT_DEPENDENCIES = host-pkgconf
+ EXPAT_LICENSE = MIT
+ EXPAT_LICENSE_FILES = COPYING
+-# for 0001-configure.ac-Fix-mis-detection-of-getrandom-on-Debia.patch
+-EXPAT_AUTORECONF = YES
++
++# Kernel versions older than 3.17 do not support getrandom()
++ifeq ($(BR2_TOOLCHAIN_HEADERS_AT_LEAST_3_17),)
++EXPAT_CONF_ENV += CPPFLAGS="$(TARGET_CPPFLAGS) -DXML_POOR_ENTROPY"
++endif
++
++# Make build succeed on host kernel older than 3.17. getrandom() will still
++# be used on newer kernels.
++HOST_EXPAT_CONF_ENV += CPPFLAGS="$(HOST_CPPFLAGS) -DXML_POOR_ENTROPY"
+ 
+ $(eval $(autotools-package))
+ $(eval $(host-autotools-package))
+diff --git a/package/ffmpeg/ffmpeg.mk b/package/ffmpeg/ffmpeg.mk
+index 6540d41c5..9c30e8f40 100644
+--- a/package/ffmpeg/ffmpeg.mk
++++ b/package/ffmpeg/ffmpeg.mk
+@@ -44,6 +44,9 @@ FFMPEG_CONF_OPTS = \
+ 	--disable-mipsdspr2 \
+ 	--disable-msa \
+ 	--enable-hwaccels \
++	--disable-cuda \
++	--disable-cuvid \
++	--disable-nvenc \
+ 	--disable-avisynth \
+ 	--disable-frei0r \
+ 	--disable-libopencore-amrnb \
+@@ -159,12 +162,18 @@ endif
+ 
+ ifeq ($(BR2_PACKAGE_FFMPEG_INDEVS),y)
+ FFMPEG_CONF_OPTS += --enable-indevs
++ifeq ($(BR2_PACKAGE_ALSA_LIB),y)
++FFMPEG_DEPENDENCIES += alsa-lib
++endif
+ else
+ FFMPEG_CONF_OPTS += --disable-indevs
+ endif
+ 
+ ifeq ($(BR2_PACKAGE_FFMPEG_OUTDEVS),y)
+ FFMPEG_CONF_OPTS += --enable-outdevs
++ifeq ($(BR2_PACKAGE_ALSA_LIB),y)
++FFMPEG_DEPENDENCIES += alsa-lib
++endif
+ else
+ FFMPEG_CONF_OPTS += --disable-outdevs
+ endif
+diff --git a/package/gcc/4.9.4/942-asan-fix-missing-include-signal-h.patch b/package/gcc/4.9.4/942-asan-fix-missing-include-signal-h.patch
+new file mode 100644
+index 000000000..5f00c04d2
+--- /dev/null
++++ b/package/gcc/4.9.4/942-asan-fix-missing-include-signal-h.patch
+@@ -0,0 +1,36 @@
++From 205aa8e97bab553e5e6fe45896325e97962de704 Mon Sep 17 00:00:00 2001
++From: Rolf Eike Beer <eb@emlix.com>
++Date: Wed, 8 Feb 2017 11:42:52 +0100
++Subject: [PATCH] asan: fix missing include of signal.h
++
++This breaks when building gcc 4.9.4 / 5.4.0 with
++target_platform=powerpc-unknown-linux-gnu with glibc 2.25:
++
++../../../../gcc-host/libsanitizer/asan/asan_linux.cc: In function 'bool __asan::AsanInterceptsSignal(int)':
++../../../../gcc-host/libsanitizer/asan/asan_linux.cc:222:20: error: 'SIGSEGV' was not declared in this scope
++   return signum == SIGSEGV && common_flags()->handle_segv;
++
++This has been verified to apply to at least 4.9.4 and up to 5.4,
++the code has been reworked for gcc 6.
++
++Resolves (Buildroot) Bug: https://bugs.busybox.net/show_bug.cgi?id=10061
++
++Upstream: https://patchwork.ozlabs.org/patch/725596/
++
++Signed-off-by: Matthew Weber <matthew.weber@rockwellcollins.com>
++---
++ libsanitizer/asan/asan_linux.cc | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/libsanitizer/asan/asan_linux.cc b/libsanitizer/asan/asan_linux.cc
++index c504168..59087b9 100644
++--- a/libsanitizer/asan/asan_linux.cc
+++++ b/libsanitizer/asan/asan_linux.cc
++@@ -29,6 +29,7 @@
++ #include <dlfcn.h>
++ #include <fcntl.h>
++ #include <pthread.h>
+++#include <signal.h>
++ #include <stdio.h>
++ #include <unistd.h>
++ #include <unwind.h>
+diff --git a/package/gcc/5.4.0/942-asan-fix-missing-include-signal-h.patch b/package/gcc/5.4.0/942-asan-fix-missing-include-signal-h.patch
+new file mode 100644
+index 000000000..5f00c04d2
+--- /dev/null
++++ b/package/gcc/5.4.0/942-asan-fix-missing-include-signal-h.patch
+@@ -0,0 +1,36 @@
++From 205aa8e97bab553e5e6fe45896325e97962de704 Mon Sep 17 00:00:00 2001
++From: Rolf Eike Beer <eb@emlix.com>
++Date: Wed, 8 Feb 2017 11:42:52 +0100
++Subject: [PATCH] asan: fix missing include of signal.h
++
++This breaks when building gcc 4.9.4 / 5.4.0 with
++target_platform=powerpc-unknown-linux-gnu with glibc 2.25:
++
++../../../../gcc-host/libsanitizer/asan/asan_linux.cc: In function 'bool __asan::AsanInterceptsSignal(int)':
++../../../../gcc-host/libsanitizer/asan/asan_linux.cc:222:20: error: 'SIGSEGV' was not declared in this scope
++   return signum == SIGSEGV && common_flags()->handle_segv;
++
++This has been verified to apply to at least 4.9.4 and up to 5.4,
++the code has been reworked for gcc 6.
++
++Resolves (Buildroot) Bug: https://bugs.busybox.net/show_bug.cgi?id=10061
++
++Upstream: https://patchwork.ozlabs.org/patch/725596/
++
++Signed-off-by: Matthew Weber <matthew.weber@rockwellcollins.com>
++---
++ libsanitizer/asan/asan_linux.cc | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/libsanitizer/asan/asan_linux.cc b/libsanitizer/asan/asan_linux.cc
++index c504168..59087b9 100644
++--- a/libsanitizer/asan/asan_linux.cc
+++++ b/libsanitizer/asan/asan_linux.cc
++@@ -29,6 +29,7 @@
++ #include <dlfcn.h>
++ #include <fcntl.h>
++ #include <pthread.h>
+++#include <signal.h>
++ #include <stdio.h>
++ #include <unistd.h>
++ #include <unwind.h>
+diff --git a/package/heimdal/heimdal.hash b/package/heimdal/heimdal.hash
+index 12770e17f..a0e0f3f1b 100644
+--- a/package/heimdal/heimdal.hash
++++ b/package/heimdal/heimdal.hash
+@@ -1,2 +1,2 @@
+-# Locally calculated after checking pgp signature
+-sha256	cee58ab3a4ce79f243a3e73f465dac19fe2b93ef1c5ff244d6f1d689fedbde2d	heimdal-7.1.0.tar.gz
++# Locally calculated
++sha256 3de14ecd36ad21c1694a13da347512b047f4010d176fe412820664cb5d1429ad  heimdal-7.4.0.tar.gz
+diff --git a/package/heimdal/heimdal.mk b/package/heimdal/heimdal.mk
+index 5376a6c40..2d4b826a0 100644
+--- a/package/heimdal/heimdal.mk
++++ b/package/heimdal/heimdal.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-HEIMDAL_VERSION = 7.1.0
+-HEIMDAL_SITE = http://www.h5l.org/dist/src
++HEIMDAL_VERSION = 7.4.0
++HEIMDAL_SITE = https://github.com/heimdal/heimdal/releases/download/heimdal-$(HEIMDAL_VERSION)
+ HOST_HEIMDAL_DEPENDENCIES = host-e2fsprogs host-ncurses host-pkgconf
+ HEIMDAL_INSTALL_STAGING = YES
+ HEIMDAL_MAKE = $(MAKE1)
+@@ -15,6 +15,7 @@ HOST_HEIMDAL_CONF_OPTS = \
+ 	--enable-static \
+ 	--without-openldap \
+ 	--without-capng \
++	--with-db-type-preference= \
+ 	--without-sqlite3 \
+ 	--without-libintl \
+ 	--without-openssl \
+diff --git a/package/iproute2/iproute2.mk b/package/iproute2/iproute2.mk
+index 5ea5299bd..fefd01808 100644
+--- a/package/iproute2/iproute2.mk
++++ b/package/iproute2/iproute2.mk
+@@ -9,7 +9,7 @@ IPROUTE2_SOURCE = iproute2-$(IPROUTE2_VERSION).tar.xz
+ IPROUTE2_SITE = $(BR2_KERNEL_MIRROR)/linux/utils/net/iproute2
+ IPROUTE2_DEPENDENCIES = host-bison host-flex host-pkgconf \
+ 	$(if $(BR2_PACKAGE_LIBMNL),libmnl)
+-IPROUTE2_LICENSE = GPLv2
++IPROUTE2_LICENSE = GPLv2+
+ IPROUTE2_LICENSE_FILES = COPYING
+ 
+ # If both iproute2 and busybox are selected, make certain we win
+diff --git a/package/irssi/irssi.hash b/package/irssi/irssi.hash
+index abb421998..7b019025d 100644
+--- a/package/irssi/irssi.hash
++++ b/package/irssi/irssi.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated after checking pgp signature
+-sha256	838220297dcbe7c8c42d01005059779a82f5b7b7e7043db37ad13f5966aff581	irssi-1.0.3.tar.xz
++sha256	b85c07dbafe178213eccdc69f5f8f0ac024dea01c67244668f91ec1c06b986ca	irssi-1.0.4.tar.xz
+diff --git a/package/irssi/irssi.mk b/package/irssi/irssi.mk
+index 12ab57bbc..4fef1125b 100644
+--- a/package/irssi/irssi.mk
++++ b/package/irssi/irssi.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-IRSSI_VERSION = 1.0.3
++IRSSI_VERSION = 1.0.4
+ IRSSI_SOURCE = irssi-$(IRSSI_VERSION).tar.xz
+ # Do not use the github helper here. The generated tarball is *NOT* the
+ # same as the one uploaded by upstream for the release.
+@@ -15,7 +15,6 @@ IRSSI_DEPENDENCIES = host-pkgconf libglib2 ncurses openssl
+ 
+ IRSSI_CONF_OPTS = \
+ 	--disable-glibtest \
+-	--with-ncurses=$(STAGING_DIR)/usr \
+ 	--without-perl
+ 
+ ifeq ($(BR2_PACKAGE_IRSSI_PROXY),y)
+diff --git a/package/libglib2/libglib2.mk b/package/libglib2/libglib2.mk
+index ddd1f3965..e23c4a2df 100644
+--- a/package/libglib2/libglib2.mk
++++ b/package/libglib2/libglib2.mk
+@@ -113,7 +113,8 @@ HOST_LIBGLIB2_DEPENDENCIES = \
+ 	host-zlib
+ 
+ LIBGLIB2_CONF_OPTS = \
+-	--with-pcre=system
++	--with-pcre=system \
++	--disable-compile-warnings
+ 
+ ifneq ($(BR2_ENABLE_LOCALE),y)
+ LIBGLIB2_DEPENDENCIES += libiconv
+diff --git a/package/libmemcached/0005-fix-pointer-comparaison.patch b/package/libmemcached/0005-fix-pointer-comparaison.patch
+new file mode 100644
+index 000000000..c9f8dd19c
+--- /dev/null
++++ b/package/libmemcached/0005-fix-pointer-comparaison.patch
+@@ -0,0 +1,30 @@
++Fix pointer comparaison
++
++opt_servers is a pointer, not a boolean, so testing against false to
++know if the pointer is NULL no longer works with the more strict gcc
++7.x checks.
++
++[Taken from http://pkgs.fedoraproject.org/cgit/rpms/libmemcached.git/plain/libmemcached-build.patch.]
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++
++diff -up ./clients/memflush.cc.old ./clients/memflush.cc
++--- ./clients/memflush.cc.old	2017-02-12 10:12:59.615209225 +0100
+++++ ./clients/memflush.cc	2017-02-12 10:13:39.998382783 +0100
++@@ -39,7 +39,7 @@ int main(int argc, char *argv[])
++ {
++   options_parse(argc, argv);
++ 
++-  if (opt_servers == false)
+++  if (!opt_servers)
++   {
++     char *temp;
++ 
++@@ -48,7 +48,7 @@ int main(int argc, char *argv[])
++       opt_servers= strdup(temp);
++     }
++ 
++-    if (opt_servers == false)
+++    if (!opt_servers)
++     {
++       std::cerr << "No Servers provided" << std::endl;
++       exit(EXIT_FAILURE);
+diff --git a/package/libosip2/0001-fix-bug-report-sr-109133-Heap-buffer-overflow-in-uti.patch b/package/libosip2/0001-fix-bug-report-sr-109133-Heap-buffer-overflow-in-uti.patch
+new file mode 100644
+index 000000000..7f2c2d46d
+--- /dev/null
++++ b/package/libosip2/0001-fix-bug-report-sr-109133-Heap-buffer-overflow-in-uti.patch
+@@ -0,0 +1,30 @@
++From 7e0793e15e21f68337e130c67b031ca38edf055f Mon Sep 17 00:00:00 2001
++From: Aymeric Moizard <amoizard@gmail.com>
++Date: Mon, 5 Sep 2016 15:01:53 +0200
++Subject: [PATCH]  * fix bug report: sr #109133: Heap buffer overflow in
++ utility function *osip_clrncpy*    https://savannah.gnu.org/support/?109133
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/osipparser2/osip_port.c | 4 +++-
++ 1 file changed, 3 insertions(+), 1 deletion(-)
++
++diff --git a/src/osipparser2/osip_port.c b/src/osipparser2/osip_port.c
++index 0e64147..d8941b0 100644
++--- a/src/osipparser2/osip_port.c
+++++ b/src/osipparser2/osip_port.c
++@@ -1291,8 +1291,10 @@ osip_clrncpy (char *dst, const char *src, size_t len)
++ 	char *p;
++ 	size_t spaceless_length;
++ 
++-	if (src == NULL)
+++	if (src == NULL || len == 0) {
+++		*dst = '\0';
++ 		return NULL;
+++	}
++ 
++ 	/* find the start of relevant text */
++	pbeg = src;
++-- 
++2.11.0
++
+diff --git a/package/libtirpc/0001-Disable-parts-of-TIRPC-requiring-NIS-support.patch b/package/libtirpc/0001-Disable-parts-of-TIRPC-requiring-NIS-support.patch
+index e51c5a44b..eb1bef3dc 100644
+--- a/package/libtirpc/0001-Disable-parts-of-TIRPC-requiring-NIS-support.patch
++++ b/package/libtirpc/0001-Disable-parts-of-TIRPC-requiring-NIS-support.patch
+@@ -13,6 +13,8 @@ Signed-off-by: "Yann E. MORIN" <yann.morin.1998@free.fr>
+ Signed-off-by: Jörg Krause <joerg.krause@embedded.rocks>
+ [peda@axentia.se: update for 1.0.1]
+ Signed-off-by: Peter Rosin <peda@axentia.se>
++[bernd.kuhls@t-online.de: update for 1.0.2]
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+ ---
+  src/Makefile.am | 6 +++---
+  1 file changed, 3 insertions(+), 3 deletions(-)
+@@ -25,8 +27,8 @@ index 6cc567a..9834f9a 100644
+          rpcb_st_xdr.c svc.c svc_auth.c svc_dg.c svc_auth_unix.c svc_auth_none.c \
+  	svc_auth_des.c \
+          svc_generic.c svc_raw.c svc_run.c svc_simple.c svc_vc.c getpeereid.c \
+--        auth_time.c auth_des.c authdes_prot.c debug.c
+-+        auth_des.c authdes_prot.c debug.c
++-        auth_time.c auth_des.c authdes_prot.c debug.c des_crypt.c des_impl.c
+++        auth_des.c authdes_prot.c debug.c des_crypt.c des_impl.c
+  
+  ## XDR
+  libtirpc_la_SOURCES += xdr.c xdr_rec.c xdr_array.c xdr_float.c xdr_mem.c xdr_reference.c xdr_stdio.c xdr_sizeof.c
+diff --git a/package/libtirpc/0002-uClibc-without-RPC-support-and-musl-does-not-install-rpcent.h.patch b/package/libtirpc/0002-uClibc-without-RPC-support-and-musl-does-not-install-rpcent.h.patch
+index 643a57ed5..51229a024 100644
+--- a/package/libtirpc/0002-uClibc-without-RPC-support-and-musl-does-not-install-rpcent.h.patch
++++ b/package/libtirpc/0002-uClibc-without-RPC-support-and-musl-does-not-install-rpcent.h.patch
+@@ -8,6 +8,8 @@ Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+ Signed-off-by: "Yann E. MORIN" <yann.morin.1998@free.fr>
+ [joerg.krause@embedded.rocks: musl fix]
+ Signed-off-by: Jörg Krause <joerg.krause@embedded.rocks>
++[bernd.kuhls@t-online.de: update for 1.0.2]
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+ ---
+  tirpc/rpc/rpcent.h | 5 +++--
+  1 file changed, 3 insertions(+), 2 deletions(-)
+@@ -21,7 +23,7 @@ index 147f909..4a58180 100644
+  #endif
+  
+ -/* These are defined in /usr/include/rpc/netdb.h */
+--#if !defined(__GLIBC__)
++-#if !defined(__GLIBC__) || defined(__UCLIBC__)
+ +/* These are defined in /usr/include/rpc/netdb.h, unless we are using
+ +   the C library without RPC support. */
+ +#if defined(__UCLIBC__) && !defined(__UCLIBC_HAS_RPC__) || !defined(__GLIBC__)
+diff --git a/package/libtirpc/0006-Disable-DES-authentification-support.patch b/package/libtirpc/0006-Disable-DES-authentification-support.patch
+index 59a77ffc1..0c6547240 100644
+--- a/package/libtirpc/0006-Disable-DES-authentification-support.patch
++++ b/package/libtirpc/0006-Disable-DES-authentification-support.patch
+@@ -11,6 +11,8 @@ uClibc and musl does not provide DES authentication.
+ Signed-off-by: Jörg Krause <joerg.krause@embedded.rocks>
+ [peda@axentia.se: update for 1.0.1]
+ Signed-off-by: Peter Rosin <peda@axentia.se>
++[bernd.kuhls@t-online.de: update for 1.0.2]
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+ ---
+  src/Makefile.am |  2 +-
+  src/rpc_soc.c   | 32 --------------------------------
+@@ -26,7 +28,7 @@ index 960a522..3a88e31 100644
+          rpcb_st_xdr.c svc.c svc_auth.c svc_dg.c svc_auth_unix.c svc_auth_none.c \
+ -	svc_auth_des.c \
+          svc_generic.c svc_raw.c svc_run.c svc_simple.c svc_vc.c getpeereid.c \
+--        auth_des.c authdes_prot.c debug.c
++-        auth_des.c authdes_prot.c debug.c des_crypt.c des_impl.c
+ +        debug.c
+  
+  ## XDR
+@@ -48,14 +50,6 @@ diff --git a/src/rpc_soc.c b/src/rpc_soc.c
+ index e146ed4..161a1ec 100644
+ --- a/src/rpc_soc.c
+ +++ b/src/rpc_soc.c
+-@@ -61,7 +61,6 @@ #ifdef PORTMAP
+- #include <string.h>
+- #include <unistd.h>
+- #include <fcntl.h>
+--#include <rpcsvc/nis.h>
+- 
+- #include "rpc_com.h"
+- 
+ @@ -522,86 +521,6 @@ clnt_broadcast(prog, vers, proc, xargs, argsp, xresults, resultsp, eachresult)
+  }
+  
+diff --git a/package/libtirpc/0007-Add-missing-rwlock_unlocks-in-xprt_register.patch b/package/libtirpc/0007-Add-missing-rwlock_unlocks-in-xprt_register.patch
+deleted file mode 100644
+index 56b5bf839..000000000
+--- a/package/libtirpc/0007-Add-missing-rwlock_unlocks-in-xprt_register.patch
++++ /dev/null
+@@ -1,63 +0,0 @@
+-From 4f1503e84b2f7bd229a097335e52fb8203f5bb0b Mon Sep 17 00:00:00 2001
+-From: Michael Forney <mforney@mforney.org>
+-Date: Wed, 4 Nov 2015 13:58:06 -0500
+-Subject: [PATCH] Add missing rwlock_unlocks in xprt_register
+-
+-It looks like in b2c9430f46c4ac848957fb8adaac176a3f6ac03f when svc_run
+-switched to poll, an early return was added, but the rwlock was not
+-unlocked.
+-
+-I observed that rpcbind built against libtirpc-1.0.1 would handle only
+-one request before hanging, and tracked it down to a missing
+-rwlock_unlock here.
+-
+-Fixes: b2c9430f46c4 ('Use poll() instead of select() in svc_run()')
+-Signed-off-by: Michael Forney <mforney@mforney.org>
+-Signed-off-by: Steve Dickson <steved@redhat.com>
+-[peda@axentia.se: backport from upstream]
+-Signed-off-by: Peter Rosin <peda@axentia.se>
+----
+- src/svc.c | 7 ++++---
+- 1 file changed, 4 insertions(+), 3 deletions(-)
+-
+-diff --git a/src/svc.c b/src/svc.c
+-index 9c41445..b59467b 100644
+---- a/src/svc.c
+-+++ b/src/svc.c
+-@@ -99,7 +99,7 @@ xprt_register (xprt)
+-     {
+-       __svc_xports = (SVCXPRT **) calloc (_rpc_dtablesize(), sizeof (SVCXPRT *));
+-       if (__svc_xports == NULL)
+--	return;
+-+            goto unlock;
+-     }
+-   if (sock < _rpc_dtablesize())
+-     {
+-@@ -120,14 +120,14 @@ xprt_register (xprt)
+-             svc_pollfd[i].fd = sock;
+-             svc_pollfd[i].events = (POLLIN | POLLPRI |
+-                                     POLLRDNORM | POLLRDBAND);
+--            return;
+-+            goto unlock;
+-           }
+- 
+-       new_svc_pollfd = (struct pollfd *) realloc (svc_pollfd,
+-                                                   sizeof (struct pollfd)
+-                                                   * (svc_max_pollfd + 1));
+-       if (new_svc_pollfd == NULL) /* Out of memory */
+--        return;
+-+        goto unlock;
+-       svc_pollfd = new_svc_pollfd;
+-       ++svc_max_pollfd;
+- 
+-@@ -135,6 +135,7 @@ xprt_register (xprt)
+-       svc_pollfd[svc_max_pollfd - 1].events = (POLLIN | POLLPRI |
+-                                                POLLRDNORM | POLLRDBAND);
+-     }
+-+unlock:
+-   rwlock_unlock (&svc_fd_lock);
+- }
+- 
+--- 
+-2.5.3
+-
+diff --git a/package/libtirpc/0007-include-stdint.h-for-uintptr_t.patch b/package/libtirpc/0007-include-stdint.h-for-uintptr_t.patch
+new file mode 100644
+index 000000000..62031613d
+--- /dev/null
++++ b/package/libtirpc/0007-include-stdint.h-for-uintptr_t.patch
+@@ -0,0 +1,31 @@
++From 18f8a605e176f0362da22fd1203eb7cedb136aaf Mon Sep 17 00:00:00 2001
++From: Khem Raj <raj.khem@gmail.com>
++Date: Tue, 20 Jun 2017 22:06:35 +0200
++Subject: [PATCH] include stdint.h for uintptr_t
++
++Fixes
++| ../../libtirpc-1.0.1/src/xdr_sizeof.c:93:13: error: 'uintptr_t' undeclared (first use in this function); did you mean '__intptr_t'?
++|   if (len < (uintptr_t)xdrs->x_base) {
++|              ^~~~~~~~~
++
++Signed-off-by: Khem Raj <raj.khem@gmail.com>
++Signed-off-by: Dmitrii Kolesnichenko <dmitrii@synopsys.com>
++---
++ src/xdr_sizeof.c | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/src/xdr_sizeof.c b/src/xdr_sizeof.c
++index d23fbd1..79d6707 100644
++--- a/src/xdr_sizeof.c
+++++ b/src/xdr_sizeof.c
++@@ -39,6 +39,7 @@
++ #include <rpc/xdr.h>
++ #include <sys/types.h>
++ #include <stdlib.h>
+++#include <stdint.h>
++ #include "un-namespace.h"
++ 
++ /* ARGSUSED */
++-- 
++2.9.4
++
+diff --git a/package/libtirpc/libtirpc.hash b/package/libtirpc/libtirpc.hash
+index cd65164cb..35ac6a227 100644
+--- a/package/libtirpc/libtirpc.hash
++++ b/package/libtirpc/libtirpc.hash
+@@ -1,4 +1,4 @@
+ # From sourceforge's info on download page:
+-sha1   8da1636f98b5909c0d587e7534bc1e91f5c1a970  libtirpc-1.0.1.tar.bz2
++sha1 2a8dc0e6eecc45be6597c8287b1d8e15cbee46e3  libtirpc-1.0.2.tar.bz2
+ # Locally computed
+-sha256 5156974f31be7ccbc8ab1de37c4739af6d9d42c87b1d5caf4835dda75fcbb89e  libtirpc-1.0.1.tar.bz2
++sha256 723c5ce92706cbb601a8db09110df1b4b69391643158f20ff587e20e7c5f90f5  libtirpc-1.0.2.tar.bz2
+diff --git a/package/libtirpc/libtirpc.mk b/package/libtirpc/libtirpc.mk
+index 70a31ac59..a11e49a12 100644
+--- a/package/libtirpc/libtirpc.mk
++++ b/package/libtirpc/libtirpc.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBTIRPC_VERSION = 1.0.1
++LIBTIRPC_VERSION = 1.0.2
+ LIBTIRPC_SOURCE = libtirpc-$(LIBTIRPC_VERSION).tar.bz2
+ LIBTIRPC_SITE = http://downloads.sourceforge.net/project/libtirpc/libtirpc/$(LIBTIRPC_VERSION)
+ LIBTIRPC_LICENSE = BSD-3c
+diff --git a/package/libxml-parser-perl/libxml-parser-perl.mk b/package/libxml-parser-perl/libxml-parser-perl.mk
+index e512815e3..1367a3983 100644
+--- a/package/libxml-parser-perl/libxml-parser-perl.mk
++++ b/package/libxml-parser-perl/libxml-parser-perl.mk
+@@ -9,6 +9,7 @@ LIBXML_PARSER_PERL_SOURCE = XML-Parser-$(LIBXML_PARSER_PERL_VERSION).tar.gz
+ LIBXML_PARSER_PERL_SITE = $(BR2_CPAN_MIRROR)/authors/id/T/TO/TODDR
+ HOST_LIBXML_PARSER_PERL_DEPENDENCIES = host-expat
+ LIBXML_PARSER_PERL_LICENSE = Artistic or GPLv1+
++LIBXML_PARSER_PERL_LICENSE_FILES = README
+ LIBXML_PARSER_PERL_RUN_PERL = `which perl`
+ 
+ define HOST_LIBXML_PARSER_PERL_CONFIGURE_CMDS
+diff --git a/package/linux-fusion/0004-Port-one-one_udp.c-to-Linux-4.1.patch b/package/linux-fusion/0004-Port-one-one_udp.c-to-Linux-4.1.patch
+index e1bff64f3..3ee4dac48 100644
+--- a/package/linux-fusion/0004-Port-one-one_udp.c-to-Linux-4.1.patch
++++ b/package/linux-fusion/0004-Port-one-one_udp.c-to-Linux-4.1.patch
+@@ -24,12 +24,20 @@ one/one_udp.c: In function 'ksocket_send_iov':
+ one/one_udp.c:192:13: error: too many arguments to function 'sock_sendmsg'
+ 
+ Signed-off-by: Marc Gonzalez <marc_gonzalez@sigmadesigns.com>
++
++Kernel commit 2da62906b1e29 dropped the size parameter in sock_recvmsg
++since 4.7
++
++In function 'ksocket_receive'
++one/one_udp.c:235:13: error: too many arguments to function 'sock_recvmsg'
++
++Signed-off-by: Matthew Shyu <matthew.shyu@amlogic.com>
+ ---
+- one/one_udp.c | 30 +++++++++++++++---------------
+- 1 file changed, 15 insertions(+), 15 deletions(-)
++ one/one_udp.c | 34 +++++++++++++++++++---------------
++ 1 file changed, 19 insertions(+), 15 deletions(-)
+ 
+ diff --git a/one/one_udp.c b/one/one_udp.c
+-index 26b9e6a1f729..b1daae164cdf 100644
++index 26b9e6a..9b59529 100644
+ --- a/one/one_udp.c
+ +++ b/one/one_udp.c
+ @@ -161,7 +161,7 @@ ksocket_send_iov( struct socket      *sock,
+@@ -78,7 +86,7 @@ index 26b9e6a1f729..b1daae164cdf 100644
+       struct iovec iov;
+       mm_segment_t oldfs;
+       int size = 0;
+-@@ -213,14 +215,12 @@ ksocket_receive(struct socket* sock, struct sockaddr_in* addr, void *buf, int le
++@@ -213,18 +215,20 @@ ksocket_receive(struct socket* sock, struct sockaddr_in* addr, void *buf, int le
+       iov.iov_base = buf;
+       iov.iov_len = len;
+  
+@@ -97,3 +105,14 @@ index 26b9e6a1f729..b1daae164cdf 100644
+  
+       oldfs = get_fs();
+       set_fs(KERNEL_DS);
+++#if LINUX_VERSION_CODE < KERNEL_VERSION(4,7,0) // commit 2da62906b1e29
++      size = sock_recvmsg(sock,&msg,len,msg.msg_flags);
+++#else
+++     size = sock_recvmsg(sock, &msg,msg.msg_flags);
+++#endif
++      set_fs(oldfs);
++ 
++      return size;
++-- 
++2.11.0
++
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index 97e806756..99c8b2a4f 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -214,15 +214,15 @@ endchoice
+ 
+ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+-	default "3.2.89"	if BR2_KERNEL_HEADERS_3_2
++	default "3.2.91"	if BR2_KERNEL_HEADERS_3_2
+ 	default "3.4.113"	if BR2_KERNEL_HEADERS_3_4
+-	default "3.10.106"	if BR2_KERNEL_HEADERS_3_10
++	default "3.10.107"	if BR2_KERNEL_HEADERS_3_10
+ 	default "3.12.74"	if BR2_KERNEL_HEADERS_3_12
+-	default "3.18.59"	if BR2_KERNEL_HEADERS_3_18
++	default "3.18.61"	if BR2_KERNEL_HEADERS_3_18
+ 	default "3.19.8"	if BR2_KERNEL_HEADERS_3_19
+ 	default "4.0.9"		if BR2_KERNEL_HEADERS_4_0
+ 	default "4.1.42"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.75"	if BR2_KERNEL_HEADERS_4_4
++	default "4.4.78"	if BR2_KERNEL_HEADERS_4_4
+ 	default "4.8.17"	if BR2_KERNEL_HEADERS_4_8
+-	default "4.9.33"	if BR2_KERNEL_HEADERS_4_9
++	default "4.9.39"	if BR2_KERNEL_HEADERS_4_9
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/linux-zigbee/linux-zigbee.mk b/package/linux-zigbee/linux-zigbee.mk
+index 1f4197f06..e46b4ee4d 100644
+--- a/package/linux-zigbee/linux-zigbee.mk
++++ b/package/linux-zigbee/linux-zigbee.mk
+@@ -15,6 +15,7 @@ LINUX_ZIGBEE_AUTORECONF = YES
+ 
+ LINUX_ZIGBEE_CONF_OPTS = \
+ 	--disable-manpages \
++	--disable-werror \
+ 	--with-leasefile="$(call qstrip,$(BR2_PACKAGE_LINUX_ZIGBEE_LEASEFILE))"
+ 
+ ifeq ($(BR2_PACKAGE_LINUX_ZIGBEE_TESTS),y)
+diff --git a/package/mpg123/mpg123.hash b/package/mpg123/mpg123.hash
+index 69fbef36c..cbab6f3ee 100644
+--- a/package/mpg123/mpg123.hash
++++ b/package/mpg123/mpg123.hash
+@@ -1,2 +1,5 @@
+ # Locally calculated after checking pgp signature
+-sha256	0fe7270a4071367f97a7c1fb45fb2ef3cfef73509c205124e080ea569217b05f	mpg123-1.25.1.tar.bz2
++sha256	5314b0fb8ad291bfc79ff4c5c321b971916819a65233ec065434358fcf8aee38	mpg123-1.25.2.tar.bz2
++
++# License file
++sha256  f40e0dd86b27b52e429b693a87b3ca63ae0a98a4d142e77207aa6bdf1db7a295  COPYING
+diff --git a/package/mpg123/mpg123.mk b/package/mpg123/mpg123.mk
+index 8eaaa6273..44218eda7 100644
+--- a/package/mpg123/mpg123.mk
++++ b/package/mpg123/mpg123.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MPG123_VERSION = 1.25.1
++MPG123_VERSION = 1.25.2
+ MPG123_SOURCE = mpg123-$(MPG123_VERSION).tar.bz2
+ MPG123_SITE = http://downloads.sourceforge.net/project/mpg123/mpg123/$(MPG123_VERSION)
+ MPG123_CONF_OPTS = --disable-lfs-alias
+diff --git a/package/nodejs/6.11.0/0001-gyp-force-link-command-to-use-CXX.patch b/package/nodejs/6.11.1/0001-gyp-force-link-command-to-use-CXX.patch
+similarity index 100%
+rename from package/nodejs/6.11.0/0001-gyp-force-link-command-to-use-CXX.patch
+rename to package/nodejs/6.11.1/0001-gyp-force-link-command-to-use-CXX.patch
+diff --git a/package/nodejs/6.11.0/0002-inspector-don-t-build-when-ssl-support-is-disabled.patch b/package/nodejs/6.11.1/0002-inspector-don-t-build-when-ssl-support-is-disabled.patch
+similarity index 100%
+rename from package/nodejs/6.11.0/0002-inspector-don-t-build-when-ssl-support-is-disabled.patch
+rename to package/nodejs/6.11.1/0002-inspector-don-t-build-when-ssl-support-is-disabled.patch
+diff --git a/package/nodejs/6.11.0/0003-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch b/package/nodejs/6.11.1/0003-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch
+similarity index 100%
+rename from package/nodejs/6.11.0/0003-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch
+rename to package/nodejs/6.11.1/0003-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch
+diff --git a/package/nodejs/Config.in b/package/nodejs/Config.in
+index be20af56d..31dcfb67d 100644
+--- a/package/nodejs/Config.in
++++ b/package/nodejs/Config.in
+@@ -43,7 +43,7 @@ config BR2_PACKAGE_NODEJS_V8_ARCH_SUPPORTS
+ 
+ config BR2_PACKAGE_NODEJS_VERSION_STRING
+ 	string
+-	default "6.11.0"		if BR2_PACKAGE_NODEJS_V8_ARCH_SUPPORTS
++	default "6.11.1"		if BR2_PACKAGE_NODEJS_V8_ARCH_SUPPORTS
+ 	default "0.10.48"
+ 
+ config BR2_PACKAGE_NODEJS_NPM
+diff --git a/package/nodejs/nodejs.hash b/package/nodejs/nodejs.hash
+index ac010ab6d..2dbbdc7cc 100644
+--- a/package/nodejs/nodejs.hash
++++ b/package/nodejs/nodejs.hash
+@@ -1,5 +1,5 @@
+ # From upstream URL: http://nodejs.org/dist/v0.10.48/SHASUMS256.txt
+ sha256  365a93d9acc076a0d93f087d269f376abeebccad599a9dab72f2f6ed96c8ae6e  node-v0.10.48.tar.xz
+ 
+-# From upstream URL: http://nodejs.org/dist/v6.11.0/SHASUMS256.txt
+-sha256  02ba35391edea2b294c736489af01954ce6e6c39d318f4423ae6617c69ef0a51  node-v6.11.0.tar.xz
++# From upstream URL: http://nodejs.org/dist/v6.11.1/SHASUMS256.txt
++sha256  6f6655b85919aa54cb045a6d69a226849802fcc26491d0db4ce59873e41cc2b8  node-v6.11.1.tar.xz
+diff --git a/package/orc/Config.in b/package/orc/Config.in
+index 2470d9928..7943ecfbf 100644
+--- a/package/orc/Config.in
++++ b/package/orc/Config.in
+@@ -6,7 +6,7 @@ config BR2_PACKAGE_ORC
+ 	  Orc is a library and set of tools for compiling and executing
+ 	  very simple programs that operate on arrays of data.
+ 
+-	  http://code.entropywave.com/projects/orc/
++	  https://gstreamer.freedesktop.org/projects/orc.html
+ 
+ comment "orc needs a toolchain w/ threads"
+ 	depends on !BR2_TOOLCHAIN_HAS_THREADS
+diff --git a/package/pcre/0003-CVE-2017-6004.patch b/package/pcre/0003-CVE-2017-6004.patch
+deleted file mode 100644
+index d0b6d51ba..000000000
+--- a/package/pcre/0003-CVE-2017-6004.patch
++++ /dev/null
+@@ -1,21 +0,0 @@
+-Description: CVE-2017-6004: crafted regular expression may cause denial of service
+-Origin: upstream, https://vcs.pcre.org/pcre/code/trunk/pcre_jit_compile.c?r1=1676&r2=1680&view=patch
+-Bug: https://bugs.exim.org/show_bug.cgi?id=2035
+-Bug-Debian: https://bugs.debian.org/855405
+-Forwarded: not-needed
+-Author: Salvatore Bonaccorso <carnil@debian.org>
+-Last-Update: 2017-02-17
+-
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+-
+---- a/pcre_jit_compile.c
+-+++ b/pcre_jit_compile.c
+-@@ -8111,7 +8111,7 @@ if (opcode == OP_COND || opcode == OP_SC
+- 
+-     if (*matchingpath == OP_FAIL)
+-       stacksize = 0;
+--    if (*matchingpath == OP_RREF)
+-+    else if (*matchingpath == OP_RREF)
+-       {
+-       stacksize = GET2(matchingpath, 1);
+-       if (common->currententry == NULL)
+diff --git a/package/pcre/0004-CVE-2017-7186.patch b/package/pcre/0004-CVE-2017-7186.patch
+deleted file mode 100644
+index 980923ae4..000000000
+--- a/package/pcre/0004-CVE-2017-7186.patch
++++ /dev/null
+@@ -1,60 +0,0 @@
+-Description: Upstream fix for CVE-2017-7186 (Upstream rev 1688)
+- Fix Unicode property crash for 32-bit characters greater than 0x10ffff.
+-Author: Matthew Vernon <matthew@debian.org>
+-X-Dgit-Generated: 2:8.39-3 c4c2c7c4f74d53b263af2471d8e11db88096bd13
+-
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-
+---- pcre3-8.39.orig/pcre_internal.h
+-+++ pcre3-8.39/pcre_internal.h
+-@@ -2772,6 +2772,9 @@ extern const pcre_uint8  PRIV(ucd_stage1
+- extern const pcre_uint16 PRIV(ucd_stage2)[];
+- extern const pcre_uint32 PRIV(ucp_gentype)[];
+- extern const pcre_uint32 PRIV(ucp_gbtable)[];
+-+#ifdef COMPILE_PCRE32
+-+extern const ucd_record  PRIV(dummy_ucd_record)[];
+-+#endif
+- #ifdef SUPPORT_JIT
+- extern const int         PRIV(ucp_typerange)[];
+- #endif
+-@@ -2780,9 +2783,15 @@ extern const int         PRIV(ucp_typera
+- /* UCD access macros */
+- 
+- #define UCD_BLOCK_SIZE 128
+--#define GET_UCD(ch) (PRIV(ucd_records) + \
+-+#define REAL_GET_UCD(ch) (PRIV(ucd_records) + \
+-         PRIV(ucd_stage2)[PRIV(ucd_stage1)[(int)(ch) / UCD_BLOCK_SIZE] * \
+-         UCD_BLOCK_SIZE + (int)(ch) % UCD_BLOCK_SIZE])
+-+        
+-+#ifdef COMPILE_PCRE32
+-+#define GET_UCD(ch) ((ch > 0x10ffff)? PRIV(dummy_ucd_record) : REAL_GET_UCD(ch))
+-+#else
+-+#define GET_UCD(ch) REAL_GET_UCD(ch)
+-+#endif 
+- 
+- #define UCD_CHARTYPE(ch)    GET_UCD(ch)->chartype
+- #define UCD_SCRIPT(ch)      GET_UCD(ch)->script
+---- pcre3-8.39.orig/pcre_ucd.c
+-+++ pcre3-8.39/pcre_ucd.c
+-@@ -38,6 +38,20 @@ const pcre_uint16 PRIV(ucd_stage2)[] = {
+- const pcre_uint32 PRIV(ucd_caseless_sets)[] = {0};
+- #else
+- 
+-+/* If the 32-bit library is run in non-32-bit mode, character values
+-+greater than 0x10ffff may be encountered. For these we set up a
+-+special record. */
+-+
+-+#ifdef COMPILE_PCRE32
+-+const ucd_record PRIV(dummy_ucd_record)[] = {{
+-+  ucp_Common,    /* script */
+-+  ucp_Cn,        /* type unassigned */
+-+  ucp_gbOther,   /* grapheme break property */
+-+  0,             /* case set */
+-+  0,             /* other case */
+-+  }};
+-+#endif
+-+
+- /* When recompiling tables with a new Unicode version, please check the
+- types in this structure definition from pcre_internal.h (the actual
+- field names will be different):
+diff --git a/package/pcre/pcre.hash b/package/pcre/pcre.hash
+index 4c3c6c32e..b36e13017 100644
+--- a/package/pcre/pcre.hash
++++ b/package/pcre/pcre.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated after checking pgp signature
+-sha256	00e27a29ead4267e3de8111fcaa59b132d0533cdfdbdddf4b0604279acbcf4f4	pcre-8.40.tar.bz2
++sha256 e62c7eac5ae7c0e7286db61ff82912e1c0b7a0c13706616e94a7dd729321b530  pcre-8.41.tar.bz2
+diff --git a/package/pcre/pcre.mk b/package/pcre/pcre.mk
+index e302ed7d8..5734fce29 100644
+--- a/package/pcre/pcre.mk
++++ b/package/pcre/pcre.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-PCRE_VERSION = 8.40
++PCRE_VERSION = 8.41
+ PCRE_SITE = https://ftp.pcre.org/pub/pcre
+ PCRE_SOURCE = pcre-$(PCRE_VERSION).tar.bz2
+ PCRE_LICENSE = BSD-3c
+diff --git a/package/php/php.hash b/package/php/php.hash
+index 9c94b9e4c..c724f6d8c 100644
+--- a/package/php/php.hash
++++ b/package/php/php.hash
+@@ -1,2 +1,5 @@
+ # From http://php.net/downloads.php
+-sha256 b3565b0c1441064eba204821608df1ec7367abff881286898d900c2c2a5ffe70  php-7.1.1.tar.xz
++sha256 0d42089729be7b2bb0308cbe189c2782f9cb4b07078c8a235495be5874fff729  php-7.1.7.tar.xz
++
++# License file
++sha256 a44951f93b10c87c3f7cd9f311d95999c57c95ed950eec32b14c1c7ea6baf25e  LICENSE
+diff --git a/package/php/php.mk b/package/php/php.mk
+index 1379ad571..0733bc9a2 100644
+--- a/package/php/php.mk
++++ b/package/php/php.mk
+@@ -4,14 +4,14 @@
+ #
+ ################################################################################
+ 
+-PHP_VERSION = 7.1.1
++PHP_VERSION = 7.1.7
+ PHP_SITE = http://www.php.net/distributions
+ PHP_SOURCE = php-$(PHP_VERSION).tar.xz
+ PHP_INSTALL_STAGING = YES
+ PHP_INSTALL_STAGING_OPTS = INSTALL_ROOT=$(STAGING_DIR) install
+ PHP_INSTALL_TARGET_OPTS = INSTALL_ROOT=$(TARGET_DIR) install
+ PHP_DEPENDENCIES = host-pkgconf
+-PHP_LICENSE = PHP
++PHP_LICENSE = PHP-3.01
+ PHP_LICENSE_FILES = LICENSE
+ PHP_CONF_OPTS = \
+ 	--mandir=/usr/share/man \
+diff --git a/package/pulseaudio/pulseaudio.mk b/package/pulseaudio/pulseaudio.mk
+index 74a028be4..5960f8a5b 100644
+--- a/package/pulseaudio/pulseaudio.mk
++++ b/package/pulseaudio/pulseaudio.mk
+@@ -32,6 +32,7 @@ PULSEAUDIO_DEPENDENCIES = \
+ 	$(if $(BR2_PACKAGE_AVAHI_DAEMON),avahi) \
+ 	$(if $(BR2_PACKAGE_DBUS),dbus) \
+ 	$(if $(BR2_PACKAGE_BLUEZ_UTILS),bluez_utils) \
++	$(if $(BR2_PACKAGE_BLUEZ5_UTILS),bluez5_utils) \
+ 	$(if $(BR2_PACKAGE_OPENSSL),openssl) \
+ 	$(if $(BR2_PACKAGE_FFTW),fftw) \
+ 	$(if $(BR2_PACKAGE_SYSTEMD),systemd)
+@@ -121,8 +122,6 @@ ifneq ($(BR2_ENABLE_LOCALE),y)
+ define PULSEAUDIO_FIXUP_DESKTOP_FILES
+ 	cp $(@D)/src/daemon/pulseaudio.desktop.in \
+ 		$(@D)/src/daemon/pulseaudio.desktop
+-	cp $(@D)/src/daemon/pulseaudio-kde.desktop.in \
+-		$(@D)/src/daemon/pulseaudio-kde.desktop
+ endef
+ PULSEAUDIO_POST_PATCH_HOOKS += PULSEAUDIO_FIXUP_DESKTOP_FILES
+ endif
+diff --git a/package/python-setproctitle/python-setproctitle.mk b/package/python-setproctitle/python-setproctitle.mk
+index 36cfec322..c3c6386b6 100644
+--- a/package/python-setproctitle/python-setproctitle.mk
++++ b/package/python-setproctitle/python-setproctitle.mk
+@@ -9,6 +9,6 @@ PYTHON_SETPROCTITLE_SOURCE = setproctitle-$(PYTHON_SETPROCTITLE_VERSION).tar.gz
+ PYTHON_SETPROCTITLE_SITE = https://pypi.python.org/packages/5a/0d/dc0d2234aacba6cf1a729964383e3452c52096dc695581248b548786f2b3
+ PYTHON_SETPROCTITLE_LICENSE = BSD-3c
+ PYTHON_SETPROCTITLE_LICENSE_FILES = COPYRIGHT
+-PYTHON_SETPROCTITLE_SETUP_TYPE = distutils
++PYTHON_SETPROCTITLE_SETUP_TYPE = setuptools
+ 
+ $(eval $(python-package))
+diff --git a/package/qt5/qt5base/5.8.0/0005-Fix-error-attribute-target-crc-is-unknown.patch b/package/qt5/qt5base/5.8.0/0005-Fix-error-attribute-target-crc-is-unknown.patch
+new file mode 100644
+index 000000000..92d93a800
+--- /dev/null
++++ b/package/qt5/qt5base/5.8.0/0005-Fix-error-attribute-target-crc-is-unknown.patch
+@@ -0,0 +1,44 @@
++From f0c02fb22bc277e2015a18e562b551ec7b3eed9e Mon Sep 17 00:00:00 2001
++From: Peter Seiderer <ps.report@gmx.net>
++Date: Sun, 16 Jul 2017 00:05:44 +0200
++Subject: [PATCH] Fix error attribute(target("+crc")) is unknown
++
++Task-number: QTBUG-61975
++Change-Id: I0b1b55c0737dad485b5ace8e6eb7cb842589453d
++---
++ src/corelib/tools/qhash.cpp | 2 ++
++ src/corelib/tools/qsimd_p.h | 3 +++
++ 2 files changed, 5 insertions(+)
++
++diff --git a/src/corelib/tools/qhash.cpp b/src/corelib/tools/qhash.cpp
++index 1f9c05c..bbf6efb 100644
++--- a/src/corelib/tools/qhash.cpp
+++++ b/src/corelib/tools/qhash.cpp
++@@ -144,7 +144,9 @@ static inline bool hasFastCrc32()
++ }
++ 
++ template <typename Char>
+++#if defined(__aarch64__)
++ QT_FUNCTION_TARGET(CRC32)
+++#endif
++ static uint crc32(const Char *ptr, size_t len, uint h)
++ {
++     // The crc32[whbd] instructions on Aarch64/Aarch32 calculate a 32-bit CRC32 checksum
++diff --git a/src/corelib/tools/qsimd_p.h b/src/corelib/tools/qsimd_p.h
++index 023a4b0..a85d572 100644
++--- a/src/corelib/tools/qsimd_p.h
+++++ b/src/corelib/tools/qsimd_p.h
++@@ -326,7 +326,10 @@
++ #endif
++ // AArch64/ARM64
++ #if defined(Q_PROCESSOR_ARM_V8) && defined(__ARM_FEATURE_CRC32)
+++#if defined(__aarch64__)
+++// only available on aarch64
++ #define QT_FUNCTION_TARGET_STRING_CRC32      "+crc"
+++#endif
++ #  include <arm_acle.h>
++ #endif
++ 
++-- 
++2.7.4
++
+diff --git a/package/rpi-firmware/rpi-firmware.mk b/package/rpi-firmware/rpi-firmware.mk
+index d2cd48191..8575e7f21 100644
+--- a/package/rpi-firmware/rpi-firmware.mk
++++ b/package/rpi-firmware/rpi-firmware.mk
+@@ -31,6 +31,8 @@ ifeq ($(BR2_PACKAGE_RPI_FIRMWARE_INSTALL_VCDBG),y)
+ define RPI_FIRMWARE_INSTALL_TARGET_CMDS
+ 	$(INSTALL) -D -m 0700 $(@D)/$(if BR2_ARM_EABIHF,hardfp/)opt/vc/bin/vcdbg \
+ 		$(TARGET_DIR)/usr/sbin/vcdbg
++	$(INSTALL) -D -m 0644 $(@D)/$(if BR2_ARM_EABIHF,hardfp/)opt/vc/lib/libelftoolchain.so \
++		$(TARGET_DIR)/usr/lib/libelftoolchain.so
+ endef
+ endif # INSTALL_VCDBG
+ 
+diff --git a/package/samba4/samba4.hash b/package/samba4/samba4.hash
+index a16d83470..0783b37d0 100644
+--- a/package/samba4/samba4.hash
++++ b/package/samba4/samba4.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated
+-sha256 7cb753f5f6d5527ef40d4c1f47dacafb7c876cb304b4906ccb390c6a18477714  samba-4.5.10.tar.gz
++sha256 f4c17123e3cc852a5ecc7e38884b00deab57632b9519aebc243e2a94b9b5ace4  samba-4.5.12.tar.gz
+diff --git a/package/samba4/samba4.mk b/package/samba4/samba4.mk
+index 0ad4b64f5..3ffe11e15 100644
+--- a/package/samba4/samba4.mk
++++ b/package/samba4/samba4.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SAMBA4_VERSION = 4.5.10
++SAMBA4_VERSION = 4.5.12
+ SAMBA4_SITE = https://download.samba.org/pub/samba/stable
+ SAMBA4_SOURCE = samba-$(SAMBA4_VERSION).tar.gz
+ SAMBA4_INSTALL_STAGING = YES
+diff --git a/package/spice/0004-reds-Disconnect-when-receiving-overly-big-ClientMoni.patch b/package/spice/0004-reds-Disconnect-when-receiving-overly-big-ClientMoni.patch
+new file mode 100644
+index 000000000..070259f2b
+--- /dev/null
++++ b/package/spice/0004-reds-Disconnect-when-receiving-overly-big-ClientMoni.patch
+@@ -0,0 +1,75 @@
++From f1e7ec03e26ab6b8ca9b7ec060846a5b706a963d Mon Sep 17 00:00:00 2001
++From: Frediano Ziglio <fziglio@redhat.com>
++Date: Mon, 15 May 2017 15:57:28 +0100
++Subject: [PATCH] reds: Disconnect when receiving overly big
++ ClientMonitorsConfig
++
++Total message size received from the client was unlimited. There is
++a 2kiB size check on individual agent messages, but the MonitorsConfig
++message can be split in multiple chunks, and the size of the
++non-chunked MonitorsConfig message was never checked. This could easily
++lead to memory exhaustion on the host.
++
++Signed-off-by: Frediano Ziglio <fziglio@redhat.com>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ server/reds.c | 25 +++++++++++++++++++++++--
++ 1 file changed, 23 insertions(+), 2 deletions(-)
++
++diff --git a/server/reds.c b/server/reds.c
++index f439a366..7be85fdf 100644
++--- a/server/reds.c
+++++ b/server/reds.c
++@@ -993,19 +993,34 @@ static void reds_client_monitors_config_cleanup(void)
++ static void reds_on_main_agent_monitors_config(
++         MainChannelClient *mcc, void *message, size_t size)
++ {
+++    const unsigned int MAX_MONITORS = 256;
+++    const unsigned int MAX_MONITOR_CONFIG_SIZE =
+++       sizeof(VDAgentMonitorsConfig) + MAX_MONITORS * sizeof(VDAgentMonConfig);
+++
++     VDAgentMessage *msg_header;
++     VDAgentMonitorsConfig *monitors_config;
++     RedsClientMonitorsConfig *cmc = &reds->client_monitors_config;
++ 
+++    // limit size of message sent by the client as this can cause a DoS through
+++    // memory exhaustion, or potentially some integer overflows
+++    if (sizeof(VDAgentMessage) + MAX_MONITOR_CONFIG_SIZE - cmc->buffer_size < size) {
+++        goto overflow;
+++    }
++     cmc->buffer_size += size;
++     cmc->buffer = realloc(cmc->buffer, cmc->buffer_size);
++     spice_assert(cmc->buffer);
++     cmc->mcc = mcc;
++     memcpy(cmc->buffer + cmc->buffer_pos, message, size);
++     cmc->buffer_pos += size;
+++    if (sizeof(VDAgentMessage) > cmc->buffer_size) {
+++        spice_debug("not enough data yet. %d", cmc->buffer_size);
+++        return;
+++    }
++     msg_header = (VDAgentMessage *)cmc->buffer;
++-    if (sizeof(VDAgentMessage) > cmc->buffer_size ||
++-            msg_header->size > cmc->buffer_size - sizeof(VDAgentMessage)) {
+++    if (msg_header->size > MAX_MONITOR_CONFIG_SIZE) {
+++        goto overflow;
+++    }
+++    if (msg_header->size > cmc->buffer_size - sizeof(VDAgentMessage)) {
++         spice_debug("not enough data yet. %d", cmc->buffer_size);
++         return;
++     }
++@@ -1013,6 +1028,12 @@ static void reds_on_main_agent_monitors_config(
++     spice_debug("%s: %d", __func__, monitors_config->num_of_monitors);
++     red_dispatcher_client_monitors_config(monitors_config);
++     reds_client_monitors_config_cleanup();
+++    return;
+++
+++overflow:
+++    spice_warning("received invalid MonitorsConfig request from client, disconnecting");
+++    red_channel_client_disconnect(main_channel_client_get_base(mcc));
+++    reds_client_monitors_config_cleanup();
++ }
++ 
++ void reds_on_main_agent_data(MainChannelClient *mcc, void *message, size_t size)
++-- 
++2.11.0
++
+diff --git a/package/spice/0005-reds-Avoid-integer-overflows-handling-monitor-config.patch b/package/spice/0005-reds-Avoid-integer-overflows-handling-monitor-config.patch
+new file mode 100644
+index 000000000..98740520c
+--- /dev/null
++++ b/package/spice/0005-reds-Avoid-integer-overflows-handling-monitor-config.patch
+@@ -0,0 +1,31 @@
++From ec6229c79abe05d731953df5f7e9a05ec9f6df79 Mon Sep 17 00:00:00 2001
++From: Frediano Ziglio <fziglio@redhat.com>
++Date: Mon, 15 May 2017 15:57:28 +0100
++Subject: [PATCH] reds: Avoid integer overflows handling monitor
++ configuration
++
++Avoid VDAgentMessage::size integer overflows.
++
++Signed-off-by: Frediano Ziglio <fziglio@redhat.com>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ server/reds.c | 3 +++
++ 1 file changed, 3 insertions(+)
++
++diff --git a/server/reds.c b/server/reds.c
++index 7be85fdf..e1c8c108 100644
++--- a/server/reds.c
+++++ b/server/reds.c
++@@ -1024,6 +1024,9 @@ static void reds_on_main_agent_monitors_config(
++         spice_debug("not enough data yet. %d", cmc->buffer_size);
++         return;
++     }
+++    if (msg_header->size < sizeof(VDAgentMonitorsConfig)) {
+++        goto overflow;
+++    }
++     monitors_config = (VDAgentMonitorsConfig *)(cmc->buffer + sizeof(*msg_header));
++     spice_debug("%s: %d", __func__, monitors_config->num_of_monitors);
++     red_dispatcher_client_monitors_config(monitors_config);
++-- 
++2.11.0
++
+diff --git a/package/spice/0006-reds-Avoid-buffer-overflows-handling-monitor-configu.patch b/package/spice/0006-reds-Avoid-buffer-overflows-handling-monitor-configu.patch
+new file mode 100644
+index 000000000..212645b44
+--- /dev/null
++++ b/package/spice/0006-reds-Avoid-buffer-overflows-handling-monitor-configu.patch
+@@ -0,0 +1,48 @@
++From a957a90baf2c62d31f3547e56bba7d0e812d2331 Mon Sep 17 00:00:00 2001
++From: Frediano Ziglio <fziglio@redhat.com>
++Date: Mon, 15 May 2017 15:57:28 +0100
++Subject: [PATCH] reds: Avoid buffer overflows handling monitor
++ configuration
++
++It was also possible for a malicious client to set
++VDAgentMonitorsConfig::num_of_monitors to a number larger
++than the actual size of VDAgentMOnitorsConfig::monitors.
++This would lead to buffer overflows, which could allow the guest to
++read part of the host memory. This might cause write overflows in the
++host as well, but controlling the content of such buffers seems
++complicated.
++
++Signed-off-by: Frediano Ziglio <fziglio@redhat.com>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ server/reds.c | 7 +++++++
++ 1 file changed, 7 insertions(+)
++
++diff --git a/server/reds.c b/server/reds.c
++index e1c8c108..3a42c375 100644
++--- a/server/reds.c
+++++ b/server/reds.c
++@@ -1000,6 +1000,7 @@ static void reds_on_main_agent_monitors_config(
++     VDAgentMessage *msg_header;
++     VDAgentMonitorsConfig *monitors_config;
++     RedsClientMonitorsConfig *cmc = &reds->client_monitors_config;
+++    uint32_t max_monitors;
++ 
++     // limit size of message sent by the client as this can cause a DoS through
++     // memory exhaustion, or potentially some integer overflows
++@@ -1028,6 +1029,12 @@ static void reds_on_main_agent_monitors_config(
++         goto overflow;
++     }
++     monitors_config = (VDAgentMonitorsConfig *)(cmc->buffer + sizeof(*msg_header));
+++    // limit the monitor number to avoid buffer overflows
+++    max_monitors = (msg_header->size - sizeof(VDAgentMonitorsConfig)) /
+++                   sizeof(VDAgentMonConfig);
+++    if (monitors_config->num_of_monitors > max_monitors) {
+++        goto overflow;
+++    }
++     spice_debug("%s: %d", __func__, monitors_config->num_of_monitors);
++     red_dispatcher_client_monitors_config(monitors_config);
++     reds_client_monitors_config_cleanup();
++-- 
++2.11.0
++
+diff --git a/package/systemd/0001-resolved-bugfix-of-null-pointer-p-question-dereferencing.patch b/package/systemd/0001-resolved-bugfix-of-null-pointer-p-question-dereferencing.patch
+new file mode 100644
+index 000000000..81cecefa3
+--- /dev/null
++++ b/package/systemd/0001-resolved-bugfix-of-null-pointer-p-question-dereferencing.patch
+@@ -0,0 +1,28 @@
++From a924f43f30f9c4acaf70618dd2a055f8b0f166be Mon Sep 17 00:00:00 2001
++From: Evgeny Vereshchagin <evvers@ya.ru>
++Date: Wed, 24 May 2017 08:56:48 +0300
++Subject: [PATCH] resolved: bugfix of null pointer p->question dereferencing
++ (#6020)
++
++See https://bugs.launchpad.net/ubuntu/+source/systemd/+bug/1621396
++
++[Upstream commit: https://github.com/systemd/systemd/commit/a924f43f30f9c4acaf70618dd2a055f8b0f166be]
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++---
++ src/resolve/resolved-dns-packet.c | 3 +++
++ 1 file changed, 3 insertions(+)
++
++diff --git a/src/resolve/resolved-dns-packet.c b/src/resolve/resolved-dns-packet.c
++index 652970284e..240ee448f4 100644
++--- a/src/resolve/resolved-dns-packet.c
+++++ b/src/resolve/resolved-dns-packet.c
++@@ -2269,6 +2269,9 @@ int dns_packet_is_reply_for(DnsPacket *p, const DnsResourceKey *key) {
++         if (r < 0)
++                 return r;
++ 
+++        if (!p->question)
+++                return 0;
+++
++         if (p->question->n_keys != 1)
++                 return 0;
++ 
+diff --git a/package/systemd/0002-resolved-simplify-alloc-size-calculation.patch b/package/systemd/0002-resolved-simplify-alloc-size-calculation.patch
+new file mode 100644
+index 000000000..5fab90560
+--- /dev/null
++++ b/package/systemd/0002-resolved-simplify-alloc-size-calculation.patch
+@@ -0,0 +1,51 @@
++From db848813bae4d28c524b3b6a7dad135e426659ce Mon Sep 17 00:00:00 2001
++From: =?UTF-8?q?Zbigniew=20J=C4=99drzejewski-Szmek?= <zbyszek@in.waw.pl>
++Date: Sun, 18 Jun 2017 16:07:57 -0400
++Subject: [PATCH] resolved: simplify alloc size calculation
++
++The allocation size was calculated in a complicated way, and for values
++close to the page size we would actually allocate less than requested.
++
++Reported by Chris Coulson <chris.coulson@canonical.com>.
++
++CVE-2017-9445
++
++[Upstream commit: https://github.com/systemd/systemd/commit/db848813bae4d28c524b3b6a7dad135e426659ce]
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++---
++ src/resolve/resolved-dns-packet.c | 8 +-------
++ src/resolve/resolved-dns-packet.h | 2 --
++ 2 files changed, 1 insertion(+), 9 deletions(-)
++
++diff --git a/src/resolve/resolved-dns-packet.c b/src/resolve/resolved-dns-packet.c
++index 240ee448f4..821b66e266 100644
++--- a/src/resolve/resolved-dns-packet.c
+++++ b/src/resolve/resolved-dns-packet.c
++@@ -47,13 +47,7 @@ int dns_packet_new(DnsPacket **ret, DnsProtocol protocol, size_t mtu) {
++ 
++         assert(ret);
++ 
++-        if (mtu <= UDP_PACKET_HEADER_SIZE)
++-                a = DNS_PACKET_SIZE_START;
++-        else
++-                a = mtu - UDP_PACKET_HEADER_SIZE;
++-
++-        if (a < DNS_PACKET_HEADER_SIZE)
++-                a = DNS_PACKET_HEADER_SIZE;
+++        a = MAX(mtu, DNS_PACKET_HEADER_SIZE);
++ 
++         /* round up to next page size */
++         a = PAGE_ALIGN(ALIGN(sizeof(DnsPacket)) + a) - ALIGN(sizeof(DnsPacket));
++diff --git a/src/resolve/resolved-dns-packet.h b/src/resolve/resolved-dns-packet.h
++index 2c92392e4d..3abcaf8cf3 100644
++--- a/src/resolve/resolved-dns-packet.h
+++++ b/src/resolve/resolved-dns-packet.h
++@@ -66,8 +66,6 @@ struct DnsPacketHeader {
++ /* With EDNS0 we can use larger packets, default to 4096, which is what is commonly used */
++ #define DNS_PACKET_UNICAST_SIZE_LARGE_MAX 4096
++ 
++-#define DNS_PACKET_SIZE_START 512
++-
++ struct DnsPacket {
++         int n_ref;
++         DnsProtocol protocol;
+diff --git a/package/systemd/0003-resolved-do-not-allocate-packets-with-minimum-size.patch b/package/systemd/0003-resolved-do-not-allocate-packets-with-minimum-size.patch
+new file mode 100644
+index 000000000..750911383
+--- /dev/null
++++ b/package/systemd/0003-resolved-do-not-allocate-packets-with-minimum-size.patch
+@@ -0,0 +1,48 @@
++From 88795538726a5bbfd9efc13d441cb05e1d7fc139 Mon Sep 17 00:00:00 2001
++From: =?UTF-8?q?Zbigniew=20J=C4=99drzejewski-Szmek?= <zbyszek@in.waw.pl>
++Date: Tue, 27 Jun 2017 14:20:00 -0400
++Subject: [PATCH] resolved: do not allocate packets with minimum size
++
++dns_packet_new() is sometimes called with mtu == 0, and in that case we should
++allocate more than the absolute minimum (which is the dns packet header size),
++otherwise we have to resize immediately again after appending the first data to
++the packet.
++
++This partially reverts the previous commit.
++
++[Upstream commit: https://github.com/systemd/systemd/commit/88795538726a5bbfd9efc13d441cb05e1d7fc139]
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++---
++ src/resolve/resolved-dns-packet.c | 12 +++++++++++-
++ 1 file changed, 11 insertions(+), 1 deletion(-)
++
++diff --git a/src/resolve/resolved-dns-packet.c b/src/resolve/resolved-dns-packet.c
++index 821b66e266..d1f0f760a4 100644
++--- a/src/resolve/resolved-dns-packet.c
+++++ b/src/resolve/resolved-dns-packet.c
++@@ -28,6 +28,9 @@
++ 
++ #define EDNS0_OPT_DO (1<<15)
++ 
+++#define DNS_PACKET_SIZE_START 512
+++assert_cc(DNS_PACKET_SIZE_START > UDP_PACKET_HEADER_SIZE)
+++
++ typedef struct DnsPacketRewinder {
++         DnsPacket *packet;
++         size_t saved_rindex;
++@@ -47,7 +50,14 @@ int dns_packet_new(DnsPacket **ret, DnsProtocol protocol, size_t mtu) {
++ 
++         assert(ret);
++ 
++-        a = MAX(mtu, DNS_PACKET_HEADER_SIZE);
+++        /* When dns_packet_new() is called with mtu == 0, allocate more than the
+++         * absolute minimum (which is the dns packet header size), to avoid
+++         * resizing immediately again after appending the first data to the packet.
+++         */
+++        if (mtu < UDP_PACKET_HEADER_SIZE)
+++                a = DNS_PACKET_SIZE_START;
+++        else
+++                a = MAX(mtu, DNS_PACKET_HEADER_SIZE);
++ 
++         /* round up to next page size */
++         a = PAGE_ALIGN(ALIGN(sizeof(DnsPacket)) + a) - ALIGN(sizeof(DnsPacket));
+diff --git a/package/systemd/0001-fix-getty-unit.patch b/package/systemd/0004-fix-getty-unit.patch
+similarity index 100%
+rename from package/systemd/0001-fix-getty-unit.patch
+rename to package/systemd/0004-fix-getty-unit.patch
+diff --git a/package/systemd/0002-build-sys-revert-use-of-ln-relative-option.patch b/package/systemd/0005-build-sys-revert-use-of-ln-relative-option.patch
+similarity index 100%
+rename from package/systemd/0002-build-sys-revert-use-of-ln-relative-option.patch
+rename to package/systemd/0005-build-sys-revert-use-of-ln-relative-option.patch
+diff --git a/package/systemd/0003-fix-am-path-libgcrypt-no-found.patch b/package/systemd/0006-fix-am-path-libgcrypt-no-found.patch
+similarity index 100%
+rename from package/systemd/0003-fix-am-path-libgcrypt-no-found.patch
+rename to package/systemd/0006-fix-am-path-libgcrypt-no-found.patch
+diff --git a/package/systemd/Config.in b/package/systemd/Config.in
+index ac8175c33..47d47c6a4 100644
+--- a/package/systemd/Config.in
++++ b/package/systemd/Config.in
+@@ -26,6 +26,7 @@ menuconfig BR2_PACKAGE_SYSTEMD
+ 	select BR2_PACKAGE_KMOD
+ 	select BR2_PACKAGE_BUSYBOX_SHOW_OTHERS # kmod-tools
+ 	select BR2_PACKAGE_KMOD_TOOLS
++	select BR2_TARGET_TZ_INFO
+ 	help
+ 	  systemd is a system and service manager for Linux, compatible with
+ 	  SysV and LSB init scripts. systemd provides aggressive parallelization
+diff --git a/package/systemd/systemd.hash b/package/systemd/systemd.hash
+index 4417fb3f9..0acaa3cdc 100644
+--- a/package/systemd/systemd.hash
++++ b/package/systemd/systemd.hash
+@@ -1,5 +1,2 @@
+ # sha256 locally computed
+ sha256 1172c7c7d5d72fbded53186e7599d5272231f04cc8b72f9a0fb2c5c20dfc4880  systemd-232.tar.gz
+-sha256 eed8fef0045876e9efa0ba6725ed9ea93654bf24d67bb5aad467a341ad375883  a924f43f30f9c4acaf70618dd2a055f8b0f166be.patch
+-sha256 43c75bd161a8ef0de5db607aaceed77220f2ba4903cf44e7e9db544980420a5e  db848813bae4d28c524b3b6a7dad135e426659ce.patch
+-sha256 451f7c09332479ebe4ac01612f5f034df4524e16b5bc5d1c8ddcda14e9f3cd69  88795538726a5bbfd9efc13d441cb05e1d7fc139.patch
+diff --git a/package/systemd/systemd.mk b/package/systemd/systemd.mk
+index 99827b6f0..d5806741d 100644
+--- a/package/systemd/systemd.mk
++++ b/package/systemd/systemd.mk
+@@ -19,11 +19,6 @@ SYSTEMD_DEPENDENCIES = \
+ SYSTEMD_PROVIDES = udev
+ SYSTEMD_AUTORECONF = YES
+ 
+-SYSTEMD_PATCH = \
+-	https://github.com/systemd/systemd/commit/a924f43f30f9c4acaf70618dd2a055f8b0f166be.patch \
+-	https://github.com/systemd/systemd/commit/db848813bae4d28c524b3b6a7dad135e426659ce.patch \
+-	https://github.com/systemd/systemd/commit/88795538726a5bbfd9efc13d441cb05e1d7fc139.patch
+-
+ # Make sure that systemd will always be built after busybox so that we have
+ # a consistent init setup between two builds
+ ifeq ($(BR2_PACKAGE_BUSYBOX),y)
+diff --git a/package/tcpdump/tcpdump.hash b/package/tcpdump/tcpdump.hash
+index 966db1f3a..4eedc1c16 100644
+--- a/package/tcpdump/tcpdump.hash
++++ b/package/tcpdump/tcpdump.hash
+@@ -1,2 +1,2 @@
+-# Locally calculated after checking pgp signature
+-sha256 eae98121cbb1c9adbedd9a777bf2eae9fa1c1c676424a54740311c8abcee5a5e  tcpdump-4.9.0.tar.gz
++# Locally calculated after checking pgp signature at http://www.tcpdump.org/release/tcpdump-4.9.1.tar.gz.sig
++sha256 f9448cf4deb2049acf713655c736342662e652ef40dbe0a8f6f8d5b9ce5bd8f3  tcpdump-4.9.1.tar.gz
+diff --git a/package/tcpdump/tcpdump.mk b/package/tcpdump/tcpdump.mk
+index e71f9c113..ac710b8f7 100644
+--- a/package/tcpdump/tcpdump.mk
++++ b/package/tcpdump/tcpdump.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-TCPDUMP_VERSION = 4.9.0
++TCPDUMP_VERSION = 4.9.1
+ TCPDUMP_SITE = http://www.tcpdump.org/release
+ TCPDUMP_LICENSE = BSD-3c
+ TCPDUMP_LICENSE_FILES = LICENSE
+diff --git a/package/tiff/0001-libtiff-tif_dirwrite.c-in-TIFFWriteDirectoryTagCheck.patch b/package/tiff/0001-libtiff-tif_dirwrite.c-in-TIFFWriteDirectoryTagCheck.patch
+new file mode 100644
+index 000000000..2be989b9e
+--- /dev/null
++++ b/package/tiff/0001-libtiff-tif_dirwrite.c-in-TIFFWriteDirectoryTagCheck.patch
+@@ -0,0 +1,70 @@
++From 6173a57d39e04d68b139f8c1aa499a24dbe74ba1 Mon Sep 17 00:00:00 2001
++From: Even Rouault <even.rouault@spatialys.com>
++Date: Fri, 30 Jun 2017 17:29:44 +0000
++Subject: [PATCH] * libtiff/tif_dirwrite.c: in
++ TIFFWriteDirectoryTagCheckedXXXX() functions associated with LONG8/SLONG8
++ data type, replace assertion that the file is BigTIFF, by a non-fatal error.
++ Fixes http://bugzilla.maptools.org/show_bug.cgi?id=2712 Reported by team
++ OWL337
++
++[Peter: drop ChangeLog modification]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ libtiff/tif_dirwrite.c | 20 ++++++++++++++++----
++ 1 file changed, 23 insertions(+), 4 deletions(-)
++
++diff --git a/libtiff/tif_dirwrite.c b/libtiff/tif_dirwrite.c
++index 2967da58..8d6686ba 100644
++--- a/libtiff/tif_dirwrite.c
+++++ b/libtiff/tif_dirwrite.c
++@@ -2111,7 +2111,10 @@ TIFFWriteDirectoryTagCheckedLong8(TIFF* tif, uint32* ndir, TIFFDirEntry* dir, ui
++ {
++ 	uint64 m;
++ 	assert(sizeof(uint64)==8);
++-	assert(tif->tif_flags&TIFF_BIGTIFF);
+++	if( !(tif->tif_flags&TIFF_BIGTIFF) ) {
+++		TIFFErrorExt(tif->tif_clientdata,"TIFFWriteDirectoryTagCheckedLong8","LONG8 not allowed for ClassicTIFF");
+++		return(0);
+++	}
++ 	m=value;
++ 	if (tif->tif_flags&TIFF_SWAB)
++ 		TIFFSwabLong8(&m);
++@@ -2124,7 +2127,10 @@ TIFFWriteDirectoryTagCheckedLong8Array(TIFF* tif, uint32* ndir, TIFFDirEntry* di
++ {
++ 	assert(count<0x20000000);
++ 	assert(sizeof(uint64)==8);
++-	assert(tif->tif_flags&TIFF_BIGTIFF);
+++	if( !(tif->tif_flags&TIFF_BIGTIFF) ) {
+++		TIFFErrorExt(tif->tif_clientdata,"TIFFWriteDirectoryTagCheckedLong8","LONG8 not allowed for ClassicTIFF");
+++		return(0);
+++	}
++ 	if (tif->tif_flags&TIFF_SWAB)
++ 		TIFFSwabArrayOfLong8(value,count);
++ 	return(TIFFWriteDirectoryTagData(tif,ndir,dir,tag,TIFF_LONG8,count,count*8,value));
++@@ -2136,7 +2142,10 @@ TIFFWriteDirectoryTagCheckedSlong8(TIFF* tif, uint32* ndir, TIFFDirEntry* dir, u
++ {
++ 	int64 m;
++ 	assert(sizeof(int64)==8);
++-	assert(tif->tif_flags&TIFF_BIGTIFF);
+++	if( !(tif->tif_flags&TIFF_BIGTIFF) ) {
+++		TIFFErrorExt(tif->tif_clientdata,"TIFFWriteDirectoryTagCheckedLong8","SLONG8 not allowed for ClassicTIFF");
+++		return(0);
+++	}
++ 	m=value;
++ 	if (tif->tif_flags&TIFF_SWAB)
++ 		TIFFSwabLong8((uint64*)(&m));
++@@ -2149,7 +2158,10 @@ TIFFWriteDirectoryTagCheckedSlong8Array(TIFF* tif, uint32* ndir, TIFFDirEntry* d
++ {
++ 	assert(count<0x20000000);
++ 	assert(sizeof(int64)==8);
++-	assert(tif->tif_flags&TIFF_BIGTIFF);
+++	if( !(tif->tif_flags&TIFF_BIGTIFF) ) {
+++		TIFFErrorExt(tif->tif_clientdata,"TIFFWriteDirectoryTagCheckedLong8","SLONG8 not allowed for ClassicTIFF");
+++		return(0);
+++	}
++ 	if (tif->tif_flags&TIFF_SWAB)
++ 		TIFFSwabArrayOfLong8((uint64*)value,count);
++ 	return(TIFFWriteDirectoryTagData(tif,ndir,dir,tag,TIFF_SLONG8,count,count*8,value));
++-- 
++2.11.0
++
+diff --git a/package/tiff/0001-libtiff-tif_read.c-libtiff-tiffiop.h-fix-uint32-over.patch b/package/tiff/0001-libtiff-tif_read.c-libtiff-tiffiop.h-fix-uint32-over.patch
+deleted file mode 100644
+index 9df4577e1..000000000
+--- a/package/tiff/0001-libtiff-tif_read.c-libtiff-tiffiop.h-fix-uint32-over.patch
++++ /dev/null
+@@ -1,46 +0,0 @@
+-From 438274f938e046d33cb0e1230b41da32ffe223e1 Mon Sep 17 00:00:00 2001
+-From: erouault <erouault>
+-Date: Fri, 2 Dec 2016 21:56:56 +0000
+-Subject: [PATCH] * libtiff/tif_read.c, libtiff/tiffiop.h: fix uint32 overflow
+- in TIFFReadEncodedStrip() that caused an integer division by zero. Reported
+- by Agostino Sarubbo. Fixes http://bugzilla.maptools.org/show_bug.cgi?id=2596
+-
+-Fixes CVE-2016-10266
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- libtiff/tif_read.c | 2 +-
+- libtiff/tiffiop.h  | 4 ++++
+- 2 files changed, 12 insertions(+), 1 deletion(-)
+-
+-diff --git a/libtiff/tif_read.c b/libtiff/tif_read.c
+-index c26c55f4..52bbf507 100644
+---- a/libtiff/tif_read.c
+-+++ b/libtiff/tif_read.c
+-@@ -346,7 +346,7 @@ TIFFReadEncodedStrip(TIFF* tif, uint32 strip, void* buf, tmsize_t size)
+- 	rowsperstrip=td->td_rowsperstrip;
+- 	if (rowsperstrip>td->td_imagelength)
+- 		rowsperstrip=td->td_imagelength;
+--	stripsperplane=((td->td_imagelength+rowsperstrip-1)/rowsperstrip);
+-+	stripsperplane= TIFFhowmany_32_maxuint_compat(td->td_imagelength, rowsperstrip);
+- 	stripinplane=(strip%stripsperplane);
+- 	plane=(uint16)(strip/stripsperplane);
+- 	rows=td->td_imagelength-stripinplane*rowsperstrip;
+-diff --git a/libtiff/tiffiop.h b/libtiff/tiffiop.h
+-index ffbb647b..cb59460a 100644
+---- a/libtiff/tiffiop.h
+-+++ b/libtiff/tiffiop.h
+-@@ -250,6 +250,10 @@ struct tiff {
+- #define TIFFhowmany_32(x, y) (((uint32)x < (0xffffffff - (uint32)(y-1))) ? \
+- 			   ((((uint32)(x))+(((uint32)(y))-1))/((uint32)(y))) : \
+- 			   0U)
+-+/* Variant of TIFFhowmany_32() that doesn't return 0 if x close to MAXUINT. */
+-+/* Caution: TIFFhowmany_32_maxuint_compat(x,y)*y might overflow */
+-+#define TIFFhowmany_32_maxuint_compat(x, y) \
+-+			   (((uint32)(x) / (uint32)(y)) + ((((uint32)(x) % (uint32)(y)) != 0) ? 1 : 0))
+- #define TIFFhowmany8_32(x) (((x)&0x07)?((uint32)(x)>>3)+1:(uint32)(x)>>3)
+- #define TIFFroundup_32(x, y) (TIFFhowmany_32(x,y)*(y))
+- #define TIFFhowmany_64(x, y) ((((uint64)(x))+(((uint64)(y))-1))/((uint64)(y)))
+--- 
+-2.11.0
+-
+diff --git a/package/tiff/0002-libtiff-tif_ojpeg.c-make-OJPEGDecode-early-exit-in-c.patch b/package/tiff/0002-libtiff-tif_ojpeg.c-make-OJPEGDecode-early-exit-in-c.patch
+deleted file mode 100644
+index d99b9007e..000000000
+--- a/package/tiff/0002-libtiff-tif_ojpeg.c-make-OJPEGDecode-early-exit-in-c.patch
++++ /dev/null
+@@ -1,53 +0,0 @@
+-From 43bc256d8ae44b92d2734a3c5bc73957a4d7c1ec Mon Sep 17 00:00:00 2001
+-From: erouault <erouault>
+-Date: Sat, 3 Dec 2016 11:15:18 +0000
+-Subject: [PATCH] * libtiff/tif_ojpeg.c: make OJPEGDecode() early exit in case
+- of failure in OJPEGPreDecode(). This will avoid a divide by zero, and
+- potential other issues. Reported by Agostino Sarubbo. Fixes
+- http://bugzilla.maptools.org/show_bug.cgi?id=2611
+-
+-Fixes CVE-2016-10267
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- libtiff/tif_ojpeg.c | 8 ++++++++
+- 1 files changed, 15 insertions(+)
+-
+-diff --git a/libtiff/tif_ojpeg.c b/libtiff/tif_ojpeg.c
+-index 1ccc3f9b..f19e8fd0 100644
+---- a/libtiff/tif_ojpeg.c
+-+++ b/libtiff/tif_ojpeg.c
+-@@ -244,6 +244,7 @@ typedef enum {
+- 
+- typedef struct {
+- 	TIFF* tif;
+-+        int decoder_ok;
+- 	#ifndef LIBJPEG_ENCAP_EXTERNAL
+- 	JMP_BUF exit_jmpbuf;
+- 	#endif
+-@@ -722,6 +723,7 @@ OJPEGPreDecode(TIFF* tif, uint16 s)
+- 		}
+- 		sp->write_curstrile++;
+- 	}
+-+	sp->decoder_ok = 1;
+- 	return(1);
+- }
+- 
+-@@ -784,8 +786,14 @@ OJPEGPreDecodeSkipScanlines(TIFF* tif)
+- static int
+- OJPEGDecode(TIFF* tif, uint8* buf, tmsize_t cc, uint16 s)
+- {
+-+        static const char module[]="OJPEGDecode";
+- 	OJPEGState* sp=(OJPEGState*)tif->tif_data;
+- 	(void)s;
+-+        if( !sp->decoder_ok )
+-+        {
+-+            TIFFErrorExt(tif->tif_clientdata,module,"Cannot decode: decoder not correctly initialized");
+-+            return 0;
+-+        }
+- 	if (sp->libjpeg_jpeg_query_style==0)
+- 	{
+- 		if (OJPEGDecodeRaw(tif,buf,cc)==0)
+--- 
+-2.11.0
+-
+diff --git a/package/tiff/0003-libtiff-tif_pixarlog.c-libtiff-tif_luv.c-fix-heap-ba.patch b/package/tiff/0003-libtiff-tif_pixarlog.c-libtiff-tif_luv.c-fix-heap-ba.patch
+deleted file mode 100644
+index 290834ec0..000000000
+--- a/package/tiff/0003-libtiff-tif_pixarlog.c-libtiff-tif_luv.c-fix-heap-ba.patch
++++ /dev/null
+@@ -1,110 +0,0 @@
+-From 1044b43637fa7f70fb19b93593777b78bd20da86 Mon Sep 17 00:00:00 2001
+-From: erouault <erouault>
+-Date: Fri, 2 Dec 2016 23:05:51 +0000
+-Subject: [PATCH] * libtiff/tif_pixarlog.c, libtiff/tif_luv.c: fix heap-based
+- buffer overflow on generation of PixarLog / LUV compressed files, with
+- ColorMap, TransferFunction attached and nasty plays with bitspersample. The
+- fix for LUV has not been tested, but suffers from the same kind of issue of
+- PixarLog. Reported by Agostino Sarubbo. Fixes
+- http://bugzilla.maptools.org/show_bug.cgi?id=2604
+-
+-Fixes CVE-2016-10269
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- libtiff/tif_luv.c      | 18 ++++++++++++++----
+- libtiff/tif_pixarlog.c | 17 +++++++++++++++--
+- 2 files changed, 39 insertions(+), 6 deletions(-)
+-
+-diff --git a/libtiff/tif_luv.c b/libtiff/tif_luv.c
+-index f68a9b13..e6783db5 100644
+---- a/libtiff/tif_luv.c
+-+++ b/libtiff/tif_luv.c
+-@@ -158,6 +158,7 @@
+- typedef struct logLuvState LogLuvState;
+- 
+- struct logLuvState {
+-+        int                     encoder_state;  /* 1 if encoder correctly initialized */
+- 	int                     user_datafmt;   /* user data format */
+- 	int                     encode_meth;    /* encoding method */
+- 	int                     pixel_size;     /* bytes per pixel */
+-@@ -1552,6 +1553,7 @@ LogLuvSetupEncode(TIFF* tif)
+- 		    td->td_photometric, "must be either LogLUV or LogL");
+- 		break;
+- 	}
+-+	sp->encoder_state = 1;
+- 	return (1);
+- notsupported:
+- 	TIFFErrorExt(tif->tif_clientdata, module,
+-@@ -1563,19 +1565,27 @@ notsupported:
+- static void
+- LogLuvClose(TIFF* tif)
+- {
+-+        LogLuvState* sp = (LogLuvState*) tif->tif_data;
+- 	TIFFDirectory *td = &tif->tif_dir;
+- 
+-+	assert(sp != 0);
+- 	/*
+- 	 * For consistency, we always want to write out the same
+- 	 * bitspersample and sampleformat for our TIFF file,
+- 	 * regardless of the data format being used by the application.
+- 	 * Since this routine is called after tags have been set but
+- 	 * before they have been recorded in the file, we reset them here.
+-+         * Note: this is really a nasty approach. See PixarLogClose
+- 	 */
+--	td->td_samplesperpixel =
+--	    (td->td_photometric == PHOTOMETRIC_LOGL) ? 1 : 3;
+--	td->td_bitspersample = 16;
+--	td->td_sampleformat = SAMPLEFORMAT_INT;
+-+        if( sp->encoder_state )
+-+        {
+-+            /* See PixarLogClose. Might avoid issues with tags whose size depends
+-+             * on those below, but not completely sure this is enough. */
+-+            td->td_samplesperpixel =
+-+                (td->td_photometric == PHOTOMETRIC_LOGL) ? 1 : 3;
+-+            td->td_bitspersample = 16;
+-+            td->td_sampleformat = SAMPLEFORMAT_INT;
+-+        }
+- }
+- 
+- static void
+-diff --git a/libtiff/tif_pixarlog.c b/libtiff/tif_pixarlog.c
+-index d1246c3d..aa99bc92 100644
+---- a/libtiff/tif_pixarlog.c
+-+++ b/libtiff/tif_pixarlog.c
+-@@ -1233,8 +1233,10 @@ PixarLogPostEncode(TIFF* tif)
+- static void
+- PixarLogClose(TIFF* tif)
+- {
+-+        PixarLogState* sp = (PixarLogState*) tif->tif_data;
+- 	TIFFDirectory *td = &tif->tif_dir;
+- 
+-+	assert(sp != 0);
+- 	/* In a really sneaky (and really incorrect, and untruthful, and
+- 	 * troublesome, and error-prone) maneuver that completely goes against
+- 	 * the spirit of TIFF, and breaks TIFF, on close, we covertly
+-@@ -1243,8 +1245,19 @@ PixarLogClose(TIFF* tif)
+- 	 * readers that don't know about PixarLog, or how to set
+- 	 * the PIXARLOGDATFMT pseudo-tag.
+- 	 */
+--	td->td_bitspersample = 8;
+--	td->td_sampleformat = SAMPLEFORMAT_UINT;
+-+
+-+        if (sp->state&PLSTATE_INIT) {
+-+            /* We test the state to avoid an issue such as in
+-+             * http://bugzilla.maptools.org/show_bug.cgi?id=2604
+-+             * What appends in that case is that the bitspersample is 1 and
+-+             * a TransferFunction is set. The size of the TransferFunction
+-+             * depends on 1<<bitspersample. So if we increase it, an access
+-+             * out of the buffer will happen at directory flushing.
+-+             * Another option would be to clear those targs. 
+-+             */
+-+            td->td_bitspersample = 8;
+-+            td->td_sampleformat = SAMPLEFORMAT_UINT;
+-+        }
+- }
+- 
+- static void
+--- 
+-2.11.0
+-
+diff --git a/package/tiff/0004-libtiff-tif_dirread.c-modify-ChopUpSingleUncompresse.patch b/package/tiff/0004-libtiff-tif_dirread.c-modify-ChopUpSingleUncompresse.patch
+deleted file mode 100644
+index a24d5d848..000000000
+--- a/package/tiff/0004-libtiff-tif_dirread.c-modify-ChopUpSingleUncompresse.patch
++++ /dev/null
+@@ -1,107 +0,0 @@
+-From 9a72a69e035ee70ff5c41541c8c61cd97990d018 Mon Sep 17 00:00:00 2001
+-From: erouault <erouault>
+-Date: Sat, 3 Dec 2016 11:02:15 +0000
+-Subject: [PATCH] * libtiff/tif_dirread.c: modify
+- ChopUpSingleUncompressedStrip() to instanciate compute ntrips as
+- TIFFhowmany_32(td->td_imagelength, rowsperstrip), instead of a logic based on
+- the total size of data. Which is faulty is the total size of data is not
+- sufficient to fill the whole image, and thus results in reading outside of
+- the StripByCounts/StripOffsets arrays when using TIFFReadScanline(). Reported
+- by Agostino Sarubbo. Fixes http://bugzilla.maptools.org/show_bug.cgi?id=2608.
+-
+-* libtiff/tif_strip.c: revert the change in TIFFNumberOfStrips() done
+-for http://bugzilla.maptools.org/show_bug.cgi?id=2587 / CVE-2016-9273 since
+-the above change is a better fix that makes it unnecessary.
+-
+-Fixes CVE-2016-10270
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- libtiff/tif_dirread.c | 22 ++++++++++------------
+- libtiff/tif_strip.c   |  9 ---------
+- 2 files changed, 25 insertions(+), 21 deletions(-)
+-
+-diff --git a/libtiff/tif_dirread.c b/libtiff/tif_dirread.c
+-index 3eec79c9..570d0c32 100644
+---- a/libtiff/tif_dirread.c
+-+++ b/libtiff/tif_dirread.c
+-@@ -5502,8 +5502,7 @@ ChopUpSingleUncompressedStrip(TIFF* tif)
+- 	uint64 rowblockbytes;
+- 	uint64 stripbytes;
+- 	uint32 strip;
+--	uint64 nstrips64;
+--	uint32 nstrips32;
+-+	uint32 nstrips;
+- 	uint32 rowsperstrip;
+- 	uint64* newcounts;
+- 	uint64* newoffsets;
+-@@ -5534,18 +5533,17 @@ ChopUpSingleUncompressedStrip(TIFF* tif)
+- 	    return;
+- 
+- 	/*
+--	 * never increase the number of strips in an image
+-+	 * never increase the number of rows per strip
+- 	 */
+- 	if (rowsperstrip >= td->td_rowsperstrip)
+- 		return;
+--	nstrips64 = TIFFhowmany_64(bytecount, stripbytes);
+--	if ((nstrips64==0)||(nstrips64>0xFFFFFFFF)) /* something is wonky, do nothing. */
+--	    return;
+--	nstrips32 = (uint32)nstrips64;
+-+        nstrips = TIFFhowmany_32(td->td_imagelength, rowsperstrip);
+-+        if( nstrips == 0 )
+-+            return;
+- 
+--	newcounts = (uint64*) _TIFFCheckMalloc(tif, nstrips32, sizeof (uint64),
+-+	newcounts = (uint64*) _TIFFCheckMalloc(tif, nstrips, sizeof (uint64),
+- 				"for chopped \"StripByteCounts\" array");
+--	newoffsets = (uint64*) _TIFFCheckMalloc(tif, nstrips32, sizeof (uint64),
+-+	newoffsets = (uint64*) _TIFFCheckMalloc(tif, nstrips, sizeof (uint64),
+- 				"for chopped \"StripOffsets\" array");
+- 	if (newcounts == NULL || newoffsets == NULL) {
+- 		/*
+-@@ -5562,18 +5560,18 @@ ChopUpSingleUncompressedStrip(TIFF* tif)
+- 	 * Fill the strip information arrays with new bytecounts and offsets
+- 	 * that reflect the broken-up format.
+- 	 */
+--	for (strip = 0; strip < nstrips32; strip++) {
+-+	for (strip = 0; strip < nstrips; strip++) {
+- 		if (stripbytes > bytecount)
+- 			stripbytes = bytecount;
+- 		newcounts[strip] = stripbytes;
+--		newoffsets[strip] = offset;
+-+		newoffsets[strip] = stripbytes ? offset : 0;
+- 		offset += stripbytes;
+- 		bytecount -= stripbytes;
+- 	}
+- 	/*
+- 	 * Replace old single strip info with multi-strip info.
+- 	 */
+--	td->td_stripsperimage = td->td_nstrips = nstrips32;
+-+	td->td_stripsperimage = td->td_nstrips = nstrips;
+- 	TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, rowsperstrip);
+- 
+- 	_TIFFfree(td->td_stripbytecount);
+-diff --git a/libtiff/tif_strip.c b/libtiff/tif_strip.c
+-index 4c46ecf5..1676e47d 100644
+---- a/libtiff/tif_strip.c
+-+++ b/libtiff/tif_strip.c
+-@@ -63,15 +63,6 @@ TIFFNumberOfStrips(TIFF* tif)
+- 	TIFFDirectory *td = &tif->tif_dir;
+- 	uint32 nstrips;
+- 
+--    /* If the value was already computed and store in td_nstrips, then return it,
+--       since ChopUpSingleUncompressedStrip might have altered and resized the
+--       since the td_stripbytecount and td_stripoffset arrays to the new value
+--       after the initial affectation of td_nstrips = TIFFNumberOfStrips() in
+--       tif_dirread.c ~line 3612.
+--       See http://bugzilla.maptools.org/show_bug.cgi?id=2587 */
+--    if( td->td_nstrips )
+--        return td->td_nstrips;
+--
+- 	nstrips = (td->td_rowsperstrip == (uint32) -1 ? 1 :
+- 	     TIFFhowmany_32(td->td_imagelength, td->td_rowsperstrip));
+- 	if (td->td_planarconfig == PLANARCONFIG_SEPARATE)
+--- 
+-2.11.0
+-
+diff --git a/package/tiff/0005-tools-tiffcp.c-error-out-cleanly-in-cpContig2Separat.patch b/package/tiff/0005-tools-tiffcp.c-error-out-cleanly-in-cpContig2Separat.patch
+deleted file mode 100644
+index c93be89e7..000000000
+--- a/package/tiff/0005-tools-tiffcp.c-error-out-cleanly-in-cpContig2Separat.patch
++++ /dev/null
+@@ -1,74 +0,0 @@
+-From 5c080298d59efa53264d7248bbe3a04660db6ef7 Mon Sep 17 00:00:00 2001
+-From: erouault <erouault>
+-Date: Wed, 11 Jan 2017 19:25:44 +0000
+-Subject: [PATCH] * tools/tiffcp.c: error out cleanly in cpContig2SeparateByRow
+- and cpSeparate2ContigByRow if BitsPerSample != 8 to avoid heap based
+- overflow. Fixes http://bugzilla.maptools.org/show_bug.cgi?id=2656 and
+- http://bugzilla.maptools.org/show_bug.cgi?id=2657
+-
+-Fixes CVE-2017-5225
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- tools/tiffcp.c | 24 ++++++++++++++++++++++--
+- 1 file changed, 29 insertions(+), 2 deletions(-)
+-
+-diff --git a/tools/tiffcp.c b/tools/tiffcp.c
+-index bdf754c3..8bbcd52f 100644
+---- a/tools/tiffcp.c
+-+++ b/tools/tiffcp.c
+-@@ -591,7 +591,7 @@ static	copyFunc pickCopyFunc(TIFF*, TIFF*, uint16, uint16);
+- static int
+- tiffcp(TIFF* in, TIFF* out)
+- {
+--	uint16 bitspersample, samplesperpixel = 1;
+-+	uint16 bitspersample = 1, samplesperpixel = 1;
+- 	uint16 input_compression, input_photometric = PHOTOMETRIC_MINISBLACK;
+- 	copyFunc cf;
+- 	uint32 width, length;
+-@@ -1067,6 +1067,16 @@ DECLAREcpFunc(cpContig2SeparateByRow)
+- 	register uint32 n;
+- 	uint32 row;
+- 	tsample_t s;
+-+        uint16 bps = 0;
+-+
+-+        (void) TIFFGetField(in, TIFFTAG_BITSPERSAMPLE, &bps);
+-+        if( bps != 8 )
+-+        {
+-+            TIFFError(TIFFFileName(in),
+-+                      "Error, can only handle BitsPerSample=8 in %s",
+-+                      "cpContig2SeparateByRow");
+-+            return 0;
+-+        }
+- 
+- 	inbuf = _TIFFmalloc(scanlinesizein);
+- 	outbuf = _TIFFmalloc(scanlinesizeout);
+-@@ -1120,6 +1130,16 @@ DECLAREcpFunc(cpSeparate2ContigByRow)
+- 	register uint32 n;
+- 	uint32 row;
+- 	tsample_t s;
+-+        uint16 bps = 0;
+-+
+-+        (void) TIFFGetField(in, TIFFTAG_BITSPERSAMPLE, &bps);
+-+        if( bps != 8 )
+-+        {
+-+            TIFFError(TIFFFileName(in),
+-+                      "Error, can only handle BitsPerSample=8 in %s",
+-+                      "cpSeparate2ContigByRow");
+-+            return 0;
+-+        }
+- 
+- 	inbuf = _TIFFmalloc(scanlinesizein);
+- 	outbuf = _TIFFmalloc(scanlinesizeout);
+-@@ -1784,7 +1804,7 @@ pickCopyFunc(TIFF* in, TIFF* out, uint16 bitspersample, uint16 samplesperpixel)
+- 	uint32 w, l, tw, tl;
+- 	int bychunk;
+- 
+--	(void) TIFFGetField(in, TIFFTAG_PLANARCONFIG, &shortv);
+-+	(void) TIFFGetFieldDefaulted(in, TIFFTAG_PLANARCONFIG, &shortv);
+- 	if (shortv != config && bitspersample != 8 && samplesperpixel > 1) {
+- 		fprintf(stderr,
+- 		    "%s: Cannot handle different planar configuration w/ bits/sample != 8\n",
+--- 
+-2.11.0
+-
+diff --git a/package/tiff/0006-libtiff-tif_getimage.c-add-explicit-uint32-cast-in-p.patch b/package/tiff/0006-libtiff-tif_getimage.c-add-explicit-uint32-cast-in-p.patch
+deleted file mode 100644
+index b3d8a40bb..000000000
+--- a/package/tiff/0006-libtiff-tif_getimage.c-add-explicit-uint32-cast-in-p.patch
++++ /dev/null
+@@ -1,31 +0,0 @@
+-From 48780b4fcc425cddc4ef8ffdf536f96a0d1b313b Mon Sep 17 00:00:00 2001
+-From: erouault <erouault>
+-Date: Wed, 11 Jan 2017 16:38:26 +0000
+-Subject: [PATCH] libtiff/tif_getimage.c: add explicit uint32 cast in putagreytile to
+- avoid UndefinedBehaviorSanitizer warning.
+- Patch by Nicolás Peña.
+- Fixes http://bugzilla.maptools.org/show_bug.cgi?id=2658
+-
+-Fixes CVE-2017-7592
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- libtiff/tif_getimage.c | 2 +-
+- 1 file changed, 8 insertions(+), 1 deletion(-)
+-
+-diff --git a/libtiff/tif_getimage.c b/libtiff/tif_getimage.c
+-index fed31f1f..2fa1775c 100644
+---- a/libtiff/tif_getimage.c
+-+++ b/libtiff/tif_getimage.c
+-@@ -1302,7 +1302,7 @@ DECLAREContigPutFunc(putagreytile)
+-     while (h-- > 0) {
+- 	for (x = w; x-- > 0;)
+-         {
+--            *cp++ = BWmap[*pp][0] & (*(pp+1) << 24 | ~A1);
+-+            *cp++ = BWmap[*pp][0] & ((uint32)*(pp+1) << 24 | ~A1);
+-             pp += samplesperpixel;
+-         }
+- 	cp += toskew;
+--- 
+-2.11.0
+-
+diff --git a/package/tiff/0007-libtiff-tiffiop.h-tif_unix.c-tif_win32.c-tif_vms.c-a.patch b/package/tiff/0007-libtiff-tiffiop.h-tif_unix.c-tif_win32.c-tif_vms.c-a.patch
+deleted file mode 100644
+index ec45bbe1f..000000000
+--- a/package/tiff/0007-libtiff-tiffiop.h-tif_unix.c-tif_win32.c-tif_vms.c-a.patch
++++ /dev/null
+@@ -1,88 +0,0 @@
+-From d60332057b9575ada4f264489582b13e30137be1 Mon Sep 17 00:00:00 2001
+-From: erouault <erouault>
+-Date: Wed, 11 Jan 2017 19:02:49 +0000
+-Subject: [PATCH] * libtiff/tiffiop.h, tif_unix.c, tif_win32.c, tif_vms.c: add
+- _TIFFcalloc()
+-
+-* libtiff/tif_read.c: TIFFReadBufferSetup(): use _TIFFcalloc() to zero
+-initialize tif_rawdata.
+-Fixes http://bugzilla.maptools.org/show_bug.cgi?id=2651
+-
+-Fixes CVE-2017-7593
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- libtiff/tif_read.c  | 4 +++-
+- libtiff/tif_unix.c  | 8 ++++++++
+- libtiff/tif_win32.c | 8 ++++++++
+- libtiff/tiffio.h    | 1 +
+- 4 files changed, 36 insertions(+), 1 deletion(-)
+-
+-diff --git a/libtiff/tif_read.c b/libtiff/tif_read.c
+-index 277fdd69..4535ccb3 100644
+---- a/libtiff/tif_read.c
+-+++ b/libtiff/tif_read.c
+-@@ -985,7 +985,9 @@ TIFFReadBufferSetup(TIFF* tif, void* bp, tmsize_t size)
+- 				 "Invalid buffer size");
+- 		    return (0);
+- 		}
+--		tif->tif_rawdata = (uint8*) _TIFFmalloc(tif->tif_rawdatasize);
+-+		/* Initialize to zero to avoid uninitialized buffers in case of */
+-+                /* short reads (http://bugzilla.maptools.org/show_bug.cgi?id=2651) */
+-+		tif->tif_rawdata = (uint8*) _TIFFcalloc(1, tif->tif_rawdatasize);
+- 		tif->tif_flags |= TIFF_MYBUFFER;
+- 	}
+- 	if (tif->tif_rawdata == NULL) {
+-diff --git a/libtiff/tif_unix.c b/libtiff/tif_unix.c
+-index 7c7bc961..89dd32e8 100644
+---- a/libtiff/tif_unix.c
+-+++ b/libtiff/tif_unix.c
+-@@ -316,6 +316,14 @@ _TIFFmalloc(tmsize_t s)
+- 	return (malloc((size_t) s));
+- }
+- 
+-+void* _TIFFcalloc(tmsize_t nmemb, tmsize_t siz)
+-+{
+-+    if( nmemb == 0 || siz == 0 )
+-+        return ((void *) NULL);
+-+
+-+    return calloc((size_t) nmemb, (size_t)siz);
+-+}
+-+
+- void
+- _TIFFfree(void* p)
+- {
+-diff --git a/libtiff/tif_win32.c b/libtiff/tif_win32.c
+-index d730b3ab..3e9001b7 100644
+---- a/libtiff/tif_win32.c
+-+++ b/libtiff/tif_win32.c
+-@@ -360,6 +360,14 @@ _TIFFmalloc(tmsize_t s)
+- 	return (malloc((size_t) s));
+- }
+- 
+-+void* _TIFFcalloc(tmsize_t nmemb, tmsize_t siz)
+-+{
+-+    if( nmemb == 0 || siz == 0 )
+-+        return ((void *) NULL);
+-+
+-+    return calloc((size_t) nmemb, (size_t)siz);
+-+}
+-+
+- void
+- _TIFFfree(void* p)
+- {
+-diff --git a/libtiff/tiffio.h b/libtiff/tiffio.h
+-index 732da17f..fbd9171f 100644
+---- a/libtiff/tiffio.h
+-+++ b/libtiff/tiffio.h
+-@@ -293,6 +293,7 @@ extern TIFFCodec* TIFFGetConfiguredCODECs(void);
+-  */
+- 
+- extern void* _TIFFmalloc(tmsize_t s);
+-+extern void* _TIFFcalloc(tmsize_t nmemb, tmsize_t siz);
+- extern void* _TIFFrealloc(void* p, tmsize_t s);
+- extern void _TIFFmemset(void* p, int v, tmsize_t c);
+- extern void _TIFFmemcpy(void* d, const void* s, tmsize_t c);
+--- 
+-2.11.0
+-
+diff --git a/package/tiff/0008-libtiff-tif_ojpeg.c-fix-leak-in-OJPEGReadHeaderInfoS.patch b/package/tiff/0008-libtiff-tif_ojpeg.c-fix-leak-in-OJPEGReadHeaderInfoS.patch
+deleted file mode 100644
+index 418a3d698..000000000
+--- a/package/tiff/0008-libtiff-tif_ojpeg.c-fix-leak-in-OJPEGReadHeaderInfoS.patch
++++ /dev/null
+@@ -1,43 +0,0 @@
+-From 2ea32f7372b65c24b2816f11c04bf59b5090d05b Mon Sep 17 00:00:00 2001
+-From: erouault <erouault>
+-Date: Thu, 12 Jan 2017 19:23:20 +0000
+-Subject: [PATCH] * libtiff/tif_ojpeg.c: fix leak in
+- OJPEGReadHeaderInfoSecTablesQTable, OJPEGReadHeaderInfoSecTablesDcTable and
+- OJPEGReadHeaderInfoSecTablesAcTable
+-
+-Fixes CVE-2017-7594
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- libtiff/tif_ojpeg.c | 6 ++++++
+- 1 file changed, 8 insertions(+), 1 deletion(-)
+-
+-diff --git a/libtiff/tif_ojpeg.c b/libtiff/tif_ojpeg.c
+-index b92f0ebd..5f6c684c 100644
+---- a/libtiff/tif_ojpeg.c
+-+++ b/libtiff/tif_ojpeg.c
+-@@ -1790,7 +1790,10 @@ OJPEGReadHeaderInfoSecTablesQTable(TIFF* tif)
+- 			TIFFSeekFile(tif,sp->qtable_offset[m],SEEK_SET); 
+- 			p=(uint32)TIFFReadFile(tif,&ob[sizeof(uint32)+5],64);
+- 			if (p!=64)
+-+                        {
+-+                                _TIFFfree(ob);
+- 				return(0);
+-+                        }
+- 			sp->qtable[m]=ob;
+- 			sp->sof_tq[m]=m;
+- 		}
+-@@ -1854,7 +1857,10 @@ OJPEGReadHeaderInfoSecTablesDcTable(TIFF* tif)
+- 				rb[sizeof(uint32)+5+n]=o[n];
+- 			p=(uint32)TIFFReadFile(tif,&(rb[sizeof(uint32)+21]),q);
+- 			if (p!=q)
+-+                        {
+-+                                _TIFFfree(rb);
+- 				return(0);
+-+                        }
+- 			sp->dctable[m]=rb;
+- 			sp->sos_tda[m]=(m<<4);
+- 		}
+--- 
+-2.11.0
+-
+diff --git a/package/tiff/0009-libtiff-tif_ojpeg.c-fix-leak-in-OJPEGReadHeaderInfoS.patch b/package/tiff/0009-libtiff-tif_ojpeg.c-fix-leak-in-OJPEGReadHeaderInfoS.patch
+deleted file mode 100644
+index a1aae2dce..000000000
+--- a/package/tiff/0009-libtiff-tif_ojpeg.c-fix-leak-in-OJPEGReadHeaderInfoS.patch
++++ /dev/null
+@@ -1,36 +0,0 @@
+-From 8283e4d1b7e53340684d12932880cbcbaf23a8c1 Mon Sep 17 00:00:00 2001
+-From: erouault <erouault>
+-Date: Thu, 12 Jan 2017 17:43:25 +0000
+-Subject: [PATCH] libtiff/tif_ojpeg.c: fix leak in
+- OJPEGReadHeaderInfoSecTablesAcTable when read fails.
+- Patch by Nicolás Peña.
+- Fixes http://bugzilla.maptools.org/show_bug.cgi?id=2659
+-MIME-Version: 1.0
+-Content-Type: text/plain; charset=UTF-8
+-Content-Transfer-Encoding: 8bit
+-
+-Fixes CVE-2017-7594
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- libtiff/tif_ojpeg.c | 3 +++
+- 1 file changed, 10 insertions(+)
+-
+-diff --git a/libtiff/tif_ojpeg.c b/libtiff/tif_ojpeg.c
+-index f19e8fd0..b92f0ebd 100644
+---- a/libtiff/tif_ojpeg.c
+-+++ b/libtiff/tif_ojpeg.c
+-@@ -1918,7 +1918,10 @@ OJPEGReadHeaderInfoSecTablesAcTable(TIFF* tif)
+- 				rb[sizeof(uint32)+5+n]=o[n];
+- 			p=(uint32)TIFFReadFile(tif,&(rb[sizeof(uint32)+21]),q);
+- 			if (p!=q)
+-+                        {
+-+                                _TIFFfree(rb);
+- 				return(0);
+-+                        }
+- 			sp->actable[m]=rb;
+- 			sp->sos_tda[m]=(sp->sos_tda[m]|m);
+- 		}
+--- 
+-2.11.0
+-
+diff --git a/package/tiff/0010-libtiff-tif_jpeg.c-avoid-integer-division-by-zero-in.patch b/package/tiff/0010-libtiff-tif_jpeg.c-avoid-integer-division-by-zero-in.patch
+deleted file mode 100644
+index 862aae2a5..000000000
+--- a/package/tiff/0010-libtiff-tif_jpeg.c-avoid-integer-division-by-zero-in.patch
++++ /dev/null
+@@ -1,35 +0,0 @@
+-From 47f2fb61a3a64667bce1a8398a8fcb1b348ff122 Mon Sep 17 00:00:00 2001
+-From: erouault <erouault>
+-Date: Wed, 11 Jan 2017 12:15:01 +0000
+-Subject: [PATCH] * libtiff/tif_jpeg.c: avoid integer division by zero in
+- JPEGSetupEncode() when horizontal or vertical sampling is set to 0. Fixes
+- http://bugzilla.maptools.org/show_bug.cgi?id=2653
+-
+-Fixes CVE-2017-7595
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- libtiff/tif_jpeg.c | 7 +++++++
+- 1 file changed, 13 insertions(+)
+-
+-diff --git a/libtiff/tif_jpeg.c b/libtiff/tif_jpeg.c
+-index 38595f98..6c17c388 100644
+---- a/libtiff/tif_jpeg.c
+-+++ b/libtiff/tif_jpeg.c
+-@@ -1626,6 +1626,13 @@ JPEGSetupEncode(TIFF* tif)
+- 	case PHOTOMETRIC_YCBCR:
+- 		sp->h_sampling = td->td_ycbcrsubsampling[0];
+- 		sp->v_sampling = td->td_ycbcrsubsampling[1];
+-+                if( sp->h_sampling == 0 || sp->v_sampling == 0 )
+-+                {
+-+                    TIFFErrorExt(tif->tif_clientdata, module,
+-+                            "Invalig horizontal/vertical sampling value");
+-+                    return (0);
+-+                }
+-+
+- 		/*
+- 		 * A ReferenceBlackWhite field *must* be present since the
+- 		 * default value is inappropriate for YCbCr.  Fill in the
+--- 
+-2.11.0
+-
+diff --git a/package/tiff/0011-libtiff-tif_dirread.c-avoid-division-by-floating-poi.patch b/package/tiff/0011-libtiff-tif_dirread.c-avoid-division-by-floating-poi.patch
+deleted file mode 100644
+index c0c94291a..000000000
+--- a/package/tiff/0011-libtiff-tif_dirread.c-avoid-division-by-floating-poi.patch
++++ /dev/null
+@@ -1,47 +0,0 @@
+-From 3cfd62d77c2a7e147a05bd678524c345fa9c2bb8 Mon Sep 17 00:00:00 2001
+-From: erouault <erouault>
+-Date: Wed, 11 Jan 2017 13:28:01 +0000
+-Subject: [PATCH] * libtiff/tif_dirread.c: avoid division by floating point 0
+- in TIFFReadDirEntryCheckedRational() and TIFFReadDirEntryCheckedSrational(),
+- and return 0 in that case (instead of infinity as before presumably)
+- Apparently some sanitizers do not like those divisions by zero. Fixes
+- http://bugzilla.maptools.org/show_bug.cgi?id=2644
+-
+-Fixes CVE-2017-7598
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- libtiff/tif_dirread.c | 10 ++++++++--
+- 1 file changed, 16 insertions(+), 2 deletions(-)
+-
+-diff --git a/libtiff/tif_dirread.c b/libtiff/tif_dirread.c
+-index 570d0c32..8a1e42aa 100644
+---- a/libtiff/tif_dirread.c
+-+++ b/libtiff/tif_dirread.c
+-@@ -2872,7 +2872,10 @@ static enum TIFFReadDirEntryErr TIFFReadDirEntryCheckedRational(TIFF* tif, TIFFD
+- 		m.l = direntry->tdir_offset.toff_long8;
+- 	if (tif->tif_flags&TIFF_SWAB)
+- 		TIFFSwabArrayOfLong(m.i,2);
+--	if (m.i[0]==0)
+-+        /* Not completely sure what we should do when m.i[1]==0, but some */
+-+        /* sanitizers do not like division by 0.0: */
+-+        /* http://bugzilla.maptools.org/show_bug.cgi?id=2644 */
+-+	if (m.i[0]==0 || m.i[1]==0)
+- 		*value=0.0;
+- 	else
+- 		*value=(double)m.i[0]/(double)m.i[1];
+-@@ -2900,7 +2903,10 @@ static enum TIFFReadDirEntryErr TIFFReadDirEntryCheckedSrational(TIFF* tif, TIFF
+- 		m.l=direntry->tdir_offset.toff_long8;
+- 	if (tif->tif_flags&TIFF_SWAB)
+- 		TIFFSwabArrayOfLong(m.i,2);
+--	if ((int32)m.i[0]==0)
+-+        /* Not completely sure what we should do when m.i[1]==0, but some */
+-+        /* sanitizers do not like division by 0.0: */
+-+        /* http://bugzilla.maptools.org/show_bug.cgi?id=2644 */
+-+	if ((int32)m.i[0]==0 || m.i[1]==0)
+- 		*value=0.0;
+- 	else
+- 		*value=(double)((int32)m.i[0])/(double)m.i[1];
+--- 
+-2.11.0
+-
+diff --git a/package/tiff/0012-libtiff-tif_jpeg.c-validate-BitsPerSample-in-JPEGSet.patch b/package/tiff/0012-libtiff-tif_jpeg.c-validate-BitsPerSample-in-JPEGSet.patch
+deleted file mode 100644
+index 4f46d9bb0..000000000
+--- a/package/tiff/0012-libtiff-tif_jpeg.c-validate-BitsPerSample-in-JPEGSet.patch
++++ /dev/null
+@@ -1,35 +0,0 @@
+-From 0a76a8c765c7b8327c59646284fa78c3c27e5490 Mon Sep 17 00:00:00 2001
+-From: erouault <erouault>
+-Date: Wed, 11 Jan 2017 16:13:50 +0000
+-Subject: [PATCH] * libtiff/tif_jpeg.c: validate BitsPerSample in
+- JPEGSetupEncode() to avoid undefined behaviour caused by invalid shift
+- exponent. Fixes http://bugzilla.maptools.org/show_bug.cgi?id=2648
+-
+-Fixes CVE-2017-7601
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- libtiff/tif_jpeg.c | 7 +++++++
+- 1 file changed, 13 insertions(+)
+-
+-diff --git a/libtiff/tif_jpeg.c b/libtiff/tif_jpeg.c
+-index 6c17c388..192989a9 100644
+---- a/libtiff/tif_jpeg.c
+-+++ b/libtiff/tif_jpeg.c
+-@@ -1632,6 +1632,13 @@ JPEGSetupEncode(TIFF* tif)
+-                             "Invalig horizontal/vertical sampling value");
+-                     return (0);
+-                 }
+-+                if( td->td_bitspersample > 16 )
+-+                {
+-+                    TIFFErrorExt(tif->tif_clientdata, module,
+-+                                 "BitsPerSample %d not allowed for JPEG",
+-+                                 td->td_bitspersample);
+-+                    return (0);
+-+                }
+- 
+- 		/*
+- 		 * A ReferenceBlackWhite field *must* be present since the
+--- 
+-2.11.0
+-
+diff --git a/package/tiff/0013-libtiff-tif_read.c-avoid-potential-undefined-behavio.patch b/package/tiff/0013-libtiff-tif_read.c-avoid-potential-undefined-behavio.patch
+deleted file mode 100644
+index d049b130c..000000000
+--- a/package/tiff/0013-libtiff-tif_read.c-avoid-potential-undefined-behavio.patch
++++ /dev/null
+@@ -1,56 +0,0 @@
+-From 66e7bd59520996740e4df5495a830b42fae48bc4 Mon Sep 17 00:00:00 2001
+-From: erouault <erouault>
+-Date: Wed, 11 Jan 2017 16:33:34 +0000
+-Subject: [PATCH] * libtiff/tif_read.c: avoid potential undefined behaviour on
+- signed integer addition in TIFFReadRawStrip1() in isMapped() case. Fixes
+- http://bugzilla.maptools.org/show_bug.cgi?id=2650
+-
+-Fixes CVE-2017-7602
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- libtiff/tif_read.c | 27 ++++++++++++++++++---------
+- 1 file changed, 24 insertions(+), 9 deletions(-)
+-
+-diff --git a/libtiff/tif_read.c b/libtiff/tif_read.c
+-index 52bbf507..b7aacbda 100644
+---- a/libtiff/tif_read.c
+-+++ b/libtiff/tif_read.c
+-@@ -420,16 +420,25 @@ TIFFReadRawStrip1(TIFF* tif, uint32 strip, void* buf, tmsize_t size,
+- 			return ((tmsize_t)(-1));
+- 		}
+- 	} else {
+--		tmsize_t ma,mb;
+-+		tmsize_t ma;
+- 		tmsize_t n;
+--		ma=(tmsize_t)td->td_stripoffset[strip];
+--		mb=ma+size;
+--		if ((td->td_stripoffset[strip] > (uint64)TIFF_TMSIZE_T_MAX)||(ma>tif->tif_size))
+--			n=0;
+--		else if ((mb<ma)||(mb<size)||(mb>tif->tif_size))
+--			n=tif->tif_size-ma;
+--		else
+--			n=size;
+-+		if ((td->td_stripoffset[strip] > (uint64)TIFF_TMSIZE_T_MAX)||
+-+                    ((ma=(tmsize_t)td->td_stripoffset[strip])>tif->tif_size))
+-+                {
+-+                    n=0;
+-+                }
+-+                else if( ma > TIFF_TMSIZE_T_MAX - size )
+-+                {
+-+                    n=0;
+-+                }
+-+                else
+-+                {
+-+                    tmsize_t mb=ma+size;
+-+                    if (mb>tif->tif_size)
+-+                            n=tif->tif_size-ma;
+-+                    else
+-+                            n=size;
+-+                }
+- 		if (n!=size) {
+- #if defined(__WIN32__) && (defined(_MSC_VER) || defined(__MINGW32__))
+- 			TIFFErrorExt(tif->tif_clientdata, module,
+--- 
+-2.11.0
+-
+diff --git a/package/tiff/tiff.hash b/package/tiff/tiff.hash
+index 4439a35f3..516cb0626 100644
+--- a/package/tiff/tiff.hash
++++ b/package/tiff/tiff.hash
+@@ -1,2 +1,2 @@
+ # Locally computed
+-sha256 9f43a2cfb9589e5cecaa66e16bf87f814c945f22df7ba600d63aac4632c4f019  tiff-4.0.7.tar.gz
++sha256 59d7a5a8ccd92059913f246877db95a2918e6c04fb9d43fd74e5c3390dac2910  tiff-4.0.8.tar.gz
+diff --git a/package/tiff/tiff.mk b/package/tiff/tiff.mk
+index ffb1a425c..ad85a47a4 100644
+--- a/package/tiff/tiff.mk
++++ b/package/tiff/tiff.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-TIFF_VERSION = 4.0.7
++TIFF_VERSION = 4.0.8
+ TIFF_SITE = http://download.osgeo.org/libtiff
+ TIFF_LICENSE = tiff license
+ TIFF_LICENSE_FILES = COPYRIGHT
+diff --git a/package/webkitgtk/0001-fix-gcc6-builds.patch b/package/webkitgtk/0001-fix-gcc6-builds.patch
+deleted file mode 100644
+index 35487ad55..000000000
+--- a/package/webkitgtk/0001-fix-gcc6-builds.patch
++++ /dev/null
+@@ -1,53 +0,0 @@
+-[CMake] Build failure with GCC 6 (fatal error: stdlib.h: No such file or directory)
+-
+-https://bugs.webkit.org/show_bug.cgi?id=161697
+-
+-Reviewed by Michael Catanzaro.
+-
+-Get the list of system includes from GCC and add it to the CMake
+-list of implicit includes. This way, CMake will filter any of this
+-directories from the list of includes when calling the compiler.
+-
+-This avoids an issue with GCC 6 that causes build failures when
+-including the default include path as a system include (-isystem).
+-
+-Upstream, from: https://trac.webkit.org/changeset/205672
+-
+-Signed-off-by: Gustavo Zacarias <gustavo@zacarias.com.ar>
+-
+-Index: trunk/Source/cmake/OptionsCommon.cmake
+-===================================================================
+---- trunk/Source/cmake/OptionsCommon.cmake	(revision 204084)
+-+++ trunk/Source/cmake/OptionsCommon.cmake	(revision 205672)
+-@@ -36,4 +36,31 @@
+-     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fcolor-diagnostics")
+-     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcolor-diagnostics")
+-+endif ()
+-+
+-+# Ensure that the default include system directories are added to the list of CMake implicit includes.
+-+# This workarounds an issue that happens when using GCC 6 and using system includes (-isystem).
+-+# For more details check: https://bugs.webkit.org/show_bug.cgi?id=161697
+-+macro(DETERMINE_GCC_SYSTEM_INCLUDE_DIRS _lang _compiler _flags _result)
+-+    file(WRITE "${CMAKE_BINARY_DIR}/CMakeFiles/dummy" "\n")
+-+    separate_arguments(_buildFlags UNIX_COMMAND "${_flags}")
+-+    execute_process(COMMAND ${_compiler} ${_buildFlags} -v -E -x ${_lang} -dD dummy
+-+                    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/CMakeFiles OUTPUT_QUIET
+-+                    ERROR_VARIABLE _gccOutput)
+-+    file(REMOVE "${CMAKE_BINARY_DIR}/CMakeFiles/dummy")
+-+    if ("${_gccOutput}" MATCHES "> search starts here[^\n]+\n *(.+) *\n *End of (search) list")
+-+        set(${_result} ${CMAKE_MATCH_1})
+-+        string(REPLACE "\n" " " ${_result} "${${_result}}")
+-+        separate_arguments(${_result})
+-+    endif ()
+-+endmacro()
+-+
+-+if (CMAKE_COMPILER_IS_GNUCC)
+-+   DETERMINE_GCC_SYSTEM_INCLUDE_DIRS("c" "${CMAKE_C_COMPILER}" "${CMAKE_C_FLAGS}" SYSTEM_INCLUDE_DIRS)
+-+   set(CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES ${CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES} ${SYSTEM_INCLUDE_DIRS})
+-+endif ()
+-+
+-+if (CMAKE_COMPILER_IS_GNUCXX)
+-+   DETERMINE_GCC_SYSTEM_INCLUDE_DIRS("c++" "${CMAKE_CXX_COMPILER}" "${CMAKE_CXX_FLAGS}" SYSTEM_INCLUDE_DIRS)
+-+   set(CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES} ${SYSTEM_INCLUDE_DIRS})
+- endif ()
+- 
+diff --git a/package/webkitgtk/Config.in b/package/webkitgtk/Config.in
+index 25f6fad49..7b50a13a0 100644
+--- a/package/webkitgtk/Config.in
++++ b/package/webkitgtk/Config.in
+@@ -9,6 +9,7 @@ config BR2_PACKAGE_WEBKITGTK_ARCH_SUPPORTS
+ 	# Disabled on SuperH because of segfault
+ 	depends on BR2_USE_MMU # libglib2
+ 	depends on BR2_TOOLCHAIN_HAS_SYNC_4
++	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS # libgcrypt
+ 
+ comment "webkitgtk needs libgtk3 and a glibc toolchain w/ C++, gcc >= 4.9"
+ 	depends on BR2_PACKAGE_WEBKITGTK_ARCH_SUPPORTS
+@@ -30,6 +31,7 @@ config BR2_PACKAGE_WEBKITGTK
+ 	select BR2_PACKAGE_HARFBUZZ
+ 	select BR2_PACKAGE_ICU
+ 	select BR2_PACKAGE_JPEG
++	select BR2_PACKAGE_LIBGCRYPT
+ 	select BR2_PACKAGE_LIBSECRET
+ 	select BR2_PACKAGE_LIBSOUP
+ 	select BR2_PACKAGE_LIBXML2
+diff --git a/package/webkitgtk/webkitgtk.hash b/package/webkitgtk/webkitgtk.hash
+index f01c7f0c0..2c0fc5061 100644
+--- a/package/webkitgtk/webkitgtk.hash
++++ b/package/webkitgtk/webkitgtk.hash
+@@ -1,4 +1,4 @@
+-# From http://www.webkitgtk.org/releases/webkitgtk-2.12.5.tar.xz.sha1
+-sha1	2d73fd5b47c68c73aea8b3d7b88acc8e62bdb99c	webkitgtk-2.12.5.tar.xz
+-# Calculated based on the hash above
+-sha256	6b147854b864a5f115fadb97b2b6200b2f696db015216a34e7298d11c88b1c40	webkitgtk-2.12.5.tar.xz
++# From https://webkitgtk.org/releases/webkitgtk-2.16.6.tar.xz.sums
++md5  0e2d142a586e4ff79cf0324f4fdbf20c webkitgtk-2.16.6.tar.xz
++sha1 f7fca3fbac3dc99e39f353a6df250635e684c922 webkitgtk-2.16.6.tar.xz
++sha256 fc23650df953123c59b9c0edf3855e7bd55bd107820997fc72375811e1ea4b21 webkitgtk-2.16.6.tar.xz
+diff --git a/package/webkitgtk/webkitgtk.mk b/package/webkitgtk/webkitgtk.mk
+index 784337399..8329d52f9 100644
+--- a/package/webkitgtk/webkitgtk.mk
++++ b/package/webkitgtk/webkitgtk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WEBKITGTK_VERSION = 2.12.5
++WEBKITGTK_VERSION = 2.16.6
+ WEBKITGTK_SITE = http://www.webkitgtk.org/releases
+ WEBKITGTK_SOURCE = webkitgtk-$(WEBKITGTK_VERSION).tar.xz
+ WEBKITGTK_INSTALL_STAGING = YES
+@@ -13,7 +13,7 @@ WEBKITGTK_LICENSE_FILES = \
+ 	Source/WebCore/LICENSE-APPLE \
+ 	Source/WebCore/LICENSE-LGPL-2.1
+ WEBKITGTK_DEPENDENCIES = host-ruby host-flex host-bison host-gperf \
+-	enchant harfbuzz icu jpeg libgtk3 libsecret libsoup \
++	enchant harfbuzz icu jpeg libgcrypt libgtk3 libsecret libsoup \
+ 	libxml2 libxslt sqlite webp
+ WEBKITGTK_CONF_OPTS = \
+ 	-DENABLE_API_TESTS=OFF \
+diff --git a/package/x11r7/xserver_xorg-server/1.14.7/0002-Xi-Zero-target-buffer-in-SProcXSendExtensionEvent.patch b/package/x11r7/xserver_xorg-server/1.14.7/0002-Xi-Zero-target-buffer-in-SProcXSendExtensionEvent.patch
+new file mode 100644
+index 000000000..c15dc9f50
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.14.7/0002-Xi-Zero-target-buffer-in-SProcXSendExtensionEvent.patch
+@@ -0,0 +1,39 @@
++From 05442de962d3dc624f79fc1a00eca3ffc5489ced Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Wed, 24 May 2017 15:54:39 +0300
++Subject: [PATCH] Xi: Zero target buffer in SProcXSendExtensionEvent.
++
++Make sure that the xEvent eventT is initialized with zeros, the same way as
++in SProcSendEvent.
++
++Some event swapping functions do not overwrite all 32 bytes of xEvent
++structure, for example XSecurityAuthorizationRevoked. Two cooperating
++clients, one swapped and the other not, can send
++XSecurityAuthorizationRevoked event to each other to retrieve old stack data
++from X server. This can be potentialy misused to go around ASLR or
++stack-protector.
++
++Signed-off-by: Michal Srb <msrb@suse.com>
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Xi/sendexev.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/Xi/sendexev.c b/Xi/sendexev.c
++index 11d82029f..1cf118ab6 100644
++--- a/Xi/sendexev.c
+++++ b/Xi/sendexev.c
++@@ -78,7 +78,7 @@ SProcXSendExtensionEvent(ClientPtr client)
++ {
++     CARD32 *p;
++     int i;
++-    xEvent eventT;
+++    xEvent eventT = { .u.u.type = 0 };
++     xEvent *eventP;
++     EventSwapPtr proc;
++ 
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xserver_xorg-server/1.14.7/0003-dix-Disallow-GenericEvent-in-SendEvent-request.patch b/package/x11r7/xserver_xorg-server/1.14.7/0003-dix-Disallow-GenericEvent-in-SendEvent-request.patch
+new file mode 100644
+index 000000000..12da5f5cb
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.14.7/0003-dix-Disallow-GenericEvent-in-SendEvent-request.patch
+@@ -0,0 +1,71 @@
++From 215f894965df5fb0bb45b107d84524e700d2073c Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Wed, 24 May 2017 15:54:40 +0300
++Subject: [PATCH] dix: Disallow GenericEvent in SendEvent request.
++
++The SendEvent request holds xEvent which is exactly 32 bytes long, no more,
++no less. Both ProcSendEvent and SProcSendEvent verify that the received data
++exactly match the request size. However nothing stops the client from passing
++in event with xEvent::type = GenericEvent and any value of
++xGenericEvent::length.
++
++In the case of ProcSendEvent, the event will be eventually passed to
++WriteEventsToClient which will see that it is Generic event and copy the
++arbitrary length from the receive buffer (and possibly past it) and send it to
++the other client. This allows clients to copy unitialized heap memory out of X
++server or to crash it.
++
++In case of SProcSendEvent, it will attempt to swap the incoming event by
++calling a swapping function from the EventSwapVector array. The swapped event
++is written to target buffer, which in this case is local xEvent variable. The
++xEvent variable is 32 bytes long, but the swapping functions for GenericEvents
++expect that the target buffer has size matching the size of the source
++GenericEvent. This allows clients to cause stack buffer overflows.
++
++Signed-off-by: Michal Srb <msrb@suse.com>
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ dix/events.c  | 6 ++++++
++ dix/swapreq.c | 7 +++++++
++ 2 files changed, 13 insertions(+)
++
++diff --git a/dix/events.c b/dix/events.c
++index 3e3a01ef9..d3a33ea3f 100644
++--- a/dix/events.c
+++++ b/dix/events.c
++@@ -5366,6 +5366,12 @@ ProcSendEvent(ClientPtr client)
++         client->errorValue = stuff->event.u.u.type;
++         return BadValue;
++     }
+++    /* Generic events can have variable size, but SendEvent request holds
+++       exactly 32B of event data. */
+++    if (stuff->event.u.u.type == GenericEvent) {
+++        client->errorValue = stuff->event.u.u.type;
+++        return BadValue;
+++    }
++     if (stuff->event.u.u.type == ClientMessage &&
++         stuff->event.u.u.detail != 8 &&
++         stuff->event.u.u.detail != 16 && stuff->event.u.u.detail != 32) {
++diff --git a/dix/swapreq.c b/dix/swapreq.c
++index 719e9b81c..67850593b 100644
++--- a/dix/swapreq.c
+++++ b/dix/swapreq.c
++@@ -292,6 +292,13 @@ SProcSendEvent(ClientPtr client)
++     swapl(&stuff->destination);
++     swapl(&stuff->eventMask);
++ 
+++    /* Generic events can have variable size, but SendEvent request holds
+++       exactly 32B of event data. */
+++    if (stuff->event.u.u.type == GenericEvent) {
+++        client->errorValue = stuff->event.u.u.type;
+++        return BadValue;
+++    }
+++
++     /* Swap event */
++     proc = EventSwapVector[stuff->event.u.u.type & 0177];
++     if (!proc || proc == NotImplemented)        /* no swapping proc; invalid event type? */
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xserver_xorg-server/1.14.7/0004-Xi-Verify-all-events-in-ProcXSendExtensionEvent.patch b/package/x11r7/xserver_xorg-server/1.14.7/0004-Xi-Verify-all-events-in-ProcXSendExtensionEvent.patch
+new file mode 100644
+index 000000000..2e651006b
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.14.7/0004-Xi-Verify-all-events-in-ProcXSendExtensionEvent.patch
+@@ -0,0 +1,50 @@
++From 8caed4df36b1f802b4992edcfd282cbeeec35d9d Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Wed, 24 May 2017 15:54:41 +0300
++Subject: [PATCH] Xi: Verify all events in ProcXSendExtensionEvent.
++
++The requirement is that events have type in range
++EXTENSION_EVENT_BASE..lastEvent, but it was tested
++only for first event of all.
++
++Signed-off-by: Michal Srb <msrb@suse.com>
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Xi/sendexev.c | 12 +++++++-----
++ 1 file changed, 7 insertions(+), 5 deletions(-)
++
++diff --git a/Xi/sendexev.c b/Xi/sendexev.c
++index 1cf118ab6..5e63bfcca 100644
++--- a/Xi/sendexev.c
+++++ b/Xi/sendexev.c
++@@ -117,7 +117,7 @@ SProcXSendExtensionEvent(ClientPtr client)
++ int
++ ProcXSendExtensionEvent(ClientPtr client)
++ {
++-    int ret;
+++    int ret, i;
++     DeviceIntPtr dev;
++     xEvent *first;
++     XEventClass *list;
++@@ -141,10 +141,12 @@ ProcXSendExtensionEvent(ClientPtr client)
++     /* The client's event type must be one defined by an extension. */
++ 
++     first = ((xEvent *) &stuff[1]);
++-    if (!((EXTENSION_EVENT_BASE <= first->u.u.type) &&
++-          (first->u.u.type < lastEvent))) {
++-        client->errorValue = first->u.u.type;
++-        return BadValue;
+++    for (i = 0; i < stuff->num_events; i++) {
+++        if (!((EXTENSION_EVENT_BASE <= first[i].u.u.type) &&
+++            (first[i].u.u.type < lastEvent))) {
+++            client->errorValue = first[i].u.u.type;
+++            return BadValue;
+++        }
++     }
++ 
++     list = (XEventClass *) (first + stuff->num_events);
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xserver_xorg-server/1.14.7/0005-Xi-Do-not-try-to-swap-GenericEvent.patch b/package/x11r7/xserver_xorg-server/1.14.7/0005-Xi-Do-not-try-to-swap-GenericEvent.patch
+new file mode 100644
+index 000000000..871e7621e
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.14.7/0005-Xi-Do-not-try-to-swap-GenericEvent.patch
+@@ -0,0 +1,45 @@
++From ba336b24052122b136486961c82deac76bbde455 Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Wed, 24 May 2017 15:54:42 +0300
++Subject: [PATCH] Xi: Do not try to swap GenericEvent.
++
++The SProcXSendExtensionEvent must not attempt to swap GenericEvent because
++it is assuming that the event has fixed size and gives the swapping function
++xEvent-sized buffer.
++
++A GenericEvent would be later rejected by ProcXSendExtensionEvent anyway.
++
++Signed-off-by: Michal Srb <msrb@suse.com>
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Xi/sendexev.c | 10 +++++++++-
++ 1 file changed, 9 insertions(+), 1 deletion(-)
++
++diff --git a/Xi/sendexev.c b/Xi/sendexev.c
++index 5e63bfcca..5c2e0fc56 100644
++--- a/Xi/sendexev.c
+++++ b/Xi/sendexev.c
++@@ -95,9 +95,17 @@ SProcXSendExtensionEvent(ClientPtr client)
++ 
++     eventP = (xEvent *) &stuff[1];
++     for (i = 0; i < stuff->num_events; i++, eventP++) {
+++        if (eventP->u.u.type == GenericEvent) {
+++            client->errorValue = eventP->u.u.type;
+++            return BadValue;
+++        }
+++
++         proc = EventSwapVector[eventP->u.u.type & 0177];
++-        if (proc == NotImplemented)     /* no swapping proc; invalid event type? */
+++        /* no swapping proc; invalid event type? */
+++        if (proc == NotImplemented) {
+++            client->errorValue = eventP->u.u.type;
++             return BadValue;
+++        }
++         (*proc) (eventP, &eventT);
++         *eventP = eventT;
++     }
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xserver_xorg-server/1.17.4/0002-Xi-Zero-target-buffer-in-SProcXSendExtensionEvent.patch b/package/x11r7/xserver_xorg-server/1.17.4/0002-Xi-Zero-target-buffer-in-SProcXSendExtensionEvent.patch
+new file mode 100644
+index 000000000..c15dc9f50
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.17.4/0002-Xi-Zero-target-buffer-in-SProcXSendExtensionEvent.patch
+@@ -0,0 +1,39 @@
++From 05442de962d3dc624f79fc1a00eca3ffc5489ced Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Wed, 24 May 2017 15:54:39 +0300
++Subject: [PATCH] Xi: Zero target buffer in SProcXSendExtensionEvent.
++
++Make sure that the xEvent eventT is initialized with zeros, the same way as
++in SProcSendEvent.
++
++Some event swapping functions do not overwrite all 32 bytes of xEvent
++structure, for example XSecurityAuthorizationRevoked. Two cooperating
++clients, one swapped and the other not, can send
++XSecurityAuthorizationRevoked event to each other to retrieve old stack data
++from X server. This can be potentialy misused to go around ASLR or
++stack-protector.
++
++Signed-off-by: Michal Srb <msrb@suse.com>
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Xi/sendexev.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/Xi/sendexev.c b/Xi/sendexev.c
++index 11d82029f..1cf118ab6 100644
++--- a/Xi/sendexev.c
+++++ b/Xi/sendexev.c
++@@ -78,7 +78,7 @@ SProcXSendExtensionEvent(ClientPtr client)
++ {
++     CARD32 *p;
++     int i;
++-    xEvent eventT;
+++    xEvent eventT = { .u.u.type = 0 };
++     xEvent *eventP;
++     EventSwapPtr proc;
++ 
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xserver_xorg-server/1.17.4/0003-dix-Disallow-GenericEvent-in-SendEvent-request.patch b/package/x11r7/xserver_xorg-server/1.17.4/0003-dix-Disallow-GenericEvent-in-SendEvent-request.patch
+new file mode 100644
+index 000000000..12da5f5cb
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.17.4/0003-dix-Disallow-GenericEvent-in-SendEvent-request.patch
+@@ -0,0 +1,71 @@
++From 215f894965df5fb0bb45b107d84524e700d2073c Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Wed, 24 May 2017 15:54:40 +0300
++Subject: [PATCH] dix: Disallow GenericEvent in SendEvent request.
++
++The SendEvent request holds xEvent which is exactly 32 bytes long, no more,
++no less. Both ProcSendEvent and SProcSendEvent verify that the received data
++exactly match the request size. However nothing stops the client from passing
++in event with xEvent::type = GenericEvent and any value of
++xGenericEvent::length.
++
++In the case of ProcSendEvent, the event will be eventually passed to
++WriteEventsToClient which will see that it is Generic event and copy the
++arbitrary length from the receive buffer (and possibly past it) and send it to
++the other client. This allows clients to copy unitialized heap memory out of X
++server or to crash it.
++
++In case of SProcSendEvent, it will attempt to swap the incoming event by
++calling a swapping function from the EventSwapVector array. The swapped event
++is written to target buffer, which in this case is local xEvent variable. The
++xEvent variable is 32 bytes long, but the swapping functions for GenericEvents
++expect that the target buffer has size matching the size of the source
++GenericEvent. This allows clients to cause stack buffer overflows.
++
++Signed-off-by: Michal Srb <msrb@suse.com>
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ dix/events.c  | 6 ++++++
++ dix/swapreq.c | 7 +++++++
++ 2 files changed, 13 insertions(+)
++
++diff --git a/dix/events.c b/dix/events.c
++index 3e3a01ef9..d3a33ea3f 100644
++--- a/dix/events.c
+++++ b/dix/events.c
++@@ -5366,6 +5366,12 @@ ProcSendEvent(ClientPtr client)
++         client->errorValue = stuff->event.u.u.type;
++         return BadValue;
++     }
+++    /* Generic events can have variable size, but SendEvent request holds
+++       exactly 32B of event data. */
+++    if (stuff->event.u.u.type == GenericEvent) {
+++        client->errorValue = stuff->event.u.u.type;
+++        return BadValue;
+++    }
++     if (stuff->event.u.u.type == ClientMessage &&
++         stuff->event.u.u.detail != 8 &&
++         stuff->event.u.u.detail != 16 && stuff->event.u.u.detail != 32) {
++diff --git a/dix/swapreq.c b/dix/swapreq.c
++index 719e9b81c..67850593b 100644
++--- a/dix/swapreq.c
+++++ b/dix/swapreq.c
++@@ -292,6 +292,13 @@ SProcSendEvent(ClientPtr client)
++     swapl(&stuff->destination);
++     swapl(&stuff->eventMask);
++ 
+++    /* Generic events can have variable size, but SendEvent request holds
+++       exactly 32B of event data. */
+++    if (stuff->event.u.u.type == GenericEvent) {
+++        client->errorValue = stuff->event.u.u.type;
+++        return BadValue;
+++    }
+++
++     /* Swap event */
++     proc = EventSwapVector[stuff->event.u.u.type & 0177];
++     if (!proc || proc == NotImplemented)        /* no swapping proc; invalid event type? */
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xserver_xorg-server/1.17.4/0004-Xi-Verify-all-events-in-ProcXSendExtensionEvent.patch b/package/x11r7/xserver_xorg-server/1.17.4/0004-Xi-Verify-all-events-in-ProcXSendExtensionEvent.patch
+new file mode 100644
+index 000000000..2e651006b
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.17.4/0004-Xi-Verify-all-events-in-ProcXSendExtensionEvent.patch
+@@ -0,0 +1,50 @@
++From 8caed4df36b1f802b4992edcfd282cbeeec35d9d Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Wed, 24 May 2017 15:54:41 +0300
++Subject: [PATCH] Xi: Verify all events in ProcXSendExtensionEvent.
++
++The requirement is that events have type in range
++EXTENSION_EVENT_BASE..lastEvent, but it was tested
++only for first event of all.
++
++Signed-off-by: Michal Srb <msrb@suse.com>
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Xi/sendexev.c | 12 +++++++-----
++ 1 file changed, 7 insertions(+), 5 deletions(-)
++
++diff --git a/Xi/sendexev.c b/Xi/sendexev.c
++index 1cf118ab6..5e63bfcca 100644
++--- a/Xi/sendexev.c
+++++ b/Xi/sendexev.c
++@@ -117,7 +117,7 @@ SProcXSendExtensionEvent(ClientPtr client)
++ int
++ ProcXSendExtensionEvent(ClientPtr client)
++ {
++-    int ret;
+++    int ret, i;
++     DeviceIntPtr dev;
++     xEvent *first;
++     XEventClass *list;
++@@ -141,10 +141,12 @@ ProcXSendExtensionEvent(ClientPtr client)
++     /* The client's event type must be one defined by an extension. */
++ 
++     first = ((xEvent *) &stuff[1]);
++-    if (!((EXTENSION_EVENT_BASE <= first->u.u.type) &&
++-          (first->u.u.type < lastEvent))) {
++-        client->errorValue = first->u.u.type;
++-        return BadValue;
+++    for (i = 0; i < stuff->num_events; i++) {
+++        if (!((EXTENSION_EVENT_BASE <= first[i].u.u.type) &&
+++            (first[i].u.u.type < lastEvent))) {
+++            client->errorValue = first[i].u.u.type;
+++            return BadValue;
+++        }
++     }
++ 
++     list = (XEventClass *) (first + stuff->num_events);
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xserver_xorg-server/1.17.4/0005-Xi-Do-not-try-to-swap-GenericEvent.patch b/package/x11r7/xserver_xorg-server/1.17.4/0005-Xi-Do-not-try-to-swap-GenericEvent.patch
+new file mode 100644
+index 000000000..871e7621e
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.17.4/0005-Xi-Do-not-try-to-swap-GenericEvent.patch
+@@ -0,0 +1,45 @@
++From ba336b24052122b136486961c82deac76bbde455 Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Wed, 24 May 2017 15:54:42 +0300
++Subject: [PATCH] Xi: Do not try to swap GenericEvent.
++
++The SProcXSendExtensionEvent must not attempt to swap GenericEvent because
++it is assuming that the event has fixed size and gives the swapping function
++xEvent-sized buffer.
++
++A GenericEvent would be later rejected by ProcXSendExtensionEvent anyway.
++
++Signed-off-by: Michal Srb <msrb@suse.com>
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Xi/sendexev.c | 10 +++++++++-
++ 1 file changed, 9 insertions(+), 1 deletion(-)
++
++diff --git a/Xi/sendexev.c b/Xi/sendexev.c
++index 5e63bfcca..5c2e0fc56 100644
++--- a/Xi/sendexev.c
+++++ b/Xi/sendexev.c
++@@ -95,9 +95,17 @@ SProcXSendExtensionEvent(ClientPtr client)
++ 
++     eventP = (xEvent *) &stuff[1];
++     for (i = 0; i < stuff->num_events; i++, eventP++) {
+++        if (eventP->u.u.type == GenericEvent) {
+++            client->errorValue = eventP->u.u.type;
+++            return BadValue;
+++        }
+++
++         proc = EventSwapVector[eventP->u.u.type & 0177];
++-        if (proc == NotImplemented)     /* no swapping proc; invalid event type? */
+++        /* no swapping proc; invalid event type? */
+++        if (proc == NotImplemented) {
+++            client->errorValue = eventP->u.u.type;
++             return BadValue;
+++        }
++         (*proc) (eventP, &eventT);
++         *eventP = eventT;
++     }
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xserver_xorg-server/1.19.1/0004-Xi-Zero-target-buffer-in-SProcXSendExtensionEvent.patch b/package/x11r7/xserver_xorg-server/1.19.1/0004-Xi-Zero-target-buffer-in-SProcXSendExtensionEvent.patch
+new file mode 100644
+index 000000000..c15dc9f50
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.19.1/0004-Xi-Zero-target-buffer-in-SProcXSendExtensionEvent.patch
+@@ -0,0 +1,39 @@
++From 05442de962d3dc624f79fc1a00eca3ffc5489ced Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Wed, 24 May 2017 15:54:39 +0300
++Subject: [PATCH] Xi: Zero target buffer in SProcXSendExtensionEvent.
++
++Make sure that the xEvent eventT is initialized with zeros, the same way as
++in SProcSendEvent.
++
++Some event swapping functions do not overwrite all 32 bytes of xEvent
++structure, for example XSecurityAuthorizationRevoked. Two cooperating
++clients, one swapped and the other not, can send
++XSecurityAuthorizationRevoked event to each other to retrieve old stack data
++from X server. This can be potentialy misused to go around ASLR or
++stack-protector.
++
++Signed-off-by: Michal Srb <msrb@suse.com>
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Xi/sendexev.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/Xi/sendexev.c b/Xi/sendexev.c
++index 11d82029f..1cf118ab6 100644
++--- a/Xi/sendexev.c
+++++ b/Xi/sendexev.c
++@@ -78,7 +78,7 @@ SProcXSendExtensionEvent(ClientPtr client)
++ {
++     CARD32 *p;
++     int i;
++-    xEvent eventT;
+++    xEvent eventT = { .u.u.type = 0 };
++     xEvent *eventP;
++     EventSwapPtr proc;
++ 
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xserver_xorg-server/1.19.1/0005-dix-Disallow-GenericEvent-in-SendEvent-request.patch b/package/x11r7/xserver_xorg-server/1.19.1/0005-dix-Disallow-GenericEvent-in-SendEvent-request.patch
+new file mode 100644
+index 000000000..12da5f5cb
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.19.1/0005-dix-Disallow-GenericEvent-in-SendEvent-request.patch
+@@ -0,0 +1,71 @@
++From 215f894965df5fb0bb45b107d84524e700d2073c Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Wed, 24 May 2017 15:54:40 +0300
++Subject: [PATCH] dix: Disallow GenericEvent in SendEvent request.
++
++The SendEvent request holds xEvent which is exactly 32 bytes long, no more,
++no less. Both ProcSendEvent and SProcSendEvent verify that the received data
++exactly match the request size. However nothing stops the client from passing
++in event with xEvent::type = GenericEvent and any value of
++xGenericEvent::length.
++
++In the case of ProcSendEvent, the event will be eventually passed to
++WriteEventsToClient which will see that it is Generic event and copy the
++arbitrary length from the receive buffer (and possibly past it) and send it to
++the other client. This allows clients to copy unitialized heap memory out of X
++server or to crash it.
++
++In case of SProcSendEvent, it will attempt to swap the incoming event by
++calling a swapping function from the EventSwapVector array. The swapped event
++is written to target buffer, which in this case is local xEvent variable. The
++xEvent variable is 32 bytes long, but the swapping functions for GenericEvents
++expect that the target buffer has size matching the size of the source
++GenericEvent. This allows clients to cause stack buffer overflows.
++
++Signed-off-by: Michal Srb <msrb@suse.com>
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ dix/events.c  | 6 ++++++
++ dix/swapreq.c | 7 +++++++
++ 2 files changed, 13 insertions(+)
++
++diff --git a/dix/events.c b/dix/events.c
++index 3e3a01ef9..d3a33ea3f 100644
++--- a/dix/events.c
+++++ b/dix/events.c
++@@ -5366,6 +5366,12 @@ ProcSendEvent(ClientPtr client)
++         client->errorValue = stuff->event.u.u.type;
++         return BadValue;
++     }
+++    /* Generic events can have variable size, but SendEvent request holds
+++       exactly 32B of event data. */
+++    if (stuff->event.u.u.type == GenericEvent) {
+++        client->errorValue = stuff->event.u.u.type;
+++        return BadValue;
+++    }
++     if (stuff->event.u.u.type == ClientMessage &&
++         stuff->event.u.u.detail != 8 &&
++         stuff->event.u.u.detail != 16 && stuff->event.u.u.detail != 32) {
++diff --git a/dix/swapreq.c b/dix/swapreq.c
++index 719e9b81c..67850593b 100644
++--- a/dix/swapreq.c
+++++ b/dix/swapreq.c
++@@ -292,6 +292,13 @@ SProcSendEvent(ClientPtr client)
++     swapl(&stuff->destination);
++     swapl(&stuff->eventMask);
++ 
+++    /* Generic events can have variable size, but SendEvent request holds
+++       exactly 32B of event data. */
+++    if (stuff->event.u.u.type == GenericEvent) {
+++        client->errorValue = stuff->event.u.u.type;
+++        return BadValue;
+++    }
+++
++     /* Swap event */
++     proc = EventSwapVector[stuff->event.u.u.type & 0177];
++     if (!proc || proc == NotImplemented)        /* no swapping proc; invalid event type? */
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xserver_xorg-server/1.19.1/0006-Xi-Verify-all-events-in-ProcXSendExtensionEvent.patch b/package/x11r7/xserver_xorg-server/1.19.1/0006-Xi-Verify-all-events-in-ProcXSendExtensionEvent.patch
+new file mode 100644
+index 000000000..2e651006b
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.19.1/0006-Xi-Verify-all-events-in-ProcXSendExtensionEvent.patch
+@@ -0,0 +1,50 @@
++From 8caed4df36b1f802b4992edcfd282cbeeec35d9d Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Wed, 24 May 2017 15:54:41 +0300
++Subject: [PATCH] Xi: Verify all events in ProcXSendExtensionEvent.
++
++The requirement is that events have type in range
++EXTENSION_EVENT_BASE..lastEvent, but it was tested
++only for first event of all.
++
++Signed-off-by: Michal Srb <msrb@suse.com>
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Xi/sendexev.c | 12 +++++++-----
++ 1 file changed, 7 insertions(+), 5 deletions(-)
++
++diff --git a/Xi/sendexev.c b/Xi/sendexev.c
++index 1cf118ab6..5e63bfcca 100644
++--- a/Xi/sendexev.c
+++++ b/Xi/sendexev.c
++@@ -117,7 +117,7 @@ SProcXSendExtensionEvent(ClientPtr client)
++ int
++ ProcXSendExtensionEvent(ClientPtr client)
++ {
++-    int ret;
+++    int ret, i;
++     DeviceIntPtr dev;
++     xEvent *first;
++     XEventClass *list;
++@@ -141,10 +141,12 @@ ProcXSendExtensionEvent(ClientPtr client)
++     /* The client's event type must be one defined by an extension. */
++ 
++     first = ((xEvent *) &stuff[1]);
++-    if (!((EXTENSION_EVENT_BASE <= first->u.u.type) &&
++-          (first->u.u.type < lastEvent))) {
++-        client->errorValue = first->u.u.type;
++-        return BadValue;
+++    for (i = 0; i < stuff->num_events; i++) {
+++        if (!((EXTENSION_EVENT_BASE <= first[i].u.u.type) &&
+++            (first[i].u.u.type < lastEvent))) {
+++            client->errorValue = first[i].u.u.type;
+++            return BadValue;
+++        }
++     }
++ 
++     list = (XEventClass *) (first + stuff->num_events);
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xserver_xorg-server/1.19.1/0007-Xi-Do-not-try-to-swap-GenericEvent.patch b/package/x11r7/xserver_xorg-server/1.19.1/0007-Xi-Do-not-try-to-swap-GenericEvent.patch
+new file mode 100644
+index 000000000..871e7621e
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.19.1/0007-Xi-Do-not-try-to-swap-GenericEvent.patch
+@@ -0,0 +1,45 @@
++From ba336b24052122b136486961c82deac76bbde455 Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Wed, 24 May 2017 15:54:42 +0300
++Subject: [PATCH] Xi: Do not try to swap GenericEvent.
++
++The SProcXSendExtensionEvent must not attempt to swap GenericEvent because
++it is assuming that the event has fixed size and gives the swapping function
++xEvent-sized buffer.
++
++A GenericEvent would be later rejected by ProcXSendExtensionEvent anyway.
++
++Signed-off-by: Michal Srb <msrb@suse.com>
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Xi/sendexev.c | 10 +++++++++-
++ 1 file changed, 9 insertions(+), 1 deletion(-)
++
++diff --git a/Xi/sendexev.c b/Xi/sendexev.c
++index 5e63bfcca..5c2e0fc56 100644
++--- a/Xi/sendexev.c
+++++ b/Xi/sendexev.c
++@@ -95,9 +95,17 @@ SProcXSendExtensionEvent(ClientPtr client)
++ 
++     eventP = (xEvent *) &stuff[1];
++     for (i = 0; i < stuff->num_events; i++, eventP++) {
+++        if (eventP->u.u.type == GenericEvent) {
+++            client->errorValue = eventP->u.u.type;
+++            return BadValue;
+++        }
+++
++         proc = EventSwapVector[eventP->u.u.type & 0177];
++-        if (proc == NotImplemented)     /* no swapping proc; invalid event type? */
+++        /* no swapping proc; invalid event type? */
+++        if (proc == NotImplemented) {
+++            client->errorValue = eventP->u.u.type;
++             return BadValue;
+++        }
++         (*proc) (eventP, &eventT);
++         *eventP = eventT;
++     }
++-- 
++2.11.0
++
+diff --git a/package/x265/x265.mk b/package/x265/x265.mk
+index 0fbdb0107..8ffec80a4 100644
+--- a/package/x265/x265.mk
++++ b/package/x265/x265.mk
+@@ -16,6 +16,12 @@ ifeq ($(BR2_i386)$(BR2_x86_64),y)
+ X265_DEPENDENCIES += host-yasm
+ endif
+ 
++# disable altivec, it has build issues
++# https://bitbucket.org/multicoreware/x265/issues/320/
++ifeq ($(BR2_powerpc64)$(BR2_powerpc64le),y)
++X265_CONF_OPTS += -DENABLE_ALTIVEC=OFF
++endif
++
+ ifeq ($(BR2_SHARED_LIBS)$(BR2_SHARED_STATIC_LIBS),y)
+ X265_CONF_OPTS += -DENABLE_SHARED=ON -DENABLE_PIC=ON
+ else
+diff --git a/package/xen/xen.hash b/package/xen/xen.hash
+index 2143f4661..0b14e2966 100644
+--- a/package/xen/xen.hash
++++ b/package/xen/xen.hash
+@@ -1,2 +1,2 @@
+ # Locally computed
+-sha256 61494a56d9251e2108080f95b0dc8e3d175f1ba4da34603fc07b91cfebf358d5 xen-4.7.2.tar.gz
++sha256 5b5385b476e59e4cf31ecc6dd605df38814b83432b8e8d917f18c8edfdfb708f xen-4.7.3.tar.gz
+diff --git a/package/xen/xen.mk b/package/xen/xen.mk
+index 9ff1b4022..a973b408d 100644
+--- a/package/xen/xen.mk
++++ b/package/xen/xen.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-XEN_VERSION = 4.7.2
+-XEN_SITE = http://bits.xensource.com/oss-xen/release/$(XEN_VERSION)
++XEN_VERSION = 4.7.3
++XEN_SITE = https://downloads.xenproject.org/release/xen/$(XEN_VERSION)
+ XEN_LICENSE = GPLv2
+ XEN_LICENSE_FILES = COPYING
+ XEN_DEPENDENCIES = host-python
+diff --git a/package/xvisor/Config.in b/package/xvisor/Config.in
+index 996d37afb..44bd461c3 100644
+--- a/package/xvisor/Config.in
++++ b/package/xvisor/Config.in
+@@ -36,7 +36,7 @@ config BR2_PACKAGE_XVISOR_DEFCONFIG
+ 	default "generic-v5" if BR2_ARM_CPU_ARMV5
+ 	default "generic-v6" if BR2_ARM_CPU_ARMV6
+ 	default "generic-v7" if BR2_ARM_CPU_ARMV7A
+-	default "generic-v8" if BR2_AARCH64
++	default "generic-v8" if BR2_aarch64
+ 	default "x86_64_generic" if BR2_x86_64
+ 	help
+ 	  Name of the Xvisor defconfig file to use, without the
+diff --git a/package/xvisor/xvisor.mk b/package/xvisor/xvisor.mk
+index a9a5dbfae..c7afb71f6 100644
+--- a/package/xvisor/xvisor.mk
++++ b/package/xvisor/xvisor.mk
+@@ -26,8 +26,20 @@ XVISOR_KCONFIG_FILE = $(call qstrip,$(BR2_PACKAGE_XVISOR_CUSTOM_CONFIG_FILE))
+ endif
+ XVISOR_KCONFIG_EDITORS = menuconfig
+ 
++ifeq ($(BR2_x86_64),y)
++XVISOR_ARCH = x86
++else ifeq ($(BR2_arm)$(BR2_aarch64),y)
++XVISOR_ARCH = arm
++endif
++
++ifeq ($(BR2_PACKAGE_XVISOR)$(BR_BUILDING),yy)
++ifeq ($(XVISOR_ARCH),)
++$(error "Architecture not supported by XVisor")
++endif
++endif
++
+ XVISOR_MAKE_ENV = \
+-	ARCH=$(if $(BR2_x86_64),x86,$(BR2_ARCH)) \
++	ARCH=$(XVISOR_ARCH) \
+ 	CROSS_COMPILE=$(TARGET_CROSS)
+ 
+ XVISOR_MAKE_OPTS = $(if $(VERBOSE),VERBOSE=1)
+diff --git a/toolchain/toolchain-common.in b/toolchain/toolchain-common.in
+index 96d570976..38baaa92d 100644
+--- a/toolchain/toolchain-common.in
++++ b/toolchain/toolchain-common.in
+@@ -7,6 +7,11 @@ source "package/gdb/Config.in.host"
+ 
+ comment "Toolchain Generic Options"
+ 
++# https://sourceware.org/bugzilla/show_bug.cgi?id=19615
++# Affect toolchains built with binutils 2.26 (fixed in binutils 2.26.1).
++config BR2_TOOLCHAIN_HAS_BINUTILS_BUG_19615
++	bool
++
+ # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=64735
+ # exception_ptr, nested_exception, and future from libstdc++ are not
+ # available for architectures not supporting always lock-free atomic
+diff --git a/toolchain/toolchain-external/toolchain-external-codesourcery-amd64/Config.in b/toolchain/toolchain-external/toolchain-external-codesourcery-amd64/Config.in
+index 32d79eba1..101e227af 100644
+--- a/toolchain/toolchain-external/toolchain-external-codesourcery-amd64/Config.in
++++ b/toolchain/toolchain-external/toolchain-external-codesourcery-amd64/Config.in
+@@ -11,6 +11,7 @@ config BR2_TOOLCHAIN_EXTERNAL_CODESOURCERY_AMD64
+ 	select BR2_HOSTARCH_NEEDS_IA32_LIBS
+ 	select BR2_TOOLCHAIN_HEADERS_AT_LEAST_4_7
+ 	select BR2_TOOLCHAIN_GCC_AT_LEAST_6
++	select BR2_TOOLCHAIN_HAS_BINUTILS_BUG_19615 # based-on binutils-2.26
+ 	help
+ 	  Sourcery CodeBench toolchain for the amd64 (x86_64)
+ 	  architectures, from Mentor Graphics. It uses gcc 6.2,

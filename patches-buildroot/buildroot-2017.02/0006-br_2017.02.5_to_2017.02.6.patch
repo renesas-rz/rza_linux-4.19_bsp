@@ -1,0 +1,4905 @@
+diff --git a/CHANGES b/CHANGES
+index 73936428e1..56f1c32a5c 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,32 @@
++2017.02.6, Released September 24th, 2017
++
++	Important / security related fixes.
++
++	Cmake: Ensure correct pkg-config is used when building host
++	packages
++
++	fs/iso9660: Ensure files from earlier builds are not included.
++
++	Updated/fixed packages: apache, bcusdk, bind, binutils,
++	bluez5_utils, botan, cmake, connman, dbus, dialog, e2fsprogs,
++	faad2, fakeroot, ffmpeg, file, flashrom, gcc, gd, gdb,
++	gdk-pixbuf, git, gnupg, gpsd, grub2, gst1-plugins-bad,
++	imagemagick, iostat, iucode-tool, jack2, libarchive, libcurl,
++	libgcrypt, libidn, libphidget, librsync, librsvg, libsoup,
++	libxml2, linux-tools, lua, mariadb, mbedtls, mediastreamer,
++	minidlna, netplug, nss-pam-ldapd, nvidia-driver, openjpeg,
++	postgresql, proxychains-ng, python-libconfig,
++	python-service-identity, qt, rpcbind, ruby, samba4, squashfs,
++	squid, strongswan, subversion, supervisor, sysvinit, tcpdump,
++	tor, transmission, unrar, valgrind, vim, webkitgtk, whois,
++	xen, zmqpp
++
++	Issues resolved (http://bugs.buildroot.org):
++
++	#10141: Squashfs extended attribute failures
++	#10261: Grub2 fails to build for x86_64
++	#10276: BR2_PACKAGE_LINUX_TOOLS_GPIO fails for MIPS with...
++
+ 2017.02.5, Released July 27th, 2017
+ 
+ 	Important / security related fixes.
+diff --git a/Makefile b/Makefile
+index 9b517904e6..3514d938b4 100644
+--- a/Makefile
++++ b/Makefile
+@@ -86,9 +86,9 @@ else # umask / $(CURDIR) / $(O)
+ all:
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2017.02.5
++export BR2_VERSION := 2017.02.6
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1501100000
++BR2_VERSION_EPOCH = 1506285000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+diff --git a/boot/grub2/grub2.mk b/boot/grub2/grub2.mk
+index dc4e51ea8e..373bce1cb2 100644
+--- a/boot/grub2/grub2.mk
++++ b/boot/grub2/grub2.mk
+@@ -53,7 +53,7 @@ GRUB2_CONF_ENV = \
+ 	$(HOST_CONFIGURE_OPTS) \
+ 	CPP="$(HOSTCC) -E" \
+ 	TARGET_CC="$(TARGET_CC)" \
+-	TARGET_CFLAGS="$(TARGET_CFLAGS)" \
++	TARGET_CFLAGS="$(TARGET_CFLAGS) -fno-stack-protector" \
+ 	TARGET_CPPFLAGS="$(TARGET_CPPFLAGS)" \
+ 	TARGET_LDFLAGS="$(TARGET_LDFLAGS)" \
+ 	NM="$(TARGET_NM)" \
+diff --git a/docs/manual/using-buildroot-development.txt b/docs/manual/using-buildroot-development.txt
+index e167849cdc..1071de5132 100644
+--- a/docs/manual/using-buildroot-development.txt
++++ b/docs/manual/using-buildroot-development.txt
+@@ -50,11 +50,11 @@ BUSYBOX_OVERRIDE_SRCDIR = /home/bob/busybox/
+ When Buildroot finds that for a given package, an
+ +<pkg>_OVERRIDE_SRCDIR+ has been defined, it will no longer attempt to
+ download, extract and patch the package. Instead, it will directly use
+-the source code available in in the specified directory and +make
+-clean+ will not touch this directory. This allows to point Buildroot
+-to your own directories, that can be managed by Git, Subversion, or
+-any other version control system. To achieve this, Buildroot will use
+-_rsync_ to copy the source code of the component from the specified
++the source code available in the specified directory and +make clean+
++will not touch this directory. This allows to point Buildroot to your
++own directories, that can be managed by Git, Subversion, or any other
++version control system. To achieve this, Buildroot will use _rsync_ to
++copy the source code of the component from the specified
+ +<pkg>_OVERRIDE_SRCDIR+ to +output/build/<package>-custom/+.
+ 
+ This mechanism is best used in conjunction with the +make
+diff --git a/fs/iso9660/iso9660.mk b/fs/iso9660/iso9660.mk
+index d1d9cbf1a4..ee98ecfa28 100644
+--- a/fs/iso9660/iso9660.mk
++++ b/fs/iso9660/iso9660.mk
+@@ -40,6 +40,7 @@ define ROOTFS_ISO9660_CREATE_TEMPDIR
+ 	$(RM) -rf $(ROOTFS_ISO9660_TARGET_DIR)
+ 	mkdir -p $(ROOTFS_ISO9660_TARGET_DIR)
+ endef
++ROOTFS_ISO9660_PRE_GEN_HOOKS += ROOTFS_ISO9660_CREATE_TEMPDIR
+ else
+ ROOTFS_ISO9660_TARGET_DIR = $(TARGET_DIR)
+ endif
+diff --git a/package/apache/0003-CVS-2017-9798.patch b/package/apache/0003-CVS-2017-9798.patch
+new file mode 100644
+index 0000000000..dc0a67a1b7
+--- /dev/null
++++ b/package/apache/0003-CVS-2017-9798.patch
+@@ -0,0 +1,30 @@
++core: Disallow Methods' registration at run time (.htaccess), they may
++be used only if registered at init time (httpd.conf).
++
++Calling ap_method_register() in children processes is not the right scope
++since it won't be shared for all requests.
++
++git-svn-id: https://svn.apache.org/repos/asf/httpd/httpd/trunk@1807655 13f79535-47bb-0310-9956-ffa450edef68
++
++Fixes CVE-2017-9798: https://nvd.nist.gov/vuln/detail/CVE-2017-9798
++
++Downloaded from upstream repo:
++https://svn.apache.org/viewvc/httpd/httpd/branches/2.4.x/server/core.c?r1=1805223&r2=1807754&pathrev=1807754&view=patch
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++
++--- a/server/core.c	2017/08/16 16:50:29	1805223
+++++ b/server/core.c	2017/09/08 13:13:11	1807754
++@@ -2266,6 +2266,12 @@
++             /* method has not been registered yet, but resource restriction
++              * is always checked before method handling, so register it.
++              */
+++            if (cmd->pool == cmd->temp_pool) {
+++                /* In .htaccess, we can't globally register new methods. */
+++                return apr_psprintf(cmd->pool, "Could not register method '%s' "
+++                                   "for %s from .htaccess configuration",
+++                                    method, cmd->cmd->name);
+++            }
++             methnum = ap_method_register(cmd->pool,
++                                          apr_pstrdup(cmd->pool, method));
++         }
+diff --git a/package/bcusdk/0002-eibd-fix-endless-recursion-when-using-USB-backends.patch b/package/bcusdk/0002-eibd-fix-endless-recursion-when-using-USB-backends.patch
+new file mode 100644
+index 0000000000..3b90289c88
+--- /dev/null
++++ b/package/bcusdk/0002-eibd-fix-endless-recursion-when-using-USB-backends.patch
+@@ -0,0 +1,35 @@
++From 6bd1b4958e949d83468e053c34bf6c89d14d687a Mon Sep 17 00:00:00 2001
++From: Kurt Van Dijck <dev.kurt@vandijck-laurijssen.be>
++Date: Fri, 25 Aug 2017 23:01:14 +0200
++Subject: [PATCH] eibd: drop local clock_gettime in USB backends
++
++clock_gettime is defined locally, and calls pth_int_time, which
++in turn calls clock_gettime.
++The USB backend shouldn't overrule clock_gettime in the first place.
++This patch fixes this endless recursion by removing the local defition.
++
++Signed-off-by: Kurt Van Dijck <dev.kurt@vandijck-laurijssen.be>
++---
++ eibd/usb/linux_usbfs.c | 6 ------
++ 1 file changed, 6 deletions(-)
++
++diff --git a/eibd/usb/linux_usbfs.c b/eibd/usb/linux_usbfs.c
++index c3ec410..957b908 100644
++--- a/eibd/usb/linux_usbfs.c
+++++ b/eibd/usb/linux_usbfs.c
++@@ -52,12 +52,6 @@ int pthread_mutex_trylock(pthread_mutex_t *mutex)
++ 	return 0;
++ }
++ 
++-int clock_gettime(clockid_t clk_id, struct timespec *tp)
++-{
++-	pth_int_time (tp);
++-	return 0;
++-}
++-
++ /* sysfs vs usbfs:
++  * opening a usbfs node causes the device to be resumed, so we attempt to
++  * avoid this during enumeration.
++-- 
++1.8.5.rc3
++
+diff --git a/package/bind/bind.hash b/package/bind/bind.hash
+index 3a631def65..95362309e1 100644
+--- a/package/bind/bind.hash
++++ b/package/bind/bind.hash
+@@ -1,3 +1,3 @@
+-# Verified from http://ftp.isc.org/isc/bind9/9.11.1-P3/bind-9.11.1-P3.tar.gz.sha256.asc
+-sha256 52426e75432e46996dc90f24fca027805a341c38fbbb022b60dc9acd2677ccf4 bind-9.11.1-P3.tar.gz
++# Verified from http://ftp.isc.org/isc/bind9/9.11.2/bind-9.11.2.tar.gz.sha256.asc
++sha256 7f46ad8620f7c3b0ac375d7a5211b15677708fda84ce25d7aeb7222fe2e3c77a bind-9.11.2.tar.gz
+ sha256 d3906dfe153e2c48440d3ca1d5319f5e89b4b820cdfc5d0779c23d7ac2b175e9 COPYRIGHT
+diff --git a/package/bind/bind.mk b/package/bind/bind.mk
+index acc09119ce..4465a2f73c 100644
+--- a/package/bind/bind.mk
++++ b/package/bind/bind.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-BIND_VERSION = 9.11.1-P3
+-BIND_SITE = ftp://ftp.isc.org/isc/bind9/$(BIND_VERSION)
++BIND_VERSION = 9.11.2
++BIND_SITE = http://ftp.isc.org/isc/bind9/$(BIND_VERSION)
+ # bind does not support parallel builds.
+ BIND_MAKE = $(MAKE1)
+ BIND_INSTALL_STAGING = YES
+@@ -24,6 +24,7 @@ BIND_CONF_ENV = \
+ 	BUILD_CC="$(TARGET_CC)" \
+ 	BUILD_CFLAGS="$(TARGET_CFLAGS)"
+ BIND_CONF_OPTS = \
++	--without-lmdb \
+ 	--with-libjson=no \
+ 	--with-randomdev=/dev/urandom \
+ 	--enable-epoll \
+diff --git a/package/binutils/2.25.1/131-xtensa-fix-memory-corruption-by-broken-sysregs.patch b/package/binutils/2.25.1/131-xtensa-fix-memory-corruption-by-broken-sysregs.patch
+new file mode 100644
+index 0000000000..30103ee05e
+--- /dev/null
++++ b/package/binutils/2.25.1/131-xtensa-fix-memory-corruption-by-broken-sysregs.patch
+@@ -0,0 +1,42 @@
++From 3c8788dbb70b40e737d4b8e30cab81406e5c5091 Mon Sep 17 00:00:00 2001
++From: Max Filippov <jcmvbkbc@gmail.com>
++Date: Wed, 2 Aug 2017 00:36:05 -0700
++Subject: [PATCH] xtensa: fix memory corruption by broken sysregs
++
++In some xtensa configurations there may be system/user registers in
++xtensa-modules with negative index. ISA initialization for such config
++may clobber heap and result in program termination.
++Don't update lookup table entries for register with negative indices.
++They are not directly accessible via RSR/WSR/XSR or RUR/WUR, so this
++change should not affect processing of valid assembly/binary code.
++
++bfd/
++2017-08-02  Max Filippov  <jcmvbkbc@gmail.com>
++
++	* xtensa-isa.c (xtensa_isa_init): Don't update lookup table
++	entries for sysregs with negative indices.
++
++Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
++---
++Backported from: d84ed528d4817b0ff854006b65a9f6ec75f0407a
++
++ bfd/xtensa-isa.c | 3 ++-
++ 1 file changed, 2 insertions(+), 1 deletion(-)
++
++diff --git a/bfd/xtensa-isa.c b/bfd/xtensa-isa.c
++index 8da75bea8109..8c6ee88fdeae 100644
++--- a/bfd/xtensa-isa.c
+++++ b/bfd/xtensa-isa.c
++@@ -292,7 +292,8 @@ xtensa_isa_init (xtensa_isa_status *errno_p, char **error_msg_p)
++       xtensa_sysreg_internal *sreg = &isa->sysregs[n];
++       is_user = sreg->is_user;
++ 
++-      isa->sysreg_table[is_user][sreg->number] = n;
+++      if (sreg->number >= 0)
+++	isa->sysreg_table[is_user][sreg->number] = n;
++     }
++ 
++   /* Set up the interface lookup table.  */
++-- 
++2.1.4
++
+diff --git a/package/binutils/2.26.1/0131-xtensa-fix-memory-corruption-by-broken-sysregs.patch b/package/binutils/2.26.1/0131-xtensa-fix-memory-corruption-by-broken-sysregs.patch
+new file mode 100644
+index 0000000000..30103ee05e
+--- /dev/null
++++ b/package/binutils/2.26.1/0131-xtensa-fix-memory-corruption-by-broken-sysregs.patch
+@@ -0,0 +1,42 @@
++From 3c8788dbb70b40e737d4b8e30cab81406e5c5091 Mon Sep 17 00:00:00 2001
++From: Max Filippov <jcmvbkbc@gmail.com>
++Date: Wed, 2 Aug 2017 00:36:05 -0700
++Subject: [PATCH] xtensa: fix memory corruption by broken sysregs
++
++In some xtensa configurations there may be system/user registers in
++xtensa-modules with negative index. ISA initialization for such config
++may clobber heap and result in program termination.
++Don't update lookup table entries for register with negative indices.
++They are not directly accessible via RSR/WSR/XSR or RUR/WUR, so this
++change should not affect processing of valid assembly/binary code.
++
++bfd/
++2017-08-02  Max Filippov  <jcmvbkbc@gmail.com>
++
++	* xtensa-isa.c (xtensa_isa_init): Don't update lookup table
++	entries for sysregs with negative indices.
++
++Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
++---
++Backported from: d84ed528d4817b0ff854006b65a9f6ec75f0407a
++
++ bfd/xtensa-isa.c | 3 ++-
++ 1 file changed, 2 insertions(+), 1 deletion(-)
++
++diff --git a/bfd/xtensa-isa.c b/bfd/xtensa-isa.c
++index 8da75bea8109..8c6ee88fdeae 100644
++--- a/bfd/xtensa-isa.c
+++++ b/bfd/xtensa-isa.c
++@@ -292,7 +292,8 @@ xtensa_isa_init (xtensa_isa_status *errno_p, char **error_msg_p)
++       xtensa_sysreg_internal *sreg = &isa->sysregs[n];
++       is_user = sreg->is_user;
++ 
++-      isa->sysreg_table[is_user][sreg->number] = n;
+++      if (sreg->number >= 0)
+++	isa->sysreg_table[is_user][sreg->number] = n;
++     }
++ 
++   /* Set up the interface lookup table.  */
++-- 
++2.1.4
++
+diff --git a/package/binutils/2.27/0131-xtensa-fix-memory-corruption-by-broken-sysregs.patch b/package/binutils/2.27/0131-xtensa-fix-memory-corruption-by-broken-sysregs.patch
+new file mode 100644
+index 0000000000..30103ee05e
+--- /dev/null
++++ b/package/binutils/2.27/0131-xtensa-fix-memory-corruption-by-broken-sysregs.patch
+@@ -0,0 +1,42 @@
++From 3c8788dbb70b40e737d4b8e30cab81406e5c5091 Mon Sep 17 00:00:00 2001
++From: Max Filippov <jcmvbkbc@gmail.com>
++Date: Wed, 2 Aug 2017 00:36:05 -0700
++Subject: [PATCH] xtensa: fix memory corruption by broken sysregs
++
++In some xtensa configurations there may be system/user registers in
++xtensa-modules with negative index. ISA initialization for such config
++may clobber heap and result in program termination.
++Don't update lookup table entries for register with negative indices.
++They are not directly accessible via RSR/WSR/XSR or RUR/WUR, so this
++change should not affect processing of valid assembly/binary code.
++
++bfd/
++2017-08-02  Max Filippov  <jcmvbkbc@gmail.com>
++
++	* xtensa-isa.c (xtensa_isa_init): Don't update lookup table
++	entries for sysregs with negative indices.
++
++Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
++---
++Backported from: d84ed528d4817b0ff854006b65a9f6ec75f0407a
++
++ bfd/xtensa-isa.c | 3 ++-
++ 1 file changed, 2 insertions(+), 1 deletion(-)
++
++diff --git a/bfd/xtensa-isa.c b/bfd/xtensa-isa.c
++index 8da75bea8109..8c6ee88fdeae 100644
++--- a/bfd/xtensa-isa.c
+++++ b/bfd/xtensa-isa.c
++@@ -292,7 +292,8 @@ xtensa_isa_init (xtensa_isa_status *errno_p, char **error_msg_p)
++       xtensa_sysreg_internal *sreg = &isa->sysregs[n];
++       is_user = sreg->is_user;
++ 
++-      isa->sysreg_table[is_user][sreg->number] = n;
+++      if (sreg->number >= 0)
+++	isa->sysreg_table[is_user][sreg->number] = n;
++     }
++ 
++   /* Set up the interface lookup table.  */
++-- 
++2.1.4
++
+diff --git a/package/bluez5_utils/0002-sdp-Fix-Out-of-bounds-heap-read-in-service_search_at.patch b/package/bluez5_utils/0002-sdp-Fix-Out-of-bounds-heap-read-in-service_search_at.patch
+new file mode 100644
+index 0000000000..a73c372e68
+--- /dev/null
++++ b/package/bluez5_utils/0002-sdp-Fix-Out-of-bounds-heap-read-in-service_search_at.patch
+@@ -0,0 +1,29 @@
++From 9e009647b14e810e06626dde7f1bb9ea3c375d09 Mon Sep 17 00:00:00 2001
++From: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
++Date: Wed, 13 Sep 2017 10:01:40 +0300
++Subject: [PATCH] sdp: Fix Out-of-bounds heap read in service_search_attr_req
++ function
++
++Check if there is enough data to continue otherwise return an error.
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/sdpd-request.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/src/sdpd-request.c b/src/sdpd-request.c
++index 1eefdce1a..318d04467 100644
++--- a/src/sdpd-request.c
+++++ b/src/sdpd-request.c
++@@ -917,7 +917,7 @@ static int service_search_attr_req(sdp_req_t *req, sdp_buf_t *buf)
++ 	} else {
++ 		/* continuation State exists -> get from cache */
++ 		sdp_buf_t *pCache = sdp_get_cached_rsp(cstate);
++-		if (pCache) {
+++		if (pCache && cstate->cStateValue.maxBytesSent < pCache->data_size) {
++ 			uint16_t sent = MIN(max, pCache->data_size - cstate->cStateValue.maxBytesSent);
++ 			pResponse = pCache->data;
++ 			memcpy(buf->data, pResponse + cstate->cStateValue.maxBytesSent, sent);
++-- 
++2.11.0
++
+diff --git a/package/botan/botan.hash b/package/botan/botan.hash
+index 3da5f690ce..3d46a13584 100644
+--- a/package/botan/botan.hash
++++ b/package/botan/botan.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated after checking pgp signature
+-sha256	23ec973d4b4a4fe04f490d409e08ac5638afe3aa09acd7f520daaff38ba19b90  Botan-1.10.13.tgz
++sha256 6c5472401d06527e87adcb53dd270f3c9b1fb688703b04dd7a7cfb86289efe52  Botan-1.10.16.tgz
+diff --git a/package/botan/botan.mk b/package/botan/botan.mk
+index fc8fa698e4..282955245b 100644
+--- a/package/botan/botan.mk
++++ b/package/botan/botan.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-BOTAN_VERSION = 1.10.13
++BOTAN_VERSION = 1.10.16
+ BOTAN_SOURCE = Botan-$(BOTAN_VERSION).tgz
+ BOTAN_SITE = http://botan.randombit.net/releases
+ BOTAN_LICENSE = BSD-2c
+diff --git a/package/cmake/cmake.mk b/package/cmake/cmake.mk
+index bc555092c2..69ddbb9b43 100644
+--- a/package/cmake/cmake.mk
++++ b/package/cmake/cmake.mk
+@@ -46,6 +46,7 @@ define HOST_CMAKE_CONFIGURE_CMDS
+ 			-DCMAKE_C_FLAGS="$(HOST_CMAKE_CFLAGS)" \
+ 			-DCMAKE_CXX_FLAGS="$(HOST_CMAKE_CXXFLAGS)" \
+ 			-DCMAKE_EXE_LINKER_FLAGS="$(HOST_LDFLAGS)" \
++			-DCMAKE_USE_OPENSSL:BOOL=OFF \
+ 			-DBUILD_CursesDialog=OFF \
+ 	)
+ endef
+diff --git a/package/connman/connman.hash b/package/connman/connman.hash
+index f27af3deac..c822bb1fe4 100644
+--- a/package/connman/connman.hash
++++ b/package/connman/connman.hash
+@@ -1,2 +1,2 @@
+ # From https://www.kernel.org/pub/linux/network/connman/sha256sums.asc
+-sha256	bc8946036fa70124d663136f9f6b6238d897ca482782df907b07a428b09df5a0	connman-1.33.tar.xz
++sha256	66d7deb98371545c6e417239a9b3b3e3201c1529d08eedf40afbc859842cf2aa	connman-1.35.tar.xz
+diff --git a/package/connman/connman.mk b/package/connman/connman.mk
+index f7c9f2318f..741da9be73 100644
+--- a/package/connman/connman.mk
++++ b/package/connman/connman.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-CONNMAN_VERSION = 1.33
++CONNMAN_VERSION = 1.35
+ CONNMAN_SOURCE = connman-$(CONNMAN_VERSION).tar.xz
+ CONNMAN_SITE = $(BR2_KERNEL_MIRROR)/linux/network/connman
+ CONNMAN_DEPENDENCIES = libglib2 dbus iptables
+diff --git a/package/dbus/0001-config-loader-expat-Tell-Expat-not-to-defend-against.patch b/package/dbus/0001-config-loader-expat-Tell-Expat-not-to-defend-against.patch
+new file mode 100644
+index 0000000000..fd9e01dad5
+--- /dev/null
++++ b/package/dbus/0001-config-loader-expat-Tell-Expat-not-to-defend-against.patch
+@@ -0,0 +1,78 @@
++From 1252dc1d1f465b8ab6b36ff7252e395e66a040cf Mon Sep 17 00:00:00 2001
++From: Simon McVittie <smcv@debian.org>
++Date: Fri, 21 Jul 2017 10:46:39 +0100
++Subject: [PATCH 1/2] config-loader-expat: Tell Expat not to defend against
++ hash collisions
++
++By default, Expat uses cryptographic-quality random numbers as a salt for
++its hash algorithm, and since 2.2.1 it gets them from the getrandom
++syscall on Linux. That syscall refuses to return any entropy until the
++kernel's CSPRNG (random pool) has been initialized. Unfortunately, this
++can take as long as 40 seconds on embedded devices with few entropy
++sources, which is too long: if the system dbus-daemon blocks for that
++length of time, important D-Bus clients like systemd and systemd-logind
++time out and fail to connect to it.
++
++We're parsing small configuration files here, and we trust them
++completely, so we don't need to defend against hash collisions: nobody
++is going to be crafting them to cause pathological performance.
++
++Bug: https://bugs.freedesktop.org/show_bug.cgi?id=101858
++Signed-off-by: Simon McVittie <smcv@debian.org>
++Tested-by: Christopher Hewitt <hewitt@ieee.org>
++Reviewed-by: Philip Withnall <withnall@endlessm.com>
++
++Upstream commit 1252dc1d1f465b8ab6b36ff7252e395e66a040cf
++Signed-off-by: Marcus Hoffmann <m.hoffmann@cartelsol.com>
++---
++ bus/config-loader-expat.c | 14 ++++++++++++++
++ configure.ac              |  8 ++++++++
++ 2 files changed, 22 insertions(+)
++
++diff --git a/bus/config-loader-expat.c b/bus/config-loader-expat.c
++index b571fda3..27cbe2d0 100644
++--- a/bus/config-loader-expat.c
+++++ b/bus/config-loader-expat.c
++@@ -203,6 +203,20 @@ bus_config_load (const DBusString      *file,
++       goto failed;
++     }
++ 
+++  /* We do not need protection against hash collisions (CVE-2012-0876)
+++   * because we are only parsing trusted XML; and if we let Expat block
+++   * waiting for the CSPRNG to be initialized, as it does by default to
+++   * defeat CVE-2012-0876, it can cause timeouts during early boot on
+++   * entropy-starved embedded devices.
+++   *
+++   * TODO: When Expat gets a more explicit API for this than
+++   * XML_SetHashSalt, check for that too, and use it preferentially.
+++   * https://github.com/libexpat/libexpat/issues/91 */
+++#if defined(HAVE_XML_SETHASHSALT)
+++  /* Any nonzero number will do. https://xkcd.com/221/ */
+++  XML_SetHashSalt (expat, 4);
+++#endif
+++
++   if (!_dbus_string_get_dirname (file, &dirname))
++     {
++       dbus_set_error (error, DBUS_ERROR_NO_MEMORY, NULL);
++diff --git a/configure.ac b/configure.ac
++index 52da11fb..c4022ed7 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -938,6 +938,14 @@ XML_CFLAGS=
++ AC_SUBST([XML_CFLAGS])
++ AC_SUBST([XML_LIBS])
++ 
+++save_cflags="$CFLAGS"
+++save_libs="$LIBS"
+++CFLAGS="$CFLAGS $XML_CFLAGS"
+++LIBS="$LIBS $XML_LIBS"
+++AC_CHECK_FUNCS([XML_SetHashSalt])
+++CFLAGS="$save_cflags"
+++LIBS="$save_libs"
+++
++ # Thread lib detection
++ AC_ARG_VAR([THREAD_LIBS])
++ save_libs="$LIBS"
++-- 
++2.11.0
++
+diff --git a/package/dbus/dbus.mk b/package/dbus/dbus.mk
+index 66b90bca81..09e261e4c8 100644
+--- a/package/dbus/dbus.mk
++++ b/package/dbus/dbus.mk
+@@ -7,6 +7,8 @@
+ DBUS_VERSION = 1.10.16
+ DBUS_SITE = http://dbus.freedesktop.org/releases/dbus
+ DBUS_LICENSE = AFLv2.1 or GPLv2+ (library, tools), GPLv2+ (tools)
++# 0001-config-loader-expat-Tell-Expat-not-to-defend-against.patch
++DBUS_AUTORECONF = YES
+ DBUS_LICENSE_FILES = COPYING
+ DBUS_INSTALL_STAGING = YES
+ 
+diff --git a/package/dialog/dialog.mk b/package/dialog/dialog.mk
+index f207f75704..131877095e 100644
+--- a/package/dialog/dialog.mk
++++ b/package/dialog/dialog.mk
+@@ -6,7 +6,7 @@
+ 
+ DIALOG_VERSION = 1.2-20150125
+ DIALOG_SOURCE = dialog-$(DIALOG_VERSION).tgz
+-DIALOG_SITE = ftp://invisible-island.net/dialog
++DIALOG_SITE = ftp://ftp.invisible-island.net/dialog
+ DIALOG_CONF_OPTS = --with-ncurses --with-curses-dir=$(STAGING_DIR)/usr \
+ 	--disable-rpath-hack
+ DIALOG_DEPENDENCIES = host-pkgconf ncurses
+diff --git a/package/e2fsprogs/0002-include-sys-sysmacros.h-as-needed.patch b/package/e2fsprogs/0002-include-sys-sysmacros.h-as-needed.patch
+new file mode 100644
+index 0000000000..c58fcb3217
+--- /dev/null
++++ b/package/e2fsprogs/0002-include-sys-sysmacros.h-as-needed.patch
+@@ -0,0 +1,129 @@
++From 3fb715b55426875902dfef3056b2cf7335953178 Mon Sep 17 00:00:00 2001
++From: Mike Frysinger <vapier@gentoo.org>
++Date: Fri, 19 May 2017 13:25:59 -0400
++Subject: [PATCH] include sys/sysmacros.h as needed
++
++The minor/major/makedev macros are not entirely standard.  glibc has had
++the definitions in sys/sysmacros.h since the start, and wants to move away
++from always defining them implicitly via sys/types.h (as this pollutes the
++namespace in violation of POSIX).  Other C libraries have already dropped
++them.  Since the configure script already checks for this header, use that
++to pull in the header in files that use these macros.
++
++Signed-off-by: Mike Frysinger <vapier@gentoo.org>
++Signed-off-by: Theodore Ts'o <tytso@mit.edu>
++
++Upstream commit 3fb715b55426875902dfef3056b2cf7335953178
++Signed-off-by: Arnout Vandecappelle (Essensium/Mind) <arnout@mind.be>
++---
++ debugfs/debugfs.c      | 3 +++
++ lib/blkid/devname.c    | 3 +++
++ lib/blkid/devno.c      | 3 +++
++ lib/ext2fs/finddev.c   | 3 +++
++ lib/ext2fs/ismounted.c | 3 +++
++ misc/create_inode.c    | 4 ++++
++ misc/mk_hugefiles.c    | 3 +++
++ 7 files changed, 22 insertions(+)
++
++diff --git a/debugfs/debugfs.c b/debugfs/debugfs.c
++index 059ddc39..453f5b52 100644
++--- a/debugfs/debugfs.c
+++++ b/debugfs/debugfs.c
++@@ -26,6 +26,9 @@ extern char *optarg;
++ #include <errno.h>
++ #endif
++ #include <fcntl.h>
+++#ifdef HAVE_SYS_SYSMACROS_H
+++#include <sys/sysmacros.h>
+++#endif
++ 
++ #include "debugfs.h"
++ #include "uuid/uuid.h"
++diff --git a/lib/blkid/devname.c b/lib/blkid/devname.c
++index 3e2efa9d..671e781f 100644
++--- a/lib/blkid/devname.c
+++++ b/lib/blkid/devname.c
++@@ -36,6 +36,9 @@
++ #if HAVE_SYS_MKDEV_H
++ #include <sys/mkdev.h>
++ #endif
+++#ifdef HAVE_SYS_SYSMACROS_H
+++#include <sys/sysmacros.h>
+++#endif
++ #include <time.h>
++ 
++ #include "blkidP.h"
++diff --git a/lib/blkid/devno.c b/lib/blkid/devno.c
++index aa6eb907..480030f2 100644
++--- a/lib/blkid/devno.c
+++++ b/lib/blkid/devno.c
++@@ -31,6 +31,9 @@
++ #if HAVE_SYS_MKDEV_H
++ #include <sys/mkdev.h>
++ #endif
+++#ifdef HAVE_SYS_SYSMACROS_H
+++#include <sys/sysmacros.h>
+++#endif
++ 
++ #include "blkidP.h"
++ 
++diff --git a/lib/ext2fs/finddev.c b/lib/ext2fs/finddev.c
++index 311608de..62fa0dbe 100644
++--- a/lib/ext2fs/finddev.c
+++++ b/lib/ext2fs/finddev.c
++@@ -31,6 +31,9 @@
++ #if HAVE_SYS_MKDEV_H
++ #include <sys/mkdev.h>
++ #endif
+++#ifdef HAVE_SYS_SYSMACROS_H
+++#include <sys/sysmacros.h>
+++#endif
++ 
++ #include "ext2_fs.h"
++ #include "ext2fs.h"
++diff --git a/lib/ext2fs/ismounted.c b/lib/ext2fs/ismounted.c
++index bcac0f15..7d524715 100644
++--- a/lib/ext2fs/ismounted.c
+++++ b/lib/ext2fs/ismounted.c
++@@ -49,6 +49,9 @@
++ #if HAVE_SYS_TYPES_H
++ #include <sys/types.h>
++ #endif
+++#ifdef HAVE_SYS_SYSMACROS_H
+++#include <sys/sysmacros.h>
+++#endif
++ 
++ #include "ext2_fs.h"
++ #include "ext2fs.h"
++diff --git a/misc/create_inode.c b/misc/create_inode.c
++index ae22ff6f..8ce3fafa 100644
++--- a/misc/create_inode.c
+++++ b/misc/create_inode.c
++@@ -22,6 +22,10 @@
++ #include <attr/xattr.h>
++ #endif
++ #include <sys/ioctl.h>
+++#ifdef HAVE_SYS_SYSMACROS_H
+++#include <sys/sysmacros.h>
+++#endif
+++
++ #include <ext2fs/ext2fs.h>
++ #include <ext2fs/ext2_types.h>
++ #include <ext2fs/fiemap.h>
++diff --git a/misc/mk_hugefiles.c b/misc/mk_hugefiles.c
++index 049c6f41..5882394d 100644
++--- a/misc/mk_hugefiles.c
+++++ b/misc/mk_hugefiles.c
++@@ -35,6 +35,9 @@ extern int optind;
++ #include <sys/ioctl.h>
++ #include <sys/types.h>
++ #include <sys/stat.h>
+++#ifdef HAVE_SYS_SYSMACROS_H
+++#include <sys/sysmacros.h>
+++#endif
++ #include <libgen.h>
++ #include <limits.h>
++ #include <blkid/blkid.h>
++-- 
++2.13.3
++
+diff --git a/package/faad2/0001-getopt-fix-strncmp-declaration.patch b/package/faad2/0001-getopt-fix-strncmp-declaration.patch
+new file mode 100644
+index 0000000000..0e5f27e52a
+--- /dev/null
++++ b/package/faad2/0001-getopt-fix-strncmp-declaration.patch
+@@ -0,0 +1,40 @@
++From 6787914efad562e4097a153988109c5c7158abf7 Mon Sep 17 00:00:00 2001
++From: Baruch Siach <baruch@tkos.co.il>
++Date: Wed, 16 Aug 2017 13:35:57 +0300
++Subject: [PATCH] getopt: fix strncmp() declaration
++
++The strncmp() declaration does not conform with the standard as to the
++type of the 'n' parameter. Fix this to avoid the following build failure
++with musl libc:
++
++n file included from main.c:61:0:
++getopt.c:175:13: error: conflicting types for 'strncmp'
++ extern int  strncmp(const char *s1, const char *s2, unsigned int n);
++             ^~~~~~~
++In file included from main.c:49:0:
++.../host/x86_64-buildroot-linux-musl/sysroot/usr/include/string.h:38:5: note: previous declaration of 'strncmp' was here
++ int strncmp (const char *, const char *, size_t);
++     ^~~~~~~
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: https://sourceforge.net/p/faac/bugs/217/
++
++ frontend/getopt.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/frontend/getopt.c b/frontend/getopt.c
++index 185d49b804dd..40c7a2242551 100644
++--- a/frontend/getopt.c
+++++ b/frontend/getopt.c
++@@ -172,7 +172,7 @@ static enum
++ #if __STDC__ || defined(PROTO)
++ extern char *getenv(const char *name);
++ extern int  strcmp (const char *s1, const char *s2);
++-extern int  strncmp(const char *s1, const char *s2, unsigned int n);
+++extern int  strncmp(const char *s1, const char *s2, size_t n);
++ 
++ static int my_strlen(const char *s);
++ static char *my_index (const char *str, int chr);
++-- 
++2.14.1
++
+diff --git a/package/faad2/faad2.hash b/package/faad2/faad2.hash
+index 691645b7c0..d298e909a9 100644
+--- a/package/faad2/faad2.hash
++++ b/package/faad2/faad2.hash
+@@ -1,4 +1,4 @@
+-# From http://sourceforge.net/projects/faac/files/faad2-src/faad2-2.7/ (used by upstream):
+-sha1	80eaaa5cc576c35dd28863767b795c50cbcc0511  faad2-2.7.tar.gz
++# From http://sourceforge.net/projects/faac/files/faad2-src/faad2-2.8.0/ (used by upstream):
++sha1	a5caa71cd915acd502d96cba56f38296277f2350  faad2-2.8.1.tar.bz2
+ # Locally computed
+-sha256  ee26ed1e177c0cd8fa8458a481b14a0b24ca0b51468c8b4c8b676fd3ceccd330  faad2-2.7.tar.gz
++sha256  f4042496f6b0a60f5ded6acd11093230044ef8a2fd965360c1bbd5b58780933d  faad2-2.8.1.tar.bz2
+diff --git a/package/faad2/faad2.mk b/package/faad2/faad2.mk
+index 8c4fc1aae2..67c5293310 100644
+--- a/package/faad2/faad2.mk
++++ b/package/faad2/faad2.mk
+@@ -4,10 +4,14 @@
+ #
+ ################################################################################
+ 
+-FAAD2_VERSION = 2.7
+-FAAD2_SITE = http://downloads.sourceforge.net/project/faac/faad2-src/faad2-$(FAAD2_VERSION)
++FAAD2_VERSION_MAJOR = 2.8
++FAAD2_VERSION = $(FAAD2_VERSION_MAJOR).1
++FAAD2_SITE = http://downloads.sourceforge.net/project/faac/faad2-src/faad2-$(FAAD2_VERSION_MAJOR).0
++FAAD2_SOURCE = faad2-$(FAAD2_VERSION).tar.bz2
+ FAAD2_LICENSE = GPLv2
+ FAAD2_LICENSE_FILES = COPYING
++# No configure script in upstream tarball
++FAAD2_AUTORECONF = YES
+ # frontend/faad calls frexp()
+ FAAD2_CONF_ENV = LIBS=-lm
+ FAAD2_INSTALL_STAGING = YES
+diff --git a/package/fakeroot/0002-communicate-check-return-status-of-msgrcv.patch b/package/fakeroot/0002-communicate-check-return-status-of-msgrcv.patch
+new file mode 100644
+index 0000000000..3bb4f9701f
+--- /dev/null
++++ b/package/fakeroot/0002-communicate-check-return-status-of-msgrcv.patch
+@@ -0,0 +1,46 @@
++From a853f21633693f9eefc4949660253a5328d2d2f3 Mon Sep 17 00:00:00 2001
++From: "Yann E. MORIN" <yann.morin.1998@free.fr>
++Date: Sun, 13 Aug 2017 23:21:54 +0200
++Subject: [PATCH 1/1] communicate: check return status of msgrcv()
++
++msgrcv can return with -1 to indicate an error condition.
++One such error is to have been interrupted by a signal.
++
++Being interrupted by a signal is very rare in this code, except in a
++very special condition: a highly-parallel (1000 jobs!) mksquashfs on
++a filesystem with extended attributes, where we see errors like (those
++are mksquashfs errors):
++    llistxattr for titi/603/883 failed in read_attrs, because Unknown
++    error 1716527536
++
++See: https://bugs.busybox.net/show_bug.cgi?id=10141
++
++In this case, we just have to retry the call to msgrcv().
++
++Signed-off-by: "Yann E. MORIN" <yann.morin.1998@free.fr>
++---
++ communicate.c | 5 ++++-
++ 1 file changed, 4 insertions(+), 1 deletion(-)
++
++diff --git a/communicate.c b/communicate.c
++index 293f404..787bb63 100644
++--- a/communicate.c
+++++ b/communicate.c
++@@ -553,10 +553,13 @@ void send_get_fakem(struct fake_msg *buf)
++       l=msgrcv(msg_get,
++                (struct my_msgbuf*)buf,
++                sizeof(*buf)-sizeof(buf->mtype),0,0);
++-    while((buf->serial!=serial)||buf->pid!=pid);
+++    while(((l==-1)&&(errno==EINTR))||(buf->serial!=serial)||buf->pid!=pid);
++ 
++     semaphore_down();
++ 
+++    if(l==-1)
+++      buf->xattr.flags_rc=errno;
+++
++     /*
++     (nah, may be wrong, due to allignment)
++ 
++-- 
++2.11.0
++
+diff --git a/package/ffmpeg/ffmpeg.hash b/package/ffmpeg/ffmpeg.hash
+index 6adf7e440a..dcfc8aa8c6 100644
+--- a/package/ffmpeg/ffmpeg.hash
++++ b/package/ffmpeg/ffmpeg.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated
+-sha256 54ce502aca10b7e6059f19220ea2f68fa0c9c4c4d255ae13e615f08f0c94dcc5  ffmpeg-3.2.3.tar.xz
++sha256 42e7362692318afc666f14378dd445effa9a1b09787504a6ab5811fe442674cd  ffmpeg-3.2.8.tar.xz
+diff --git a/package/ffmpeg/ffmpeg.mk b/package/ffmpeg/ffmpeg.mk
+index 9c30e8f406..9b287c7aaa 100644
+--- a/package/ffmpeg/ffmpeg.mk
++++ b/package/ffmpeg/ffmpeg.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-FFMPEG_VERSION = 3.2.3
++FFMPEG_VERSION = 3.2.8
+ FFMPEG_SOURCE = ffmpeg-$(FFMPEG_VERSION).tar.xz
+ FFMPEG_SITE = http://ffmpeg.org/releases
+ FFMPEG_INSTALL_STAGING = YES
+diff --git a/package/file/file.hash b/package/file/file.hash
+index 9a4c9f1197..fee516c8e2 100644
+--- a/package/file/file.hash
++++ b/package/file/file.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated
+-sha256 ea661277cd39bf8f063d3a83ee875432cc3680494169f952787e002bdd3884c0  file-5.29.tar.gz
++sha256 8639dc4d1b21e232285cd483604afc4a6ee810710e00e579dbe9591681722b50  file-5.32.tar.gz
+diff --git a/package/file/file.mk b/package/file/file.mk
+index 39d1781ff0..26d3c5f208 100644
+--- a/package/file/file.mk
++++ b/package/file/file.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-FILE_VERSION = 5.29
++FILE_VERSION = 5.32
+ FILE_SITE = ftp://ftp.astron.com/pub/file
+ FILE_DEPENDENCIES = host-file zlib
+ HOST_FILE_DEPENDENCIES = host-zlib
+diff --git a/package/flashrom/flashrom.mk b/package/flashrom/flashrom.mk
+index 7ebda338f4..c155d4041e 100644
+--- a/package/flashrom/flashrom.mk
++++ b/package/flashrom/flashrom.mk
+@@ -12,7 +12,8 @@ FLASHROM_LICENSE = GPLv2+
+ FLASHROM_LICENSE_FILES = COPYING
+ 
+ define FLASHROM_BUILD_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) $(TARGET_CONFIGURE_OPTS) -C $(@D)
++	$(TARGET_MAKE_ENV) $(MAKE) $(TARGET_CONFIGURE_OPTS) \
++		CFLAGS="$(TARGET_CFLAGS) -DHAVE_STRNLEN" -C $(@D)
+ endef
+ 
+ define FLASHROM_INSTALL_TARGET_CMDS
+diff --git a/package/gcc/4.8.5/875-xtensa-fix-PR-target-82181.patch b/package/gcc/4.8.5/875-xtensa-fix-PR-target-82181.patch
+new file mode 100644
+index 0000000000..a6d1df997c
+--- /dev/null
++++ b/package/gcc/4.8.5/875-xtensa-fix-PR-target-82181.patch
+@@ -0,0 +1,31 @@
++From 65a3028024a5963d9b988d70fe7ebe116c731310 Mon Sep 17 00:00:00 2001
++From: jcmvbkbc <jcmvbkbc@138bc75d-0d04-0410-961f-82ee72b054a4>
++Date: Mon, 11 Sep 2017 21:53:38 +0000
++Subject: [PATCH] xtensa: fix PR target/82181
++
++2017-09-11  Max Filippov  <jcmvbkbc@gmail.com>
++gcc/
++	Backport from mainline
++	* config/xtensa/xtensa.c (xtensa_mem_offset): Check that both
++	words of DImode object are reachable by xtensa_uimm8x4 access.
++
++Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
++---
++ gcc/config/xtensa/xtensa.c | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/gcc/config/xtensa/xtensa.c b/gcc/config/xtensa/xtensa.c
++index f08854729f50..4b94179636e0 100644
++--- a/gcc/config/xtensa/xtensa.c
+++++ b/gcc/config/xtensa/xtensa.c
++@@ -599,6 +599,7 @@ xtensa_mem_offset (unsigned v, enum machine_mode mode)
++     case HImode:
++       return xtensa_uimm8x2 (v);
++ 
+++    case DImode:
++     case DFmode:
++       return (xtensa_uimm8x4 (v) && xtensa_uimm8x4 (v + 4));
++ 
++-- 
++2.1.4
++
+diff --git a/package/gcc/4.9.4/875-xtensa-fix-PR-target-82181.patch b/package/gcc/4.9.4/875-xtensa-fix-PR-target-82181.patch
+new file mode 100644
+index 0000000000..3d7f8c1081
+--- /dev/null
++++ b/package/gcc/4.9.4/875-xtensa-fix-PR-target-82181.patch
+@@ -0,0 +1,31 @@
++From 672910e3d1215b781cf0e4757e473f6a25ebf756 Mon Sep 17 00:00:00 2001
++From: jcmvbkbc <jcmvbkbc@138bc75d-0d04-0410-961f-82ee72b054a4>
++Date: Mon, 11 Sep 2017 21:53:38 +0000
++Subject: [PATCH] xtensa: fix PR target/82181
++
++2017-09-11  Max Filippov  <jcmvbkbc@gmail.com>
++gcc/
++	Backport from mainline
++	* config/xtensa/xtensa.c (xtensa_mem_offset): Check that both
++	words of DImode object are reachable by xtensa_uimm8x4 access.
++
++Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
++---
++ gcc/config/xtensa/xtensa.c | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/gcc/config/xtensa/xtensa.c b/gcc/config/xtensa/xtensa.c
++index 67b369f015ad..3d1d981f885d 100644
++--- a/gcc/config/xtensa/xtensa.c
+++++ b/gcc/config/xtensa/xtensa.c
++@@ -612,6 +612,7 @@ xtensa_mem_offset (unsigned v, enum machine_mode mode)
++     case HImode:
++       return xtensa_uimm8x2 (v);
++ 
+++    case DImode:
++     case DFmode:
++       return (xtensa_uimm8x4 (v) && xtensa_uimm8x4 (v + 4));
++ 
++-- 
++2.1.4
++
+diff --git a/package/gcc/5.4.0/877-xtensa-fix-PR-target-82181.patch b/package/gcc/5.4.0/877-xtensa-fix-PR-target-82181.patch
+new file mode 100644
+index 0000000000..ed91d22e56
+--- /dev/null
++++ b/package/gcc/5.4.0/877-xtensa-fix-PR-target-82181.patch
+@@ -0,0 +1,31 @@
++From 329c471661493e48e0fc65fa6c17ef86517483ed Mon Sep 17 00:00:00 2001
++From: jcmvbkbc <jcmvbkbc@138bc75d-0d04-0410-961f-82ee72b054a4>
++Date: Mon, 11 Sep 2017 21:53:38 +0000
++Subject: [PATCH] xtensa: fix PR target/82181
++
++2017-09-11  Max Filippov  <jcmvbkbc@gmail.com>
++gcc/
++	Backport from mainline
++	* config/xtensa/xtensa.c (xtensa_mem_offset): Check that both
++	words of DImode object are reachable by xtensa_uimm8x4 access.
++
++Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
++---
++ gcc/config/xtensa/xtensa.c | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/gcc/config/xtensa/xtensa.c b/gcc/config/xtensa/xtensa.c
++index 36ab1e370853..bf02fceb416e 100644
++--- a/gcc/config/xtensa/xtensa.c
+++++ b/gcc/config/xtensa/xtensa.c
++@@ -637,6 +637,7 @@ xtensa_mem_offset (unsigned v, machine_mode mode)
++     case HImode:
++       return xtensa_uimm8x2 (v);
++ 
+++    case DImode:
++     case DFmode:
++       return (xtensa_uimm8x4 (v) && xtensa_uimm8x4 (v + 4));
++ 
++-- 
++2.1.4
++
+diff --git a/package/gcc/6.3.0/872-xtensa-fix-PR-target-82181.patch b/package/gcc/6.3.0/872-xtensa-fix-PR-target-82181.patch
+new file mode 100644
+index 0000000000..c16feee1e7
+--- /dev/null
++++ b/package/gcc/6.3.0/872-xtensa-fix-PR-target-82181.patch
+@@ -0,0 +1,31 @@
++From dc90c186f755e726a097c9bb8bf6c4e7a45d8a07 Mon Sep 17 00:00:00 2001
++From: jcmvbkbc <jcmvbkbc@138bc75d-0d04-0410-961f-82ee72b054a4>
++Date: Mon, 11 Sep 2017 21:53:38 +0000
++Subject: [PATCH] xtensa: fix PR target/82181
++
++2017-09-11  Max Filippov  <jcmvbkbc@gmail.com>
++gcc/
++	Backport from mainline
++	* config/xtensa/xtensa.c (xtensa_mem_offset): Check that both
++	words of DImode object are reachable by xtensa_uimm8x4 access.
++
++Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
++---
++ gcc/config/xtensa/xtensa.c | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/gcc/config/xtensa/xtensa.c b/gcc/config/xtensa/xtensa.c
++index 70f698aba0ae..750b685b23e7 100644
++--- a/gcc/config/xtensa/xtensa.c
+++++ b/gcc/config/xtensa/xtensa.c
++@@ -601,6 +601,7 @@ xtensa_mem_offset (unsigned v, machine_mode mode)
++     case HImode:
++       return xtensa_uimm8x2 (v);
++ 
+++    case DImode:
++     case DFmode:
++       return (xtensa_uimm8x4 (v) && xtensa_uimm8x4 (v + 4));
++ 
++-- 
++2.1.4
++
+diff --git a/package/gd/0001-gdlib-config.patch b/package/gd/0001-gdlib-config.patch
+deleted file mode 100644
+index 7756bf1240..0000000000
+--- a/package/gd/0001-gdlib-config.patch
++++ /dev/null
+@@ -1,32 +0,0 @@
+-Fix gdlib-config
+-
+-Since the @LIBICONV@ macro doesn't get replaced at compile time, we
+-end up installing an invalid gdlib-config: the gdlib-config --libs
+-says that one should link against @LIBICONV@ which obviously doesn't
+-work.
+-
+-Use the OpenWRT patch from
+-https://dev.openwrt.org/browser/packages/libs/gd/patches/101-gdlib-config.patch
+-
+-Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+-
+---- a/config/gdlib-config.in
+-+++ b/config/gdlib-config.in
+-@@ -71,7 +71,7 @@ while test $# -gt 0; do
+- 	echo @LDFLAGS@
+- 	;;
+-     --libs)
+--	echo -lgd @LIBS@ @LIBICONV@
+-+	echo -lgd @LIBS@
+- 	;;
+-     --cflags|--includes)
+- 	echo -I@includedir@
+-@@ -84,7 +84,7 @@ while test $# -gt 0; do
+- 	echo "includedir: $includedir"
+- 	echo "cflags:     -I@includedir@"
+- 	echo "ldflags:    @LDFLAGS@"
+--	echo "libs:       @LIBS@ @LIBICONV@"
+-+	echo "libs:       @LIBS@"
+- 	echo "libdir:     $libdir"
+- 	echo "features:   @FEATURES@"
+- 	;;
+diff --git a/package/gd/0002-gd_bmp-fix-build-with-uClibc.patch b/package/gd/0002-gd_bmp-fix-build-with-uClibc.patch
+deleted file mode 100644
+index 89bc39186e..0000000000
+--- a/package/gd/0002-gd_bmp-fix-build-with-uClibc.patch
++++ /dev/null
+@@ -1,50 +0,0 @@
+-From ea2a03e983acf34a1320b460dcad43b7e0b0b14f Mon Sep 17 00:00:00 2001
+-Message-Id: <ea2a03e983acf34a1320b460dcad43b7e0b0b14f.1397134306.git.baruch@tkos.co.il>
+-From: Baruch Siach <baruch@tkos.co.il>
+-Date: Thu, 10 Apr 2014 15:49:13 +0300
+-Subject: [PATCH] gd_bmp: fix build with uClibc
+-
+-Some architectures (like ARM) don't have the long double variants of math
+-functions under uClibc. Add a local ceill definition in this case.
+-
+-Patch status: reported upstream, 
+-https://bitbucket.org/libgd/gd-libgd/issue/123/build-failure-agains-uclibc-arm
+-
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+- src/gd_bmp.c | 12 ++++++++++++
+- 1 file changed, 12 insertions(+)
+-
+-diff --git a/src/gd_bmp.c b/src/gd_bmp.c
+-index 0fc021909f1b..11b3ec1baa01 100644
+---- a/src/gd_bmp.c
+-+++ b/src/gd_bmp.c
+-@@ -25,6 +25,11 @@
+- #include "gdhelpers.h"
+- #include "bmp.h"
+- 
+-+#include <features.h>
+-+#if defined (__UCLIBC__) && !defined(__UCLIBC_HAS_LONG_DOUBLE_MATH__)
+-+#define NO_LONG_DOUBLE
+-+#endif
+-+
+- static int compress_row(unsigned char *uncompressed_row, int length);
+- static int build_rle_packet(unsigned char *row, int packet_type, int length, unsigned char *data);
+- 
+-@@ -42,6 +47,13 @@ static int bmp_read_rle(gdImagePtr im, gdIOCtxPtr infile, bmp_info_t *info);
+- 
+- #define BMP_DEBUG(s)
+- 
+-+#ifdef NO_LONG_DOUBLE
+-+long double ceill(long double x)
+-+{
+-+	return (long double) ceil((double) x);
+-+}
+-+#endif
+-+
+- static int gdBMPPutWord(gdIOCtx *out, int w)
+- {
+- 	/* Byte order is little-endian */
+--- 
+-1.9.1
+-
+diff --git a/package/gd/gd.hash b/package/gd/gd.hash
+index a1991b1820..1cd9e56b18 100644
+--- a/package/gd/gd.hash
++++ b/package/gd/gd.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+-sha256	137f13a7eb93ce72e32ccd7cebdab6874f8cf7ddf31d3a455a68e016ecd9e4e6	libgd-2.2.4.tar.xz
++sha256	8c302ccbf467faec732f0741a859eef4ecae22fea2d2ab87467be940842bde51	libgd-2.2.5.tar.xz
++sha256  d02dae2141d49b8a6b09b2b73e68a8f17d7bbeaaf02b3b841ee11fea2d9e328d	COPYING
+diff --git a/package/gd/gd.mk b/package/gd/gd.mk
+index 63d16eb3ca..e2a46dca3c 100644
+--- a/package/gd/gd.mk
++++ b/package/gd/gd.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-GD_VERSION = 2.2.4
++GD_VERSION = 2.2.5
+ GD_SOURCE = libgd-$(GD_VERSION).tar.xz
+ GD_SITE = https://github.com/libgd/libgd/releases/download/gd-$(GD_VERSION)
+ GD_INSTALL_STAGING = YES
+diff --git a/package/gdb/7.12.1/0006-nat-linux-ptrace.c-add-missing-gdb_byte-cast.patch b/package/gdb/7.12.1/0006-nat-linux-ptrace.c-add-missing-gdb_byte-cast.patch
+new file mode 100644
+index 0000000000..4eb72e4084
+--- /dev/null
++++ b/package/gdb/7.12.1/0006-nat-linux-ptrace.c-add-missing-gdb_byte-cast.patch
+@@ -0,0 +1,41 @@
++From 09a2c3e0164545324a1ddee70f5c9fdee71e2079 Mon Sep 17 00:00:00 2001
++From: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++Date: Sun, 18 Jun 2017 23:09:43 +0200
++Subject: [PATCH] nat/linux-ptrace.c: add missing gdb_byte* cast
++
++On noMMU platforms, the following code gets compiled:
++
++  child_stack = xmalloc (STACK_SIZE * 4);
++
++Where child_stack is a gdb_byte*, and xmalloc() returns a void*. While
++the lack of cast is valid in C, it is not in C++, causing the
++following build failure:
++
++../nat/linux-ptrace.c: In function 'int linux_fork_to_function(gdb_byte*, int (*)(void*))':
++../nat/linux-ptrace.c:273:29: error: invalid conversion from 'void*' to 'gdb_byte* {aka unsigned char*}' [-fpermissive]
++       child_stack = xmalloc (STACK_SIZE * 4);
++
++Therefore, this commit adds the appropriate cast.
++
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++[Upstream commit: ffce45d2243e5f52f411e314fc4e1a69f431a81f]
++---
++ gdb/nat/linux-ptrace.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/gdb/nat/linux-ptrace.c b/gdb/nat/linux-ptrace.c
++index 3447e07..33833e2 100644
++--- a/gdb/nat/linux-ptrace.c
+++++ b/gdb/nat/linux-ptrace.c
++@@ -270,7 +270,7 @@ linux_fork_to_function (gdb_byte *child_stack, int (*function) (void *))
++ #define STACK_SIZE 4096
++ 
++     if (child_stack == NULL)
++-      child_stack = xmalloc (STACK_SIZE * 4);
+++      child_stack = (gdb_byte*) xmalloc (STACK_SIZE * 4);
++ 
++     /* Use CLONE_VM instead of fork, to support uClinux (no MMU).  */
++ #ifdef __ia64__
++-- 
++2.9.4
++
+diff --git a/package/gdb/gdb.mk b/package/gdb/gdb.mk
+index d8299900ec..618111dda8 100644
+--- a/package/gdb/gdb.mk
++++ b/package/gdb/gdb.mk
+@@ -189,6 +189,7 @@ HOST_GDB_CONF_OPTS = \
+ 	--enable-threads \
+ 	--disable-werror \
+ 	--without-included-gettext \
++	--with-curses \
+ 	$(GDB_DISABLE_BINUTILS_CONF_OPTS)
+ 
+ ifeq ($(BR2_PACKAGE_HOST_GDB_TUI),y)
+diff --git a/package/gdk-pixbuf/gdk-pixbuf.hash b/package/gdk-pixbuf/gdk-pixbuf.hash
+index 827b386380..9cb947f195 100644
+--- a/package/gdk-pixbuf/gdk-pixbuf.hash
++++ b/package/gdk-pixbuf/gdk-pixbuf.hash
+@@ -1,2 +1,4 @@
+-# From http://ftp.gnome.org/pub/gnome/sources/gdk-pixbuf/2.36/gdk-pixbuf-2.36.4.sha256sum
+-sha256	0b19901c3eb0596141d2d48ddb9dac79ad1524bdf59366af58ab38fcb9ee7463	gdk-pixbuf-2.36.4.tar.xz
++# From http://ftp.gnome.org/pub/gnome/sources/gdk-pixbuf/2.36/gdk-pixbuf-2.36.10.sha256sum
++sha256 f8f6fa896b89475c73b6e9e8d2a2b062fc359c4b4ccb8e96470d6ab5da949ace  gdk-pixbuf-2.36.10.tar.xz
++# Locally calculated
++sha256 d245807f90032872d1438d741ed21e2490e1175dc8aa3afa5ddb6c8e529b58e5  COPYING
+diff --git a/package/gdk-pixbuf/gdk-pixbuf.mk b/package/gdk-pixbuf/gdk-pixbuf.mk
+index 4fe6bd7b7f..5e8bb41728 100644
+--- a/package/gdk-pixbuf/gdk-pixbuf.mk
++++ b/package/gdk-pixbuf/gdk-pixbuf.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ GDK_PIXBUF_VERSION_MAJOR = 2.36
+-GDK_PIXBUF_VERSION = $(GDK_PIXBUF_VERSION_MAJOR).4
++GDK_PIXBUF_VERSION = $(GDK_PIXBUF_VERSION_MAJOR).10
+ GDK_PIXBUF_SOURCE = gdk-pixbuf-$(GDK_PIXBUF_VERSION).tar.xz
+ GDK_PIXBUF_SITE = http://ftp.gnome.org/pub/gnome/sources/gdk-pixbuf/$(GDK_PIXBUF_VERSION_MAJOR)
+ GDK_PIXBUF_LICENSE = LGPLv2+
+@@ -20,6 +20,9 @@ GDK_PIXBUF_CONF_ENV = \
+ 	ac_cv_path_GLIB_GENMARSHAL=$(LIBGLIB2_HOST_BINARY) \
+ 	gio_can_sniff=no
+ 
++HOST_GDK_PIXBUF_CONF_ENV = \
++	gio_can_sniff=no
++
+ GDK_PIXBUF_CONF_OPTS = --disable-glibtest
+ 
+ ifneq ($(BR2_PACKAGE_LIBPNG),y)
+@@ -73,5 +76,14 @@ define GDK_PIXBUF_DISABLE_TESTS
+ endef
+ GDK_PIXBUF_POST_PATCH_HOOKS += GDK_PIXBUF_DISABLE_TESTS
+ 
++# Target gdk-pixbuf needs loaders.cache populated to build for the
++# thumbnailer. Use the host-built since it matches the target options
++# regarding mime types (which is the used information).
++define GDK_PIXBUF_COPY_LOADERS_CACHE
++	cp -f $(HOST_DIR)/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache \
++		$(@D)/gdk-pixbuf
++endef
++GDK_PIXBUF_PRE_BUILD_HOOKS += GDK_PIXBUF_COPY_LOADERS_CACHE
++
+ $(eval $(autotools-package))
+ $(eval $(host-autotools-package))
+diff --git a/package/git/git.hash b/package/git/git.hash
+index 4782dcbefb..b657422c8c 100644
+--- a/package/git/git.hash
++++ b/package/git/git.hash
+@@ -1,2 +1,2 @@
+ # From: https://www.kernel.org/pub/software/scm/git/sha256sums.asc
+-sha256 016124c54ce2db7a4c2bd26b0de21fbf8f6bcaee04842aa221c7243141df4e42  git-2.12.3.tar.xz
++sha256 f8b8ac499034e9f6e44e67dd54351bc5654e228e4cd3b55f6f1c8e736c977ce6  git-2.12.4.tar.xz
+diff --git a/package/git/git.mk b/package/git/git.mk
+index 04cd577825..94cf7a797b 100644
+--- a/package/git/git.mk
++++ b/package/git/git.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-GIT_VERSION = 2.12.3
++GIT_VERSION = 2.12.4
+ GIT_SOURCE = git-$(GIT_VERSION).tar.xz
+ GIT_SITE = https://www.kernel.org/pub/software/scm/git
+ GIT_LICENSE = GPLv2, LGPLv2.1+
+diff --git a/package/gnupg/gnupg.hash b/package/gnupg/gnupg.hash
+index 8968b00d2b..abd76cde9c 100644
+--- a/package/gnupg/gnupg.hash
++++ b/package/gnupg/gnupg.hash
+@@ -1,4 +1,3 @@
+-# From https://lists.gnu.org/archive/html/info-gnu/2016-08/msg00008.html
+-sha1	e3bdb585026f752ae91360f45c28e76e4a15d338	gnupg-1.4.21.tar.bz2
+-# Locally computed
+-sha256	6b47a3100c857dcab3c60e6152e56a997f2c7862c1b8b2b25adf3884a1ae2276	gnupg-1.4.21.tar.bz2
++# Locally computed based on signature
++# https://gnupg.org/ftp/gcrypt/gnupg/gnupg-1.4.22.tar.bz2.sig
++sha256	9594a24bec63a21568424242e3f198b9d9828dea5ff0c335e47b06f835f930b4	gnupg-1.4.22.tar.bz2
+diff --git a/package/gnupg/gnupg.mk b/package/gnupg/gnupg.mk
+index 182abd6709..29c46669e5 100644
+--- a/package/gnupg/gnupg.mk
++++ b/package/gnupg/gnupg.mk
+@@ -4,9 +4,9 @@
+ #
+ ################################################################################
+ 
+-GNUPG_VERSION = 1.4.21
++GNUPG_VERSION = 1.4.22
+ GNUPG_SOURCE = gnupg-$(GNUPG_VERSION).tar.bz2
+-GNUPG_SITE = ftp://ftp.gnupg.org/gcrypt/gnupg
++GNUPG_SITE = https://gnupg.org/ftp/gcrypt/gnupg
+ GNUPG_LICENSE = GPLv3+
+ GNUPG_LICENSE_FILES = COPYING
+ GNUPG_DEPENDENCIES = zlib ncurses $(if $(BR2_PACKAGE_LIBICONV),libiconv)
+diff --git a/package/gpsd/0002-SConstruct-do-not-force-O2-by-default.patch b/package/gpsd/0002-SConstruct-do-not-force-O2-by-default.patch
+new file mode 100644
+index 0000000000..641afa30af
+--- /dev/null
++++ b/package/gpsd/0002-SConstruct-do-not-force-O2-by-default.patch
+@@ -0,0 +1,29 @@
++From eb7cce5dbb53a64cf55ac0d9a7fa4dcbebd4b173 Mon Sep 17 00:00:00 2001
++From: Waldemar Brodkorb <wbx@openadk.org>
++Date: Mon, 14 Aug 2017 23:24:38 +0200
++Subject: [PATCH] SConstruct: do not force -O2 by default
++
++-O2 can cause problems on some architectures, so do not force it by
++ default.
++
++Signed-off-by: Waldemar Brodkorb <wbx@openadk.org>
++---
++ SConstruct | 2 --
++ 1 file changed, 2 deletions(-)
++
++diff --git a/SConstruct b/SConstruct
++index fe444a2..93d91a4 100644
++--- a/SConstruct
+++++ b/SConstruct
++@@ -330,8 +330,6 @@ if not 'CCFLAGS' in os.environ:
++     # Should we build with optimisation?
++     if env['debug'] or env['coveraging']:
++         env.Append(CCFLAGS=['-O0'])
++-    else:
++-        env.Append(CCFLAGS=['-O2'])
++ 
++ # Get a slight speedup by not doing automatic RCS and SCCS fetches.
++ env.SourceCode('.', None)
++-- 
++2.9.4
++
+diff --git a/package/gpsd/gpsd.mk b/package/gpsd/gpsd.mk
+index 73067d3b15..7c2d37bea2 100644
+--- a/package/gpsd/gpsd.mk
++++ b/package/gpsd/gpsd.mk
+@@ -44,7 +44,7 @@ endif
+ # A bug was reported to the gcc bug tracker:
+ # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=68485
+ ifeq ($(BR2_microblaze),y)
+-GPSD_CFLAGS += -fno-expensive-optimizations -fno-schedule-insns
++GPSD_CFLAGS += -O0
+ endif
+ 
+ # Enable or disable Qt binding
+diff --git a/package/gstreamer1/gst1-plugins-bad/0001-openjpeg-Fix-build-against-openjpeg-2.2.patch b/package/gstreamer1/gst1-plugins-bad/0001-openjpeg-Fix-build-against-openjpeg-2.2.patch
+new file mode 100644
+index 0000000000..6d4419c3c4
+--- /dev/null
++++ b/package/gstreamer1/gst1-plugins-bad/0001-openjpeg-Fix-build-against-openjpeg-2.2.patch
+@@ -0,0 +1,60 @@
++From daaf649bda7231fd0d760802232a36ba62a4ea2d Mon Sep 17 00:00:00 2001
++From: Clemens Lang <cal@macports.org>
++Date: Sun, 13 Aug 2017 21:17:18 +0200
++Subject: [PATCH] openjpeg: Fix build against openjpeg 2.2
++
++OpenJPEG 2.2 has some API changes and thus ships its headers in a new
++include path. Add a configure check (to both meson and autoconf) to
++detect the newer version of OpenJPEG and add conditional includes.
++
++Fix the autoconf test for OpenJPEG 2.1, which checked for HAVE_OPENJPEG,
++which was always set even for 2.0.
++
++https://bugzilla.gnome.org/show_bug.cgi?id=786250
++
++[Peter: drop meson changes for 2017.02.x]
++Upstream: https://cgit.freedesktop.org/gstreamer/gst-plugins-bad/patch/?id=15f24fef53a955c7c76fc966302cb0453732e657
++Signed-off-by: Peter Seiderer <ps.report@gmx.net>
++---
++ configure.ac               |  7 ++++++-
++ ext/openjpeg/gstopenjpeg.h |  4 +++-
++ 2 files changed, 22 insertions(+), 10 deletions(-)
++
++diff --git a/configure.ac b/configure.ac
++index 30e26b8..c4f08c7 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -2813,8 +2813,13 @@ AG_GST_CHECK_FEATURE(OPENJPEG, [openjpeg library], openjpeg, [
++   if test x"$HAVE_OPENJPEG" = x"yes"; then
++     dnl minor API changes in v2.1
++     AG_GST_PKG_CHECK_MODULES(OPENJPEG_2_1, libopenjp2 >= 2.1)
++-    if test x"$HAVE_OPENJPEG" = x"yes"; then
+++    if test x"$HAVE_OPENJPEG_2_1" = x"yes"; then
++       AC_DEFINE([HAVE_OPENJPEG_2_1], 1, [Define if OpenJPEG 2.1 is used])
+++        dnl include paths changed for v2.2
+++        AG_GST_PKG_CHECK_MODULES(OPENJPEG_2_2, libopenjp2 >= 2.2)
+++        if test x"$HAVE_OPENJPEG_2_2" = x"yes"; then
+++          AC_DEFINE([HAVE_OPENJPEG_2_2], 1, [Define if OpenJPEG 2.2 is used])
+++        fi
++     fi
++   else
++     # Fallback to v1.5
++diff --git a/ext/openjpeg/gstopenjpeg.h b/ext/openjpeg/gstopenjpeg.h
++index 03ce52e..52410a4 100644
++--- a/ext/openjpeg/gstopenjpeg.h
+++++ b/ext/openjpeg/gstopenjpeg.h
++@@ -38,7 +38,9 @@
++ #define OPJ_CPRL CPRL
++ #else
++ #include <stdio.h>
++-# ifdef HAVE_OPENJPEG_2_1
+++# if defined(HAVE_OPENJPEG_2_2)
+++#  include <openjpeg-2.2/openjpeg.h>
+++# elif defined(HAVE_OPENJPEG_2_1)
++ #  include <openjpeg-2.1/openjpeg.h>
++ # else
++ #  include <openjpeg-2.0/openjpeg.h>
++ 
++-- 
++2.12.3
++
+diff --git a/package/gstreamer1/gst1-plugins-bad/gst1-plugins-bad.mk b/package/gstreamer1/gst1-plugins-bad/gst1-plugins-bad.mk
+index 9f39bbf9bb..8e3010b828 100644
+--- a/package/gstreamer1/gst1-plugins-bad/gst1-plugins-bad.mk
++++ b/package/gstreamer1/gst1-plugins-bad/gst1-plugins-bad.mk
+@@ -13,6 +13,10 @@ GST1_PLUGINS_BAD_LICENSE_FILES = COPYING COPYING.LIB
+ # enabled.
+ GST1_PLUGINS_BAD_LICENSE = LGPLv2+, LGPLv2.1+
+ 
++# patch 0001-openjpeg-Fix-build-against-openjpeg-2.2.patch touches configure.ac
++GST1_PLUGINS_BAD_AUTORECONF = YES
++GST1_PLUGINS_BAD_GETTEXTIZE = YES
++
+ GST1_PLUGINS_BAD_CONF_OPTS = \
+ 	--disable-examples \
+ 	--disable-valgrind \
+diff --git a/package/imagemagick/imagemagick.hash b/package/imagemagick/imagemagick.hash
+index 173dd415c7..92880a9aec 100644
+--- a/package/imagemagick/imagemagick.hash
++++ b/package/imagemagick/imagemagick.hash
+@@ -1,2 +1,2 @@
+-# From http://www.imagemagick.org/download/releases/digest.rdf
+-sha256 0058fcde533986334458a5c99600b1b9633182dd9562cbad4ba618c5ccf2a28f  ImageMagick-7.0.5-10.tar.xz
++# Locally computed
++sha256 5a45e29509dbb23793a9c8db5c47ef1114c1ee82c9ca60053eaf06b3fc243e2c  7.0.7-1.tar.gz
+diff --git a/package/imagemagick/imagemagick.mk b/package/imagemagick/imagemagick.mk
+index 7aade62dad..9043ce8e5e 100644
+--- a/package/imagemagick/imagemagick.mk
++++ b/package/imagemagick/imagemagick.mk
+@@ -4,9 +4,9 @@
+ #
+ ################################################################################
+ 
+-IMAGEMAGICK_VERSION = 7.0.5-10
+-IMAGEMAGICK_SOURCE = ImageMagick-$(IMAGEMAGICK_VERSION).tar.xz
+-IMAGEMAGICK_SITE = http://www.imagemagick.org/download/releases
++IMAGEMAGICK_VERSION = 7.0.7-1
++IMAGEMAGICK_SOURCE = $(IMAGEMAGICK_VERSION).tar.gz
++IMAGEMAGICK_SITE = https://github.com/ImageMagick/ImageMagick/archive
+ IMAGEMAGICK_LICENSE = Apache-2.0
+ IMAGEMAGICK_LICENSE_FILES = LICENSE
+ 
+diff --git a/package/iostat/iostat.mk b/package/iostat/iostat.mk
+index d591c67dcb..4953c73ec4 100644
+--- a/package/iostat/iostat.mk
++++ b/package/iostat/iostat.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ IOSTAT_VERSION = 2.2
+-IOSTAT_SITE = http://www.linuxinsight.com/files
++IOSTAT_SITE = http://linuxinsight.com/sites/default/files
+ IOSTAT_LICENSE = GPL
+ IOSTAT_LICENSE_FILES = LICENSE
+ 
+diff --git a/package/iucode-tool/iucode-tool.mk b/package/iucode-tool/iucode-tool.mk
+index cee0572649..1dfda70293 100644
+--- a/package/iucode-tool/iucode-tool.mk
++++ b/package/iucode-tool/iucode-tool.mk
+@@ -6,7 +6,7 @@
+ 
+ IUCODE_TOOL_VERSION = 1.5
+ IUCODE_TOOL_SOURCE = iucode-tool_$(IUCODE_TOOL_VERSION).tar.xz
+-IUCODE_TOOL_SITE = https://gitlab.com/iucode-tool/releases/raw/latest
++IUCODE_TOOL_SITE = https://gitlab.com/iucode-tool/releases/raw/master
+ ifeq ($(BR2_PACKAGE_ARGP_STANDALONE),y)
+ IUCODE_TOOL_CONF_ENV = LIBS="-largp"
+ IUCODE_TOOL_DEPENDENCIES = argp-standalone
+diff --git a/package/jack2/0001-Fix-initialization-in-test-iodelay.patch b/package/jack2/0001-Fix-initialization-in-test-iodelay.patch
+new file mode 100644
+index 0000000000..ee2493886b
+--- /dev/null
++++ b/package/jack2/0001-Fix-initialization-in-test-iodelay.patch
+@@ -0,0 +1,65 @@
++From ff1ed2c4524095055140370c1008a2d9cccc5645 Mon Sep 17 00:00:00 2001
++From: Adrian Knoth <adi@drcomp.erfurt.thur.de>
++Date: Sat, 11 Jun 2016 05:35:07 +0200
++Subject: [PATCH] Fix initialization in test/iodelay.cpp
++
++jack_latency_range_t is
++
++struct _jack_latency_range {
++    jack_nframes_t min;
++    jack_nframes_t max;
++};
++
++and jack_nframes_t is
++
++typedef uint32_t        jack_nframes_t;
++
++so it's unsigned. Initialising it with -1 is invalid (at least in C++14). We cannot use {0, 0}, because latency_cb has
++
++   jack_latency_range_t range;
++   range.min = range.max = 0;
++   if ((range.min != capture_latency.min) || (range.max !=
++       capture_latency.max)) {
++       capture_latency = range;
++   }
++
++so we must not have {0, 0}, otherwise the condition would never be true.
++
++Using UINT32_MAX should be equivalent to the previous -1.
++
++[Upstream commit https://github.com/jackaudio/jack2/commit/ff1ed2c4524095055140370c1008a2d9cccc5645]
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++---
++ tests/iodelay.cpp | 7 ++++---
++ 1 file changed, 4 insertions(+), 3 deletions(-)
++
++diff --git a/tests/iodelay.cpp b/tests/iodelay.cpp
++index e1ba63fa..1ef470fd 100644
++--- a/tests/iodelay.cpp
+++++ b/tests/iodelay.cpp
++@@ -20,6 +20,7 @@
++ 
++ #include <stdlib.h>
++ #include <stdio.h>
+++#include <stdint.h>
++ #include <math.h>
++ #include <unistd.h>
++ #include <jack/jack.h>
++@@ -167,8 +168,8 @@ static jack_client_t  *jack_handle;
++ static jack_port_t    *jack_capt;
++ static jack_port_t    *jack_play;
++ 
++-jack_latency_range_t   capture_latency = {-1, -1};
++-jack_latency_range_t   playback_latency = {-1, -1};
+++jack_latency_range_t   capture_latency = {UINT32_MAX, UINT32_MAX};
+++jack_latency_range_t   playback_latency = {UINT32_MAX, UINT32_MAX};
++ 
++ void
++ latency_cb (jack_latency_callback_mode_t mode, void *arg)
++@@ -266,4 +267,4 @@ int main (int ac, char *av [])
++     return 0;
++ }
++ 
++-// --------------------------------------------------------------------------------
++\ No newline at end of file
+++// --------------------------------------------------------------------------------
+diff --git a/package/jack2/0001-Improve-check-for-ucontext.patch b/package/jack2/0002-Improve-check-for-ucontext.patch
+similarity index 100%
+rename from package/jack2/0001-Improve-check-for-ucontext.patch
+rename to package/jack2/0002-Improve-check-for-ucontext.patch
+diff --git a/package/jack2/0002-Make-backtrace-support-depends-on-execinfo.h-existen.patch b/package/jack2/0003-Make-backtrace-support-depends-on-execinfo.h-existen.patch
+similarity index 100%
+rename from package/jack2/0002-Make-backtrace-support-depends-on-execinfo.h-existen.patch
+rename to package/jack2/0003-Make-backtrace-support-depends-on-execinfo.h-existen.patch
+diff --git a/package/jack2/0003-tests-define-__STDC_LIMIT_MACROS.patch b/package/jack2/0004-tests-define-__STDC_LIMIT_MACROS.patch
+similarity index 100%
+rename from package/jack2/0003-tests-define-__STDC_LIMIT_MACROS.patch
+rename to package/jack2/0004-tests-define-__STDC_LIMIT_MACROS.patch
+diff --git a/package/jack2/0005-gcc7.patch b/package/jack2/0005-gcc7.patch
+new file mode 100644
+index 0000000000..dadaf44ed9
+--- /dev/null
++++ b/package/jack2/0005-gcc7.patch
+@@ -0,0 +1,31 @@
++From f7bccdca651592cc4082b28fd4a01ed6ef8ab655 Mon Sep 17 00:00:00 2001
++From: Kjetil Matheussen <k.s.matheussen@notam02.no>
++Date: Sat, 15 Jul 2017 13:21:59 +0200
++Subject: [PATCH] Tests: Fix compilation with gcc7
++
++Fixes
++../tests/test.cpp: In function ‘int process4(jack_nframes_t, void*)’:
++../tests/test.cpp:483:73: error: call of overloaded ‘abs(jack_nframes_t)’ is ambiguous
++  if (delta_time > 0  && (jack_nframes_t)abs(delta_time - cur_buffer_size) > tolerance) {
++
++Downloaded from upstream commit
++https://github.com/jackaudio/jack2/commit/f7bccdca651592cc4082b28fd4a01ed6ef8ab655
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++---
++ tests/test.cpp | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/tests/test.cpp b/tests/test.cpp
++index 8a8a8117..d2ef9a05 100644
++--- a/tests/test.cpp
+++++ b/tests/test.cpp
++@@ -479,7 +479,7 @@ int process4(jack_nframes_t nframes, void *arg)
++ 	jack_nframes_t delta_time = cur_time - last_time;
++ 
++ 	Log("calling process4 callback : jack_frame_time = %ld delta_time = %ld\n", cur_time, delta_time);
++-	if (delta_time > 0  && (jack_nframes_t)abs(delta_time - cur_buffer_size) > tolerance) {
+++	if (delta_time > 0  && abs((int64_t)delta_time - (int64_t)cur_buffer_size) > (int64_t)tolerance) {
++ 		printf("!!! ERROR !!! jack_frame_time seems to return incorrect values cur_buffer_size = %d, delta_time = %d tolerance %d\n", cur_buffer_size, delta_time, tolerance);
++ 	}
++ 
+diff --git a/package/jack2/0006-fix-ftbfs-with-clang.patch b/package/jack2/0006-fix-ftbfs-with-clang.patch
+new file mode 100644
+index 0000000000..a73fe69e15
+--- /dev/null
++++ b/package/jack2/0006-fix-ftbfs-with-clang.patch
+@@ -0,0 +1,28 @@
++From d3c8e2d8d78899fba40a3e677ed4dbe388d82269 Mon Sep 17 00:00:00 2001
++From: Adrian Knoth <adi@drcomp.erfurt.thur.de>
++Date: Thu, 18 Sep 2014 18:29:23 +0200
++Subject: [PATCH] Fix FTBFS with clang++
++
++Forwarded from http://bugs.debian.org/757820
++
++Downloaded from upstream commit
++https://github.com/jackaudio/jack2/commit/d3c8e2d8d78899fba40a3e677ed4dbe388d82269
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++---
++ common/memops.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/common/memops.c b/common/memops.c
++index 27f6194a..2d416b64 100644
++--- a/common/memops.c
+++++ b/common/memops.c
++@@ -198,7 +198,7 @@ static inline __m128i float_24_sse(__m128 s)
++  */
++ static unsigned int seed = 22222;
++ 
++-inline unsigned int fast_rand() {
+++static inline unsigned int fast_rand() {
++ 	seed = (seed * 96314165) + 907633515;
++ 	return seed;
++ }
+diff --git a/package/jack2/jack2.hash b/package/jack2/jack2.hash
+index 1b981a4b83..ab031b9d94 100644
+--- a/package/jack2/jack2.hash
++++ b/package/jack2/jack2.hash
+@@ -1,3 +1,2 @@
+ # Locally calculated
+ sha256 88f1b6601b7c8950e6a2d5940b423a33ee628ae5583da40bdce3d9317d8c600d  jack2-v1.9.10.tar.gz
+-sha256 f372c4300e3fb2c1ce053e47829df44f3f8b933feb820759392187723ae8e640  ff1ed2c4524095055140370c1008a2d9cccc5645.patch
+diff --git a/package/jack2/jack2.mk b/package/jack2/jack2.mk
+index 23c9723421..7801840b6f 100644
+--- a/package/jack2/jack2.mk
++++ b/package/jack2/jack2.mk
+@@ -9,7 +9,6 @@ JACK2_SITE = $(call github,jackaudio,jack2,$(JACK2_VERSION))
+ JACK2_LICENSE = GPLv2+ (jack server), LGPLv2.1+ (jack library)
+ JACK2_DEPENDENCIES = libsamplerate libsndfile alsa-lib host-python
+ JACK2_INSTALL_STAGING = YES
+-JACK2_PATCH = https://github.com/jackaudio/jack2/commit/ff1ed2c4524095055140370c1008a2d9cccc5645.patch
+ 
+ JACK2_CONF_OPTS = --alsa
+ 
+diff --git a/package/libarchive/0001-Do-something-sensible-for-empty-strings-to-make-fuzz.patch b/package/libarchive/0001-Do-something-sensible-for-empty-strings-to-make-fuzz.patch
+new file mode 100644
+index 0000000000..1d1d80d708
+--- /dev/null
++++ b/package/libarchive/0001-Do-something-sensible-for-empty-strings-to-make-fuzz.patch
+@@ -0,0 +1,42 @@
++From fa7438a0ff4033e4741c807394a9af6207940d71 Mon Sep 17 00:00:00 2001
++From: Joerg Sonnenberger <joerg@bec.de>
++Date: Tue, 5 Sep 2017 18:12:19 +0200
++Subject: [PATCH] Do something sensible for empty strings to make fuzzers
++ happy.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit fa7438a0ff
++
++ libarchive/archive_read_support_format_xar.c | 8 +++++++-
++ 1 file changed, 7 insertions(+), 1 deletion(-)
++
++diff --git a/libarchive/archive_read_support_format_xar.c b/libarchive/archive_read_support_format_xar.c
++index 7a22beb9d8e4..93eeacc5e6eb 100644
++--- a/libarchive/archive_read_support_format_xar.c
+++++ b/libarchive/archive_read_support_format_xar.c
++@@ -1040,6 +1040,9 @@ atol10(const char *p, size_t char_cnt)
++ 	uint64_t l;
++ 	int digit;
++ 
+++	if (char_cnt == 0)
+++		return (0);
+++
++ 	l = 0;
++ 	digit = *p - '0';
++ 	while (digit >= 0 && digit < 10  && char_cnt-- > 0) {
++@@ -1054,7 +1057,10 @@ atol8(const char *p, size_t char_cnt)
++ {
++ 	int64_t l;
++ 	int digit;
++-        
+++
+++	if (char_cnt == 0)
+++		return (0);
+++
++ 	l = 0;
++ 	while (char_cnt-- > 0) {
++ 		if (*p >= '0' && *p <= '7')
++-- 
++2.14.1
++
+diff --git a/package/libarchive/libarchive.hash b/package/libarchive/libarchive.hash
+index 2c39bd3e07..98a34ad36c 100644
+--- a/package/libarchive/libarchive.hash
++++ b/package/libarchive/libarchive.hash
+@@ -1,2 +1,2 @@
+ # Locally computed:
+-sha256  72ee1a4e3fd534525f13a0ba1aa7b05b203d186e0c6072a8a4738649d0b3cfd2  libarchive-3.2.1.tar.gz
++sha256  ed2dbd6954792b2c054ccf8ec4b330a54b85904a80cef477a1c74643ddafa0ce  libarchive-3.3.2.tar.gz
+diff --git a/package/libarchive/libarchive.mk b/package/libarchive/libarchive.mk
+index bcf92f907a..3ebdc7e395 100644
+--- a/package/libarchive/libarchive.mk
++++ b/package/libarchive/libarchive.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBARCHIVE_VERSION = 3.2.1
++LIBARCHIVE_VERSION = 3.3.2
+ LIBARCHIVE_SITE = http://www.libarchive.org/downloads
+ LIBARCHIVE_INSTALL_STAGING = YES
+ LIBARCHIVE_LICENSE = BSD-2c, BSD-3c
+diff --git a/package/libcurl/0001-curl-system.h-support-more-architectures.patch b/package/libcurl/0001-curl-system.h-support-more-architectures.patch
+new file mode 100644
+index 0000000000..94d9a2a11f
+--- /dev/null
++++ b/package/libcurl/0001-curl-system.h-support-more-architectures.patch
+@@ -0,0 +1,47 @@
++From 7d84bd820ef412d251b643a4faced105668f4ebd Mon Sep 17 00:00:00 2001
++From: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++Date: Fri, 11 Aug 2017 18:52:37 +0200
++Subject: [PATCH] curl/system.h: support more architectures
++
++The long list of architectures in include/curl/system.h is annoying to
++maintain, and needs to be extended for each and every architecture to
++support.
++
++Instead, let's rely on the __SIZEOF_LONG__ define of the gcc compiler
++(we are in the GNUC condition anyway), which tells us if long is 4
++bytes or 8 bytes.
++
++This fixes the build of libcurl 7.55.0 on architectures such as
++OpenRISC or ARC.
++
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++---
++ include/curl/system.h | 5 +++--
++ 1 file changed, 3 insertions(+), 2 deletions(-)
++
++diff --git a/include/curl/system.h b/include/curl/system.h
++index 79abf8f..0e13075 100644
++--- a/include/curl/system.h
+++++ b/include/curl/system.h
++@@ -403,7 +403,7 @@
++ #  if !defined(__LP64__) && (defined(__ILP32__) || \
++       defined(__i386__) || defined(__ppc__) || defined(__arm__) || \
++       defined(__sparc__) || defined(__mips__) || defined(__sh__) || \
++-      defined(__XTENSA__))
+++      defined(__XTENSA__) || (defined(__SIZEOF_LONG__) && __SIZEOF_LONG__ == 4))
++ #    define CURL_SIZEOF_LONG           4
++ #    define CURL_TYPEOF_CURL_OFF_T     long long
++ #    define CURL_FORMAT_CURL_OFF_T     "lld"
++@@ -412,7 +412,8 @@
++ #    define CURL_SUFFIX_CURL_OFF_T     LL
++ #    define CURL_SUFFIX_CURL_OFF_TU    ULL
++ #  elif defined(__LP64__) || \
++-        defined(__x86_64__) || defined(__ppc64__) || defined(__sparc64__)
+++        defined(__x86_64__) || defined(__ppc64__) || defined(__sparc64__) || \
+++        (defined(__SIZEOF_LONG__) && __SIZEOF_LONG__ == 8)
++ #    define CURL_SIZEOF_LONG           8
++ #    define CURL_TYPEOF_CURL_OFF_T     long
++ #    define CURL_FORMAT_CURL_OFF_T     "ld"
++-- 
++2.9.4
++
+diff --git a/package/libcurl/libcurl.hash b/package/libcurl/libcurl.hash
+index f8885e0488..6d49b67428 100644
+--- a/package/libcurl/libcurl.hash
++++ b/package/libcurl/libcurl.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated after checking pgp signature
+-sha256 f50ebaf43c507fa7cc32be4b8108fa8bbd0f5022e90794388f3c7694a302ff06  curl-7.54.0.tar.bz2
++# https://curl.haxx.se/download/curl-7.55.0.tar.xz.asc
++sha256 cdd58522f8607fd4e871df79d73acb3155075e2134641e5adab12a0962df059d  curl-7.55.0.tar.xz
+diff --git a/package/libcurl/libcurl.mk b/package/libcurl/libcurl.mk
+index 6f4803e0c1..dd0ccbfa46 100644
+--- a/package/libcurl/libcurl.mk
++++ b/package/libcurl/libcurl.mk
+@@ -4,14 +4,14 @@
+ #
+ ################################################################################
+ 
+-LIBCURL_VERSION = 7.54.0
+-LIBCURL_SOURCE = curl-$(LIBCURL_VERSION).tar.bz2
++LIBCURL_VERSION = 7.55.0
++LIBCURL_SOURCE = curl-$(LIBCURL_VERSION).tar.xz
+ LIBCURL_SITE = https://curl.haxx.se/download
+ LIBCURL_DEPENDENCIES = host-pkgconf \
+ 	$(if $(BR2_PACKAGE_ZLIB),zlib) \
+ 	$(if $(BR2_PACKAGE_LIBIDN),libidn) \
+ 	$(if $(BR2_PACKAGE_RTMPDUMP),rtmpdump)
+-LIBCURL_LICENSE = ISC
++LIBCURL_LICENSE = curl
+ LIBCURL_LICENSE_FILES = COPYING
+ LIBCURL_INSTALL_STAGING = YES
+ 
+diff --git a/package/libgcrypt/libgcrypt.hash b/package/libgcrypt/libgcrypt.hash
+index 8ac9f0a92b..56a45c5398 100644
+--- a/package/libgcrypt/libgcrypt.hash
++++ b/package/libgcrypt/libgcrypt.hash
+@@ -1,5 +1,3 @@
+-# From https://lists.gnupg.org/pipermail/gnupg-announce/2017q2/000408.html
+-sha1  65a4a495aa858483e66868199eaa8238572ca6cd  libgcrypt-1.7.8.tar.bz2
+ # Locally calculated after checking signature
+-# https://gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-1.7.8.tar.bz2.sig
+-sha256  948276ea47e6ba0244f36a17b51dcdd52cfd1e664b0a1ac3bc82134fb6cec199  libgcrypt-1.7.8.tar.bz2
++# https://gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-1.7.9.tar.bz2.sig
++sha256  bfe9bb703c1126c3647da2810fd23039c2f09d46969f71612c2065dc3fa9373b  libgcrypt-1.7.9.tar.bz2
+diff --git a/package/libgcrypt/libgcrypt.mk b/package/libgcrypt/libgcrypt.mk
+index c18456eaaf..0e428a78ed 100644
+--- a/package/libgcrypt/libgcrypt.mk
++++ b/package/libgcrypt/libgcrypt.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBGCRYPT_VERSION = 1.7.8
++LIBGCRYPT_VERSION = 1.7.9
+ LIBGCRYPT_SOURCE = libgcrypt-$(LIBGCRYPT_VERSION).tar.bz2
+ LIBGCRYPT_LICENSE = LGPLv2.1+
+ LIBGCRYPT_LICENSE_FILES = COPYING.LIB
+diff --git a/package/libidn/0001-lib-punycode.c-decode_digit-Fix-integer-overflow.patch b/package/libidn/0001-lib-punycode.c-decode_digit-Fix-integer-overflow.patch
+new file mode 100644
+index 0000000000..8a8ca47a66
+--- /dev/null
++++ b/package/libidn/0001-lib-punycode.c-decode_digit-Fix-integer-overflow.patch
+@@ -0,0 +1,36 @@
++From e9e81b8063b095b02cf104bb992fa9bf9515b9d8 Mon Sep 17 00:00:00 2001
++From: =?UTF-8?q?Tim=20R=C3=BChsen?= <tim.ruehsen@gmx.de>
++Date: Fri, 1 Sep 2017 10:04:48 +0200
++Subject: [PATCH] lib/punycode.c (decode_digit): Fix integer overflow
++
++This fix is a backport from libidn2 and addresses
++CVE-2017-14062.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit e9e81b8063b095
++
++ lib/punycode.c | 6 +++---
++ 1 file changed, 3 insertions(+), 3 deletions(-)
++
++diff --git a/lib/punycode.c b/lib/punycode.c
++index 86819a7deb85..49250a13e2cc 100644
++--- a/lib/punycode.c
+++++ b/lib/punycode.c
++@@ -88,10 +88,10 @@ enum
++ /* point (for use in representing integers) in the range 0 to */
++ /* base-1, or base if cp does not represent a value.          */
++ 
++-static punycode_uint
++-decode_digit (punycode_uint cp)
+++static unsigned
+++decode_digit (int cp)
++ {
++-  return cp - 48 < 10 ? cp - 22 : cp - 65 < 26 ? cp - 65 :
+++  return (unsigned) cp - 48 < 10 ? cp - 22 : cp - 65 < 26 ? cp - 65 :
++     cp - 97 < 26 ? cp - 97 : base;
++ }
++ 
++-- 
++2.14.1
++
+diff --git a/package/libidn/libidn.mk b/package/libidn/libidn.mk
+index 99c9e2cb80..c4088aebd6 100644
+--- a/package/libidn/libidn.mk
++++ b/package/libidn/libidn.mk
+@@ -7,11 +7,13 @@
+ LIBIDN_VERSION = 1.33
+ LIBIDN_SITE = $(BR2_GNU_MIRROR)/libidn
+ LIBIDN_INSTALL_STAGING = YES
+-LIBIDN_CONF_ENV = EMACS="no"
++LIBIDN_CONF_ENV = EMACS="no" MAKEINFO=true
+ LIBIDN_CONF_OPTS = --disable-java --enable-csharp=no
+ LIBIDN_DEPENDENCIES = host-pkgconf $(if $(BR2_NEEDS_GETTEXT_IF_LOCALE),gettext) $(if $(BR2_PACKAGE_LIBICONV),libiconv)
+ LIBIDN_LICENSE = GPLv2+, GPLv3+, LGPLv3+
+ LIBIDN_LICENSE_FILES = COPYINGv2 COPYINGv3 COPYING.LESSERv3
++# lib/punycode.c patch triggers reconf in doc/
++LIBIDN_AUTORECONF = YES
+ 
+ define LIBIDN_REMOVE_BINARY
+ 	rm -f $(TARGET_DIR)/usr/bin/idn
+diff --git a/package/libphidget/libphidget.mk b/package/libphidget/libphidget.mk
+index 1b2557d726..cc315b35e6 100644
+--- a/package/libphidget/libphidget.mk
++++ b/package/libphidget/libphidget.mk
+@@ -6,7 +6,7 @@
+ 
+ LIBPHIDGET_VERSION = 2.1.8.20140319
+ LIBPHIDGET_SOURCE = libphidget_$(LIBPHIDGET_VERSION).tar.gz
+-LIBPHIDGET_SITE = http://www.phidgets.com/downloads/libraries
++LIBPHIDGET_SITE = https://www.phidgets.com/downloads/phidget21/libraries/linux/libphidget
+ LIBPHIDGET_DEPENDENCIES = libusb
+ LIBPHIDGET_CONF_OPTS = --disable-ldconfig
+ LIBPHIDGET_INSTALL_STAGING = YES
+diff --git a/package/librsvg/Config.in b/package/librsvg/Config.in
+index 7ce9d063a8..703428dc41 100644
+--- a/package/librsvg/Config.in
++++ b/package/librsvg/Config.in
+@@ -16,7 +16,7 @@ config BR2_PACKAGE_LIBRSVG
+ 	  The rsvg library is an efficient renderer for Scalable
+ 	  Vector Graphics (SVG) pictures.
+ 
+-	  http://librsvg.sourceforge.net/
++	  https://wiki.gnome.org/Projects/LibRsvg
+ 
+ comment "librsvg needs a toolchain w/ wchar, threads, C++"
+ 	depends on BR2_USE_MMU
+diff --git a/package/librsvg/librsvg.hash b/package/librsvg/librsvg.hash
+index f9844b2362..9ab798120f 100644
+--- a/package/librsvg/librsvg.hash
++++ b/package/librsvg/librsvg.hash
+@@ -1,2 +1,2 @@
+-# From http://ftp.acc.umu.se/pub/gnome/sources/librsvg/2.40/librsvg-2.40.16.sha256sum
+-sha256	d48bcf6b03fa98f07df10332fb49d8c010786ddca6ab34cbba217684f533ff2e	librsvg-2.40.16.tar.xz
++# From http://ftp.gnome.org/pub/gnome/sources/librsvg/2.40/librsvg-2.40.18.sha256sum
++sha256	bfc8c488c89c1e7212c478beb95c41b44701636125a3e6dab41187f1485b564c	librsvg-2.40.18.tar.xz
+diff --git a/package/librsvg/librsvg.mk b/package/librsvg/librsvg.mk
+index db57193482..16375d5205 100644
+--- a/package/librsvg/librsvg.mk
++++ b/package/librsvg/librsvg.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ LIBRSVG_VERSION_MAJOR = 2.40
+-LIBRSVG_VERSION = $(LIBRSVG_VERSION_MAJOR).16
++LIBRSVG_VERSION = $(LIBRSVG_VERSION_MAJOR).18
+ LIBRSVG_SITE = http://ftp.gnome.org/pub/gnome/sources/librsvg/$(LIBRSVG_VERSION_MAJOR)
+ LIBRSVG_SOURCE = librsvg-$(LIBRSVG_VERSION).tar.xz
+ LIBRSVG_INSTALL_STAGING = YES
+diff --git a/package/librsync/Config.in b/package/librsync/Config.in
+index 5dcdfc8f2e..652f0cb276 100644
+--- a/package/librsync/Config.in
++++ b/package/librsync/Config.in
+@@ -8,4 +8,4 @@ config BR2_PACKAGE_LIBRSYNC
+ 	  remote file synchronization that was popularized by the
+ 	  rsync utility and is used in rproxy.
+ 
+-	  http://sourceforge.net/projects/librsync/
++	  https://github.com/librsync/librsync
+diff --git a/package/librsync/librsync.hash b/package/librsync/librsync.hash
+index 55ace76394..2d5e2e0028 100644
+--- a/package/librsync/librsync.hash
++++ b/package/librsync/librsync.hash
+@@ -1,2 +1,2 @@
+ # Locally computed:
+-sha256  6633e4605662763a03bb6388529cbdfd3b11a9ec55b8845351c1bd9a92bc41d6  librsync-0.9.7.tar.gz
++sha256 b5c4dd114289832039397789e42d4ff0d1108ada89ce74f1999398593fae2169  librsync-v2.0.0.tar.gz
+diff --git a/package/librsync/librsync.mk b/package/librsync/librsync.mk
+index d475c7333d..3031f1a177 100644
+--- a/package/librsync/librsync.mk
++++ b/package/librsync/librsync.mk
+@@ -4,11 +4,11 @@
+ #
+ ################################################################################
+ 
+-LIBRSYNC_VERSION = 0.9.7
+-LIBRSYNC_SITE = http://downloads.sourceforge.net/project/librsync/librsync/$(LIBRSYNC_VERSION)
++LIBRSYNC_VERSION = v2.0.0
++LIBRSYNC_SITE = $(call github,librsync,librsync,$(LIBRSYNC_VERSION))
+ LIBRSYNC_LICENSE = LGPLv2.1+
+ LIBRSYNC_LICENSE_FILES = COPYING
+ LIBRSYNC_INSTALL_STAGING = YES
+ LIBRSYNC_DEPENDENCIES = zlib bzip2 popt
+ 
+-$(eval $(autotools-package))
++$(eval $(cmake-package))
+diff --git a/package/libsoup/libsoup.hash b/package/libsoup/libsoup.hash
+index b42cf2f711..6e1ff428af 100644
+--- a/package/libsoup/libsoup.hash
++++ b/package/libsoup/libsoup.hash
+@@ -1,2 +1,4 @@
+-# From http://ftp.gnome.org/pub/gnome/sources/libsoup/2.56/libsoup-2.56.0.sha256sum
+-sha256	d8216b71de8247bc6f274ec054c08547b2e04369c1f8add713e9350c8ef81fe5	libsoup-2.56.0.tar.xz
++# From http://ftp.gnome.org/pub/gnome/sources/libsoup/2.56/libsoup-2.56.1.sha256sum
++sha256	c32a46d77b4da433b51d8fd09a57a44b198e03bdc93e5219afcc687c7948eac3  libsoup-2.56.1.tar.xz
++# Locally calculated
++sha256  b7993225104d90ddd8024fd838faf300bea5e83d91203eab98e29512acebd69c  COPYING
+diff --git a/package/libsoup/libsoup.mk b/package/libsoup/libsoup.mk
+index f6e92f8a3b..6eed005b1f 100644
+--- a/package/libsoup/libsoup.mk
++++ b/package/libsoup/libsoup.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ LIBSOUP_VERSION_MAJOR = 2.56
+-LIBSOUP_VERSION = $(LIBSOUP_VERSION_MAJOR).0
++LIBSOUP_VERSION = $(LIBSOUP_VERSION_MAJOR).1
+ LIBSOUP_SOURCE = libsoup-$(LIBSOUP_VERSION).tar.xz
+ LIBSOUP_SITE = http://ftp.gnome.org/pub/gnome/sources/libsoup/$(LIBSOUP_VERSION_MAJOR)
+ LIBSOUP_LICENSE = LGPLv2+
+diff --git a/package/libxml2/0001-Fix-XPointer-paths-beginning-with-range-to.patch b/package/libxml2/0001-Fix-XPointer-paths-beginning-with-range-to.patch
+deleted file mode 100644
+index 42570c6350..0000000000
+--- a/package/libxml2/0001-Fix-XPointer-paths-beginning-with-range-to.patch
++++ /dev/null
+@@ -1,178 +0,0 @@
+-From 9ab01a277d71f54d3143c2cf333c5c2e9aaedd9e Mon Sep 17 00:00:00 2001
+-From: Nick Wellnhofer <wellnhofer@aevum.de>
+-Date: Tue, 28 Jun 2016 14:22:23 +0200
+-Subject: [PATCH] Fix XPointer paths beginning with range-to
+-
+-The old code would invoke the broken xmlXPtrRangeToFunction. range-to
+-isn't really a function but a special kind of location step. Remove
+-this function and always handle range-to in the XPath code.
+-
+-The old xmlXPtrRangeToFunction could also be abused to trigger a
+-use-after-free error with the potential for remote code execution.
+-
+-Found with afl-fuzz.
+-
+-Fixes CVE-2016-5131.
+-
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Patch status: upstream commit 9ab01a277d7
+-
+- result/XPath/xptr/vidbase | 13 ++++++++
+- test/XPath/xptr/vidbase   |  1 +
+- xpath.c                   |  7 ++++-
+- xpointer.c                | 76 ++++-------------------------------------------
+- 4 files changed, 26 insertions(+), 71 deletions(-)
+-
+-diff --git a/result/XPath/xptr/vidbase b/result/XPath/xptr/vidbase
+-index 8b9e92d66d97..f19193e70edb 100644
+---- a/result/XPath/xptr/vidbase
+-+++ b/result/XPath/xptr/vidbase
+-@@ -17,3 +17,16 @@ Object is a Location Set:
+-   To node
+-     ELEMENT p
+- 
+-+
+-+========================
+-+Expression: xpointer(range-to(id('chapter2')))
+-+Object is a Location Set:
+-+1 :   Object is a range :
+-+  From node
+-+     /
+-+  To node
+-+    ELEMENT chapter
+-+      ATTRIBUTE id
+-+        TEXT
+-+          content=chapter2
+-+
+-diff --git a/test/XPath/xptr/vidbase b/test/XPath/xptr/vidbase
+-index b1463830570a..884b1065d7fd 100644
+---- a/test/XPath/xptr/vidbase
+-+++ b/test/XPath/xptr/vidbase
+-@@ -1,2 +1,3 @@
+- xpointer(id('chapter1')/p)
+- xpointer(id('chapter1')/p[1]/range-to(following-sibling::p[2]))
+-+xpointer(range-to(id('chapter2')))
+-diff --git a/xpath.c b/xpath.c
+-index d992841ef0c2..5a01b1b399a2 100644
+---- a/xpath.c
+-+++ b/xpath.c
+-@@ -10691,13 +10691,18 @@ xmlXPathCompPathExpr(xmlXPathParserContextPtr ctxt) {
+- 		    lc = 1;
+- 		    break;
+- 		} else if ((NXT(len) == '(')) {
+--		    /* Note Type or Function */
+-+		    /* Node Type or Function */
+- 		    if (xmlXPathIsNodeType(name)) {
+- #ifdef DEBUG_STEP
+- 		        xmlGenericError(xmlGenericErrorContext,
+- 				"PathExpr: Type search\n");
+- #endif
+- 			lc = 1;
+-+#ifdef LIBXML_XPTR_ENABLED
+-+                    } else if (ctxt->xptr &&
+-+                               xmlStrEqual(name, BAD_CAST "range-to")) {
+-+                        lc = 1;
+-+#endif
+- 		    } else {
+- #ifdef DEBUG_STEP
+- 		        xmlGenericError(xmlGenericErrorContext,
+-diff --git a/xpointer.c b/xpointer.c
+-index 676c5105837a..d74174a318f1 100644
+---- a/xpointer.c
+-+++ b/xpointer.c
+-@@ -1332,8 +1332,6 @@ xmlXPtrNewContext(xmlDocPtr doc, xmlNodePtr here, xmlNodePtr origin) {
+-     ret->here = here;
+-     ret->origin = origin;
+- 
+--    xmlXPathRegisterFunc(ret, (xmlChar *)"range-to",
+--	                 xmlXPtrRangeToFunction);
+-     xmlXPathRegisterFunc(ret, (xmlChar *)"range",
+- 	                 xmlXPtrRangeFunction);
+-     xmlXPathRegisterFunc(ret, (xmlChar *)"range-inside",
+-@@ -2243,76 +2241,14 @@ xmlXPtrRangeInsideFunction(xmlXPathParserContextPtr ctxt, int nargs) {
+-  * @nargs:  the number of args
+-  *
+-  * Implement the range-to() XPointer function
+-+ *
+-+ * Obsolete. range-to is not a real function but a special type of location
+-+ * step which is handled in xpath.c.
+-  */
+- void
+--xmlXPtrRangeToFunction(xmlXPathParserContextPtr ctxt, int nargs) {
+--    xmlXPathObjectPtr range;
+--    const xmlChar *cur;
+--    xmlXPathObjectPtr res, obj;
+--    xmlXPathObjectPtr tmp;
+--    xmlLocationSetPtr newset = NULL;
+--    xmlNodeSetPtr oldset;
+--    int i;
+--
+--    if (ctxt == NULL) return;
+--    CHECK_ARITY(1);
+--    /*
+--     * Save the expression pointer since we will have to evaluate
+--     * it multiple times. Initialize the new set.
+--     */
+--    CHECK_TYPE(XPATH_NODESET);
+--    obj = valuePop(ctxt);
+--    oldset = obj->nodesetval;
+--    ctxt->context->node = NULL;
+--
+--    cur = ctxt->cur;
+--    newset = xmlXPtrLocationSetCreate(NULL);
+--
+--    for (i = 0; i < oldset->nodeNr; i++) {
+--	ctxt->cur = cur;
+--
+--	/*
+--	 * Run the evaluation with a node list made of a single item
+--	 * in the nodeset.
+--	 */
+--	ctxt->context->node = oldset->nodeTab[i];
+--	tmp = xmlXPathNewNodeSet(ctxt->context->node);
+--	valuePush(ctxt, tmp);
+--
+--	xmlXPathEvalExpr(ctxt);
+--	CHECK_ERROR;
+--
+--	/*
+--	 * The result of the evaluation need to be tested to
+--	 * decided whether the filter succeeded or not
+--	 */
+--	res = valuePop(ctxt);
+--	range = xmlXPtrNewRangeNodeObject(oldset->nodeTab[i], res);
+--	if (range != NULL) {
+--	    xmlXPtrLocationSetAdd(newset, range);
+--	}
+--
+--	/*
+--	 * Cleanup
+--	 */
+--	if (res != NULL)
+--	    xmlXPathFreeObject(res);
+--	if (ctxt->value == tmp) {
+--	    res = valuePop(ctxt);
+--	    xmlXPathFreeObject(res);
+--	}
+--
+--	ctxt->context->node = NULL;
+--    }
+--
+--    /*
+--     * The result is used as the new evaluation set.
+--     */
+--    xmlXPathFreeObject(obj);
+--    ctxt->context->node = NULL;
+--    ctxt->context->contextSize = -1;
+--    ctxt->context->proximityPosition = -1;
+--    valuePush(ctxt, xmlXPtrWrapLocationSet(newset));
+-+xmlXPtrRangeToFunction(xmlXPathParserContextPtr ctxt,
+-+                       int nargs ATTRIBUTE_UNUSED) {
+-+    XP_ERROR(XPATH_EXPR_ERROR);
+- }
+- 
+- /**
+--- 
+-2.10.2
+-
+diff --git a/package/libxml2/0002-Disallow-namespace-nodes-in-XPointer-ranges.patch b/package/libxml2/0002-Disallow-namespace-nodes-in-XPointer-ranges.patch
+deleted file mode 100644
+index 45c1a07ca4..0000000000
+--- a/package/libxml2/0002-Disallow-namespace-nodes-in-XPointer-ranges.patch
++++ /dev/null
+@@ -1,253 +0,0 @@
+-From c1d1f7121194036608bf555f08d3062a36fd344b Mon Sep 17 00:00:00 2001
+-From: Nick Wellnhofer <wellnhofer@aevum.de>
+-Date: Tue, 28 Jun 2016 18:34:52 +0200
+-Subject: [PATCH] Disallow namespace nodes in XPointer ranges
+-
+-Namespace nodes must be copied to avoid use-after-free errors.
+-But they don't necessarily have a physical representation in a
+-document, so simply disallow them in XPointer ranges.
+-
+-Found with afl-fuzz.
+-
+-Fixes CVE-2016-4658.
+-
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Patch status: upstream commit c1d1f712119403
+-
+- xpointer.c | 149 +++++++++++++++++++++++--------------------------------------
+- 1 file changed, 56 insertions(+), 93 deletions(-)
+-
+-diff --git a/xpointer.c b/xpointer.c
+-index a7b03fbdae16..694d120e2e0b 100644
+---- a/xpointer.c
+-+++ b/xpointer.c
+-@@ -320,6 +320,45 @@ xmlXPtrRangesEqual(xmlXPathObjectPtr range1, xmlXPathObjectPtr range2) {
+- }
+- 
+- /**
+-+ * xmlXPtrNewRangeInternal:
+-+ * @start:  the starting node
+-+ * @startindex:  the start index
+-+ * @end:  the ending point
+-+ * @endindex:  the ending index
+-+ *
+-+ * Internal function to create a new xmlXPathObjectPtr of type range
+-+ *
+-+ * Returns the newly created object.
+-+ */
+-+static xmlXPathObjectPtr
+-+xmlXPtrNewRangeInternal(xmlNodePtr start, int startindex,
+-+                        xmlNodePtr end, int endindex) {
+-+    xmlXPathObjectPtr ret;
+-+
+-+    /*
+-+     * Namespace nodes must be copied (see xmlXPathNodeSetDupNs).
+-+     * Disallow them for now.
+-+     */
+-+    if ((start != NULL) && (start->type == XML_NAMESPACE_DECL))
+-+	return(NULL);
+-+    if ((end != NULL) && (end->type == XML_NAMESPACE_DECL))
+-+	return(NULL);
+-+
+-+    ret = (xmlXPathObjectPtr) xmlMalloc(sizeof(xmlXPathObject));
+-+    if (ret == NULL) {
+-+        xmlXPtrErrMemory("allocating range");
+-+	return(NULL);
+-+    }
+-+    memset(ret, 0, sizeof(xmlXPathObject));
+-+    ret->type = XPATH_RANGE;
+-+    ret->user = start;
+-+    ret->index = startindex;
+-+    ret->user2 = end;
+-+    ret->index2 = endindex;
+-+    return(ret);
+-+}
+-+
+-+/**
+-  * xmlXPtrNewRange:
+-  * @start:  the starting node
+-  * @startindex:  the start index
+-@@ -344,17 +383,7 @@ xmlXPtrNewRange(xmlNodePtr start, int startindex,
+-     if (endindex < 0)
+- 	return(NULL);
+- 
+--    ret = (xmlXPathObjectPtr) xmlMalloc(sizeof(xmlXPathObject));
+--    if (ret == NULL) {
+--        xmlXPtrErrMemory("allocating range");
+--	return(NULL);
+--    }
+--    memset(ret, 0 , (size_t) sizeof(xmlXPathObject));
+--    ret->type = XPATH_RANGE;
+--    ret->user = start;
+--    ret->index = startindex;
+--    ret->user2 = end;
+--    ret->index2 = endindex;
+-+    ret = xmlXPtrNewRangeInternal(start, startindex, end, endindex);
+-     xmlXPtrRangeCheckOrder(ret);
+-     return(ret);
+- }
+-@@ -381,17 +410,8 @@ xmlXPtrNewRangePoints(xmlXPathObjectPtr start, xmlXPathObjectPtr end) {
+-     if (end->type != XPATH_POINT)
+- 	return(NULL);
+- 
+--    ret = (xmlXPathObjectPtr) xmlMalloc(sizeof(xmlXPathObject));
+--    if (ret == NULL) {
+--        xmlXPtrErrMemory("allocating range");
+--	return(NULL);
+--    }
+--    memset(ret, 0 , (size_t) sizeof(xmlXPathObject));
+--    ret->type = XPATH_RANGE;
+--    ret->user = start->user;
+--    ret->index = start->index;
+--    ret->user2 = end->user;
+--    ret->index2 = end->index;
+-+    ret = xmlXPtrNewRangeInternal(start->user, start->index, end->user,
+-+                                  end->index);
+-     xmlXPtrRangeCheckOrder(ret);
+-     return(ret);
+- }
+-@@ -416,17 +436,7 @@ xmlXPtrNewRangePointNode(xmlXPathObjectPtr start, xmlNodePtr end) {
+-     if (start->type != XPATH_POINT)
+- 	return(NULL);
+- 
+--    ret = (xmlXPathObjectPtr) xmlMalloc(sizeof(xmlXPathObject));
+--    if (ret == NULL) {
+--        xmlXPtrErrMemory("allocating range");
+--	return(NULL);
+--    }
+--    memset(ret, 0 , (size_t) sizeof(xmlXPathObject));
+--    ret->type = XPATH_RANGE;
+--    ret->user = start->user;
+--    ret->index = start->index;
+--    ret->user2 = end;
+--    ret->index2 = -1;
+-+    ret = xmlXPtrNewRangeInternal(start->user, start->index, end, -1);
+-     xmlXPtrRangeCheckOrder(ret);
+-     return(ret);
+- }
+-@@ -453,17 +463,7 @@ xmlXPtrNewRangeNodePoint(xmlNodePtr start, xmlXPathObjectPtr end) {
+-     if (end->type != XPATH_POINT)
+- 	return(NULL);
+- 
+--    ret = (xmlXPathObjectPtr) xmlMalloc(sizeof(xmlXPathObject));
+--    if (ret == NULL) {
+--        xmlXPtrErrMemory("allocating range");
+--	return(NULL);
+--    }
+--    memset(ret, 0 , (size_t) sizeof(xmlXPathObject));
+--    ret->type = XPATH_RANGE;
+--    ret->user = start;
+--    ret->index = -1;
+--    ret->user2 = end->user;
+--    ret->index2 = end->index;
+-+    ret = xmlXPtrNewRangeInternal(start, -1, end->user, end->index);
+-     xmlXPtrRangeCheckOrder(ret);
+-     return(ret);
+- }
+-@@ -486,17 +486,7 @@ xmlXPtrNewRangeNodes(xmlNodePtr start, xmlNodePtr end) {
+-     if (end == NULL)
+- 	return(NULL);
+- 
+--    ret = (xmlXPathObjectPtr) xmlMalloc(sizeof(xmlXPathObject));
+--    if (ret == NULL) {
+--        xmlXPtrErrMemory("allocating range");
+--	return(NULL);
+--    }
+--    memset(ret, 0 , (size_t) sizeof(xmlXPathObject));
+--    ret->type = XPATH_RANGE;
+--    ret->user = start;
+--    ret->index = -1;
+--    ret->user2 = end;
+--    ret->index2 = -1;
+-+    ret = xmlXPtrNewRangeInternal(start, -1, end, -1);
+-     xmlXPtrRangeCheckOrder(ret);
+-     return(ret);
+- }
+-@@ -516,17 +506,7 @@ xmlXPtrNewCollapsedRange(xmlNodePtr start) {
+-     if (start == NULL)
+- 	return(NULL);
+- 
+--    ret = (xmlXPathObjectPtr) xmlMalloc(sizeof(xmlXPathObject));
+--    if (ret == NULL) {
+--        xmlXPtrErrMemory("allocating range");
+--	return(NULL);
+--    }
+--    memset(ret, 0 , (size_t) sizeof(xmlXPathObject));
+--    ret->type = XPATH_RANGE;
+--    ret->user = start;
+--    ret->index = -1;
+--    ret->user2 = NULL;
+--    ret->index2 = -1;
+-+    ret = xmlXPtrNewRangeInternal(start, -1, NULL, -1);
+-     return(ret);
+- }
+- 
+-@@ -541,6 +521,8 @@ xmlXPtrNewCollapsedRange(xmlNodePtr start) {
+-  */
+- xmlXPathObjectPtr
+- xmlXPtrNewRangeNodeObject(xmlNodePtr start, xmlXPathObjectPtr end) {
+-+    xmlNodePtr endNode;
+-+    int endIndex;
+-     xmlXPathObjectPtr ret;
+- 
+-     if (start == NULL)
+-@@ -549,7 +531,12 @@ xmlXPtrNewRangeNodeObject(xmlNodePtr start, xmlXPathObjectPtr end) {
+- 	return(NULL);
+-     switch (end->type) {
+- 	case XPATH_POINT:
+-+	    endNode = end->user;
+-+	    endIndex = end->index;
+-+	    break;
+- 	case XPATH_RANGE:
+-+	    endNode = end->user2;
+-+	    endIndex = end->index2;
+- 	    break;
+- 	case XPATH_NODESET:
+- 	    /*
+-@@ -557,39 +544,15 @@ xmlXPtrNewRangeNodeObject(xmlNodePtr start, xmlXPathObjectPtr end) {
+- 	     */
+- 	    if (end->nodesetval->nodeNr <= 0)
+- 		return(NULL);
+-+	    endNode = end->nodesetval->nodeTab[end->nodesetval->nodeNr - 1];
+-+	    endIndex = -1;
+- 	    break;
+- 	default:
+- 	    /* TODO */
+- 	    return(NULL);
+-     }
+- 
+--    ret = (xmlXPathObjectPtr) xmlMalloc(sizeof(xmlXPathObject));
+--    if (ret == NULL) {
+--        xmlXPtrErrMemory("allocating range");
+--	return(NULL);
+--    }
+--    memset(ret, 0 , (size_t) sizeof(xmlXPathObject));
+--    ret->type = XPATH_RANGE;
+--    ret->user = start;
+--    ret->index = -1;
+--    switch (end->type) {
+--	case XPATH_POINT:
+--	    ret->user2 = end->user;
+--	    ret->index2 = end->index;
+--	    break;
+--	case XPATH_RANGE:
+--	    ret->user2 = end->user2;
+--	    ret->index2 = end->index2;
+--	    break;
+--	case XPATH_NODESET: {
+--	    ret->user2 = end->nodesetval->nodeTab[end->nodesetval->nodeNr - 1];
+--	    ret->index2 = -1;
+--	    break;
+--	}
+--	default:
+--	    STRANGE
+--	    return(NULL);
+--    }
+-+    ret = xmlXPtrNewRangeInternal(start, -1, endNode, endIndex);
+-     xmlXPtrRangeCheckOrder(ret);
+-     return(ret);
+- }
+--- 
+-2.10.2
+-
+diff --git a/package/libxml2/libxml2.hash b/package/libxml2/libxml2.hash
+index 098121e117..7f9e7dbd3f 100644
+--- a/package/libxml2/libxml2.hash
++++ b/package/libxml2/libxml2.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated after checking pgp signature
+-sha256	ffb911191e509b966deb55de705387f14156e1a56b21824357cdf0053233633c	libxml2-2.9.4.tar.gz
++sha256	4031c1ecee9ce7ba4f313e91ef6284164885cdb69937a123f6a83bb6a72dcd38	libxml2-2.9.5.tar.gz
+diff --git a/package/libxml2/libxml2.mk b/package/libxml2/libxml2.mk
+index 2a7153ad17..a6e1c3908b 100644
+--- a/package/libxml2/libxml2.mk
++++ b/package/libxml2/libxml2.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBXML2_VERSION = 2.9.4
++LIBXML2_VERSION = 2.9.5
+ LIBXML2_SITE = ftp://xmlsoft.org/libxml2
+ LIBXML2_INSTALL_STAGING = YES
+ LIBXML2_LICENSE = MIT
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index 99c8b2a4f1..89ac5b6a39 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -28,12 +28,12 @@ choice
+ 
+ 	config BR2_KERNEL_HEADERS_3_2
+ 		bool "Linux 3.2.x kernel headers"
+-		depends on !BR2_arc && !BR2_nios2
++		depends on !BR2_aarch64 && !BR2_arc && !BR2_nios2
+ 		select BR2_TOOLCHAIN_HEADERS_AT_LEAST_3_2
+ 
+ 	config BR2_KERNEL_HEADERS_3_4
+ 		bool "Linux 3.4.x kernel headers"
+-		depends on !BR2_arc && !BR2_nios2
++		depends on !BR2_aarch64 && !BR2_arc && !BR2_nios2
+ 		select BR2_TOOLCHAIN_HEADERS_AT_LEAST_3_4
+ 
+ 	config BR2_KERNEL_HEADERS_3_10
+@@ -214,15 +214,15 @@ endchoice
+ 
+ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+-	default "3.2.91"	if BR2_KERNEL_HEADERS_3_2
++	default "3.2.93"	if BR2_KERNEL_HEADERS_3_2
+ 	default "3.4.113"	if BR2_KERNEL_HEADERS_3_4
+ 	default "3.10.107"	if BR2_KERNEL_HEADERS_3_10
+ 	default "3.12.74"	if BR2_KERNEL_HEADERS_3_12
+-	default "3.18.61"	if BR2_KERNEL_HEADERS_3_18
++	default "3.18.71"	if BR2_KERNEL_HEADERS_3_18
+ 	default "3.19.8"	if BR2_KERNEL_HEADERS_3_19
+ 	default "4.0.9"		if BR2_KERNEL_HEADERS_4_0
+-	default "4.1.42"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.78"	if BR2_KERNEL_HEADERS_4_4
++	default "4.1.44"	if BR2_KERNEL_HEADERS_4_1
++	default "4.4.88"	if BR2_KERNEL_HEADERS_4_4
+ 	default "4.8.17"	if BR2_KERNEL_HEADERS_4_8
+-	default "4.9.39"	if BR2_KERNEL_HEADERS_4_9
++	default "4.9.51"	if BR2_KERNEL_HEADERS_4_9
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/linux-tools/linux-tool-gpio.mk b/package/linux-tools/linux-tool-gpio.mk
+index ba75ab4c3f..d5a0dbda38 100644
+--- a/package/linux-tools/linux-tool-gpio.mk
++++ b/package/linux-tools/linux-tool-gpio.mk
+@@ -15,13 +15,13 @@ define GPIO_BUILD_CMDS
+ 		exit 1 ; \
+ 	fi
+ 
+-	$(TARGET_MAKE_ENV) $(MAKE) -C $(LINUX_DIR)/tools \
++	$(TARGET_MAKE_ENV) $(MAKE1) -C $(LINUX_DIR)/tools \
+ 		$(GPIO_MAKE_OPTS) \
+ 		gpio
+ endef
+ 
+ define GPIO_INSTALL_TARGET_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) -C $(LINUX_DIR)/tools \
++	$(TARGET_MAKE_ENV) $(MAKE1) -C $(LINUX_DIR)/tools \
+ 		$(GPIO_MAKE_OPTS) \
+ 		DESTDIR=$(TARGET_DIR) \
+ 		gpio_install
+diff --git a/package/lua/5.2.4/0004-lua-pc.patch b/package/lua/5.2.4/0004-lua-pc.patch
+index 62acb201f2..31ff61157a 100644
+--- a/package/lua/5.2.4/0004-lua-pc.patch
++++ b/package/lua/5.2.4/0004-lua-pc.patch
+@@ -1,6 +1,8 @@
+ add lua.pc
+ 
+ Signed-off-by: Francois Perrad <francois.perrad@gadz.org>
++[Jörg Krause: add @MYLIBS@]
++Signed-off-by: Jörg Krause <joerg.krause@embedded.rocks>
+ 
+ Index: b/etc/lua.pc
+ ===================================================================
+@@ -34,7 +36,7 @@ Index: b/etc/lua.pc
+ +Description: An Extensible Extension Language
+ +Version: ${R}
+ +Requires: 
+-+Libs: -L${libdir} -llua -lm
+++Libs: -L${libdir} -llua -lm @MYLIBS@
+ +Cflags: -I${includedir}
+ +
+ +# (end of lua.pc)
+diff --git a/package/lua/5.3.4/0004-lua-pc.patch b/package/lua/5.3.4/0004-lua-pc.patch
+index 615a7db8fc..11258329d1 100644
+--- a/package/lua/5.3.4/0004-lua-pc.patch
++++ b/package/lua/5.3.4/0004-lua-pc.patch
+@@ -1,6 +1,8 @@
+ add lua.pc
+ 
+ Signed-off-by: Francois Perrad <francois.perrad@gadz.org>
++[Jörg Krause: add @MYLIBS@]
++Signed-off-by: Jörg Krause <joerg.krause@embedded.rocks>
+ 
+ Index: b/etc/lua.pc
+ ===================================================================
+@@ -34,7 +36,7 @@ Index: b/etc/lua.pc
+ +Description: An Extensible Extension Language
+ +Version: ${R}
+ +Requires:
+-+Libs: -L${libdir} -llua -lm
+++Libs: -L${libdir} -llua -lm @MYLIBS@
+ +Cflags: -I${includedir}
+ +
+ +# (end of lua.pc)
+diff --git a/package/lua/lua.mk b/package/lua/lua.mk
+index bc0a9d456b..89636f20f7 100644
+--- a/package/lua/lua.mk
++++ b/package/lua/lua.mk
+@@ -86,8 +86,9 @@ endef
+ 
+ define LUA_INSTALL_STAGING_CMDS
+ 	$(TARGET_MAKE_ENV) $(MAKE) INSTALL_TOP="$(STAGING_DIR)/usr" -C $(@D) install
+-	$(INSTALL) -m 0644 -D $(@D)/etc/lua.pc \
+-		$(STAGING_DIR)/usr/lib/pkgconfig/lua.pc
++	mkdir -p $(STAGING_DIR)/usr/lib/pkgconfig/
++	sed -e "s/@MYLIBS@/$(LUA_MYLIBS)/g" $(@D)/etc/lua.pc \
++		> $(STAGING_DIR)/usr/lib/pkgconfig/lua.pc
+ endef
+ 
+ define LUA_INSTALL_TARGET_CMDS
+@@ -96,8 +97,9 @@ endef
+ 
+ define HOST_LUA_INSTALL_CMDS
+ 	$(HOST_MAKE_ENV) $(MAKE) INSTALL_TOP="$(HOST_DIR)/usr" -C $(@D) install
+-	$(INSTALL) -m 0644 -D $(@D)/etc/lua.pc \
+-		$(HOST_DIR)/usr/lib/pkgconfig/lua.pc
++	mkdir -p $(HOST_DIR)/usr/lib/pkgconfig/
++	sed -e "s/@MYLIBS@/$(HOST_LUA_MYLIBS)/g" $(@D)/etc/lua.pc \
++		> $(HOST_DIR)/lib/pkgconfig/lua.pc
+ endef
+ 
+ $(eval $(generic-package))
+diff --git a/package/mariadb/mariadb.hash b/package/mariadb/mariadb.hash
+index 580fe987d9..fd5625c8e7 100644
+--- a/package/mariadb/mariadb.hash
++++ b/package/mariadb/mariadb.hash
+@@ -1,2 +1,6 @@
+-# From https://downloads.mariadb.org/mariadb/10.1.23/
+-sha256 54d8114e24bfa5e3ebdc7d69e071ad1471912847ea481b227d204f9d644300bf  mariadb-10.1.23.tar.gz
++# From https://downloads.mariadb.org/mariadb/10.1.26/
++sha256 ba88b1cb9967dea2909938a34ba89373b162b0d83e5c98a0f1c94540156bf73d  mariadb-10.1.26.tar.gz
++
++# Hash for license files
++sha256 69ce89a0cadbe35a858398c258be93c388715e84fc0ca04e5a1fd1aa9770dd3a  README
++sha256 ab15fd526bd8dd18a9e77ebc139656bf4d33e97fc7238cd11bf60e2b9b8666c6  COPYING
+diff --git a/package/mariadb/mariadb.mk b/package/mariadb/mariadb.mk
+index e171e0ef09..86b3a23f59 100644
+--- a/package/mariadb/mariadb.mk
++++ b/package/mariadb/mariadb.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MARIADB_VERSION = 10.1.23
++MARIADB_VERSION = 10.1.26
+ MARIADB_SITE = https://downloads.mariadb.org/interstitial/mariadb-$(MARIADB_VERSION)/source
+ MARIADB_LICENSE = GPLv2 (server), GPLv2 with FLOSS exception (GPL client library), LGPLv2 (LGPL client library)
+ # Tarball no longer contains LGPL license text
+@@ -67,6 +67,8 @@ MARIADB_CONF_OPTS += \
+ 	-DMYSQL_DATADIR=/var/lib/mysql \
+ 	-DMYSQL_UNIX_ADDR=$(MYSQL_SOCKET)
+ 
++HOST_MARIADB_CONF_OPTS += -DWITH_SSL=bundled
++
+ # Some helpers must be compiled for host in order to crosscompile mariadb for
+ # the target. They are then included by import_executables.cmake which is
+ # generated during the build of the host helpers. It is not necessary to build
+diff --git a/package/mbedtls/mbedtls.hash b/package/mbedtls/mbedtls.hash
+index 70a0dc506d..d04b867754 100644
+--- a/package/mbedtls/mbedtls.hash
++++ b/package/mbedtls/mbedtls.hash
+@@ -1,2 +1,5 @@
+-# From https://tls.mbed.org/tech-updates/releases/mbedtls-2.4.2-2.1.7-and-1.3.19-released
+-sha256	17dd98af7478aadacc480c7e4159e447353b5b2037c1b6d48ed4fd157fb1b018	mbedtls-2.4.2-apache.tgz
++# From https://tls.mbed.org/tech-updates/releases/mbedtls-2.6.0-2.1.9-and-1.3.21-released
++sha1	e914288da50977f541773f9d36e26f14926594a5	mbedtls-2.6.0-apache.tgz
++sha256	99bc9d4212d3d885eeb96273bcde8ecc649a481404b8d7ea7bb26397c9909687	mbedtls-2.6.0-apache.tgz
++# Locally calculated
++sha256	cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30	apache-2.0.txt
+diff --git a/package/mbedtls/mbedtls.mk b/package/mbedtls/mbedtls.mk
+index a571ed0e52..64ce18cf6f 100644
+--- a/package/mbedtls/mbedtls.mk
++++ b/package/mbedtls/mbedtls.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ MBEDTLS_SITE = https://tls.mbed.org/code/releases
+-MBEDTLS_VERSION = 2.4.2
++MBEDTLS_VERSION = 2.6.0
+ MBEDTLS_SOURCE = mbedtls-$(MBEDTLS_VERSION)-apache.tgz
+ MBEDTLS_CONF_OPTS = \
+ 	-DENABLE_PROGRAMS=$(if $(BR2_PACKAGE_MBEDTLS_PROGRAMS),ON,OFF) \
+diff --git a/package/mediastreamer/0001-fix-compilation-issue-with-latest-bctoobox.patch b/package/mediastreamer/0001-fix-compilation-issue-with-latest-bctoobox.patch
+new file mode 100644
+index 0000000000..7bc9733c85
+--- /dev/null
++++ b/package/mediastreamer/0001-fix-compilation-issue-with-latest-bctoobox.patch
+@@ -0,0 +1,38 @@
++From 26f884bf977977041fe6f98a0af186be1580bf22 Mon Sep 17 00:00:00 2001
++From: Simon Morlat <simon.morlat@linphone.org>
++Date: Thu, 29 Sep 2016 15:26:18 +0200
++Subject: [PATCH] fix compilation issue with latest bctoobox
++
++[Upstream commit https://github.com/BelledonneCommunications/mediastreamer2/commit/26f884bf977977041fe6f98a0af186be1580bf22]
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++---
++ configure.ac           | 2 +-
++ src/crypto/dtls_srtp.c | 2 +-
++ 2 files changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/configure.ac b/configure.ac
++index 7ab20a08f..244d87275 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -1116,7 +1116,7 @@ fi
++ 
++ 
++ dnl check bctoolbox library
++-PKG_CHECK_MODULES(BCTOOLBOX, bctoolbox >= 0.0.0, found_bctoolbox=true, found_bctoolbox=false)
+++PKG_CHECK_MODULES(BCTOOLBOX, bctoolbox >= 0.4.0, found_bctoolbox=true, found_bctoolbox=false)
++ if test "$found_bctoolbox" = "true" ; then
++ 	LIBS="$LIBS $BCTOOLBOX_LIBS"
++ 	CFLAGS="$CFLAGS $BCTOOLBOX_CFLAGS"
++diff --git a/src/crypto/dtls_srtp.c b/src/crypto/dtls_srtp.c
++index e2c8e1c44..fd37eb5cb 100644
++--- a/src/crypto/dtls_srtp.c
+++++ b/src/crypto/dtls_srtp.c
++@@ -705,7 +705,7 @@ static int ms_dtls_srtp_initialise_bctbx_dtls_context(DtlsBcToolBoxContext *dtls
++ 	bctbx_ssl_config_set_authmode(dtlsContext->ssl_config, BCTBX_SSL_VERIFY_OPTIONAL);
++ 	bctbx_ssl_config_set_own_cert( dtlsContext->ssl_config, dtlsContext->crt, dtlsContext->pkey );
++ 	/* This is useless as peer would certainly be a self signed certificate and we won't verify it but avoid runtime warnings */
++-	bctbx_ssl_config_set_ca_chain(dtlsContext->ssl_config, dtlsContext->crt, NULL);
+++	bctbx_ssl_config_set_ca_chain(dtlsContext->ssl_config, dtlsContext->crt);
++ 
++ 	/* we are not ready yet to actually start the ssl context, this will be done by calling bctbx_ssl_setup when stream starts */
++ 	return 0;
+diff --git a/package/mediastreamer/mediastreamer.hash b/package/mediastreamer/mediastreamer.hash
+index 0f1ac77ce1..5f26b54bff 100644
+--- a/package/mediastreamer/mediastreamer.hash
++++ b/package/mediastreamer/mediastreamer.hash
+@@ -1,3 +1,2 @@
+ # Locally calculated
+ sha256  1144849c0c96abafb1153adf56109f0f195a9e4a53cf28cb611bbca7a9012c1a  mediastreamer-2.14.0.tar.gz
+-sha256  90091ab0aa7a77381ab1ca5d88cdfa4e7f62505fb452a2bea0f70054d9d1aece  26f884bf977977041fe6f98a0af186be1580bf22.patch
+diff --git a/package/mediastreamer/mediastreamer.mk b/package/mediastreamer/mediastreamer.mk
+index b4f0c52c7c..fa4b163e34 100644
+--- a/package/mediastreamer/mediastreamer.mk
++++ b/package/mediastreamer/mediastreamer.mk
+@@ -7,16 +7,13 @@
+ MEDIASTREAMER_VERSION = 2.14.0
+ MEDIASTREAMER_SITE = http://download.savannah.nongnu.org/releases/linphone/mediastreamer
+ MEDIASTREAMER_INSTALL_STAGING = YES
+-MEDIASTREAMER_DEPENDENCIES = host-intltool host-pkgconf ortp host-gettext
++# host-vim needed for the xxd utility
++MEDIASTREAMER_DEPENDENCIES = host-intltool host-pkgconf ortp host-gettext host-vim
+ # tests fail linking on some architectures, so disable them
+ MEDIASTREAMER_CONF_OPTS = --disable-tests --disable-glx --disable-strict
+ MEDIASTREAMER_LICENSE = GPLv2+
+ MEDIASTREAMER_LICENSE_FILES = COPYING
+ 
+-# fix compilation issue with latest bctoolbox (touches configure.ac)
+-MEDIASTREAMER_PATCH = \
+-	https://github.com/BelledonneCommunications/mediastreamer2/commit/26f884bf977977041fe6f98a0af186be1580bf22.patch
+-
+ # patching configure.ac
+ MEDIASTREAMER_AUTORECONF = YES
+ 
+diff --git a/package/minidlna/minidlna.mk b/package/minidlna/minidlna.mk
+index 0e765e80f7..c67373fd14 100644
+--- a/package/minidlna/minidlna.mk
++++ b/package/minidlna/minidlna.mk
+@@ -29,7 +29,7 @@ define MINIDLNA_INSTALL_INIT_SYSV
+ endef
+ 
+ define MINIDLNA_INSTALL_INIT_SYSTEMD
+-	$(INSTALL) -D -m 0755 package/minidlna/minidlnad.service \
++	$(INSTALL) -D -m 0644 package/minidlna/minidlnad.service \
+ 		$(TARGET_DIR)/usr/lib/systemd/system/minidlnad.service
+ 
+ 	mkdir -p $(TARGET_DIR)/etc/systemd/system/multi-user.target.wants
+diff --git a/package/netplug/S29netplug b/package/netplug/S29netplug
+index 88f933d556..d3df9ddff5 100755
+--- a/package/netplug/S29netplug
++++ b/package/netplug/S29netplug
+@@ -11,6 +11,9 @@
+ 
+ # Copyright 2003 Key Research, Inc.
+ 
++# Create needed directories
++mkdir -p /var/lock/subsys
++
+ # Source function library.
+ if [ -f /etc/init.d/functions ]; then
+ 	. /etc/init.d/functions
+diff --git a/package/nss-pam-ldapd/nss-pam-ldapd.mk b/package/nss-pam-ldapd/nss-pam-ldapd.mk
+index ba250829bb..f588e157bd 100644
+--- a/package/nss-pam-ldapd/nss-pam-ldapd.mk
++++ b/package/nss-pam-ldapd/nss-pam-ldapd.mk
+@@ -27,7 +27,7 @@ NSS_PAM_LDAPD_CONF_OPTS += --disable-pam
+ endif
+ 
+ define NSS_PAM_LDAPD_INSTALL_INIT_SYSTEMD
+-	$(INSTALL) -m 755 -D package/nss-pam-ldapd/nslcd.service \
++	$(INSTALL) -m 644 -D package/nss-pam-ldapd/nslcd.service \
+ 		$(TARGET_DIR)/usr/lib/systemd/system/nslcd.service
+ 	mkdir -p $(TARGET_DIR)/etc/systemd/system/multi-user.target.wants
+ 	ln -fs ../../../../usr/lib/systemd/system/nslcd.service \
+diff --git a/package/nvidia-driver/egl.pc b/package/nvidia-driver/egl.pc
+new file mode 100644
+index 0000000000..a5aeace63c
+--- /dev/null
++++ b/package/nvidia-driver/egl.pc
+@@ -0,0 +1,10 @@
++prefix=/usr
++exec_prefix=${prefix}
++libdir=${exec_prefix}/lib
++includedir=${prefix}/include
++
++Name: egl
++Description: Nvidia OpenGL library
++Version: 1
++Cflags: -I${includedir}
++Libs: -L${libdir} -lEGL
+diff --git a/package/nvidia-driver/nvidia-driver.mk b/package/nvidia-driver/nvidia-driver.mk
+index 20beec8936..1b85f3db28 100644
+--- a/package/nvidia-driver/nvidia-driver.mk
++++ b/package/nvidia-driver/nvidia-driver.mk
+@@ -78,6 +78,7 @@ define NVIDIA_DRIVER_INSTALL_GL_DEV
+ 	$(SED) 's:__LIBGL_PATH__:/usr/lib:' $(STAGING_DIR)/usr/lib/libGL.la
+ 	$(SED) 's:-L[^[:space:]]\+::' $(STAGING_DIR)/usr/lib/libGL.la
+ 	$(INSTALL) -D -m 0644 package/nvidia-driver/gl.pc $(STAGING_DIR)/usr/lib/pkgconfig/gl.pc
++	$(INSTALL) -D -m 0644 package/nvidia-driver/egl.pc $(STAGING_DIR)/usr/lib/pkgconfig/egl.pc
+ endef
+ 
+ # Those libraries are 'private' libraries requiring an agreement with
+diff --git a/package/openjpeg/0003-avoid-malloc-poisoning-issue.patch b/package/openjpeg/0003-avoid-malloc-poisoning-issue.patch
+new file mode 100644
+index 0000000000..8463e20d6d
+--- /dev/null
++++ b/package/openjpeg/0003-avoid-malloc-poisoning-issue.patch
+@@ -0,0 +1,54 @@
++From 51a1dcaa6ed5713520dca36fc58cd9240c08b7ca Mon Sep 17 00:00:00 2001
++From: Even Rouault <even.rouault@spatialys.com>
++Date: Thu, 7 Sep 2017 17:52:59 +0200
++Subject: [PATCH] Avoid malloc poisoning issue when including <pthread.h> of
++ uclibc (#1013)
++
++Signed-off-by: Olivier Schonken <olivier.schonken@gmail.com>
++---
++ src/lib/openjp2/thread.c | 11 ++++++++---
++ 1 file changed, 8 insertions(+), 3 deletions(-)
++
++diff --git a/src/lib/openjp2/thread.c b/src/lib/openjp2/thread.c
++index 8b56aa4d5..af33c2c80 100644
++--- a/src/lib/openjp2/thread.c
+++++ b/src/lib/openjp2/thread.c
++@@ -29,9 +29,6 @@
++  * POSSIBILITY OF SUCH DAMAGE.
++  */
++ 
++-#include "opj_includes.h"
++-
++-#include "thread.h"
++ #include <assert.h>
++ 
++ #ifdef MUTEX_win32
++@@ -46,6 +43,8 @@
++ #include <windows.h>
++ #include <process.h>
++ 
+++#include "opj_includes.h"
+++
++ OPJ_BOOL OPJ_CALLCONV opj_has_thread_support(void)
++ {
++     return OPJ_TRUE;
++@@ -289,6 +288,10 @@ void opj_thread_join(opj_thread_t* thread)
++ #include <stdlib.h>
++ #include <unistd.h>
++ 
+++/* Moved after all system includes, and in particular pthread.h, so as to */
+++/* avoid poisoning issuing with malloc() use in pthread.h with ulibc (#1013) */
+++#include "opj_includes.h"
+++
++ OPJ_BOOL OPJ_CALLCONV opj_has_thread_support(void)
++ {
++     return OPJ_TRUE;
++@@ -425,6 +428,8 @@ void opj_thread_join(opj_thread_t* thread)
++ #else
++ /* Stub implementation */
++ 
+++#include "opj_includes.h"
+++
++ OPJ_BOOL OPJ_CALLCONV opj_has_thread_support(void)
++ {
++     return OPJ_FALSE;
+diff --git a/package/openjpeg/0004-CMakeLists.txt-Don-t-require-a-C-compiler.patch b/package/openjpeg/0004-CMakeLists.txt-Don-t-require-a-C-compiler.patch
+new file mode 100644
+index 0000000000..13cceef195
+--- /dev/null
++++ b/package/openjpeg/0004-CMakeLists.txt-Don-t-require-a-C-compiler.patch
+@@ -0,0 +1,34 @@
++From 786ddcd1475adc6193c59d53e0d8ed2c502f2b00 Mon Sep 17 00:00:00 2001
++From: Peter Korsgaard <peter@korsgaard.com>
++Date: Sat, 23 Sep 2017 18:49:31 +0200
++Subject: [PATCH] CMakeLists.txt: Don't require a C++ compiler
++
++By default, CMake assumes that the project is using both C and C++.  By
++explicitly passing 'C' as argument of the project() macro, we tell CMake
++that only C is used, which prevents CMake from erroring out if a C++
++compiler doesn't exist.
++
++Submitted upstream:
++https://github.com/uclouvain/openjpeg/pull/1027
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ CMakeLists.txt | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/CMakeLists.txt b/CMakeLists.txt
++index ec42bc99..d80eb48b 100644
++--- a/CMakeLists.txt
+++++ b/CMakeLists.txt
++@@ -24,7 +24,7 @@ endif()
++ #string(TOLOWER ${OPENJPEG_NAMESPACE} OPENJPEG_LIBRARY_NAME)
++ set(OPENJPEG_LIBRARY_NAME openjp2)
++ 
++-project(${OPENJPEG_NAMESPACE})
+++project(${OPENJPEG_NAMESPACE} C)
++ 
++ # Do full dependency headers.
++ include_regular_expression("^.*$")
++-- 
++2.11.0
++
+diff --git a/package/openjpeg/openjpeg.hash b/package/openjpeg/openjpeg.hash
+index c0abd0c54d..0e51aaec5e 100644
+--- a/package/openjpeg/openjpeg.hash
++++ b/package/openjpeg/openjpeg.hash
+@@ -1,2 +1,2 @@
+ # Locally computed:
+-sha256	4ce77b6ef538ef090d9bde1d5eeff8b3069ab56c4906f083475517c2c023dfa7  openjpeg-2.1.2.tar.gz
++sha256	6fddbce5a618e910e03ad00d66e7fcd09cc6ee307ce69932666d54c73b7c6e7b  openjpeg-2.2.0.tar.gz
+diff --git a/package/openjpeg/openjpeg.mk b/package/openjpeg/openjpeg.mk
+index ca22068113..e67171305f 100644
+--- a/package/openjpeg/openjpeg.mk
++++ b/package/openjpeg/openjpeg.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-OPENJPEG_VERSION = 2.1.2
++OPENJPEG_VERSION = 2.2.0
+ OPENJPEG_SITE = $(call github,uclouvain,openjpeg,v$(OPENJPEG_VERSION))
+ OPENJPEG_LICENSE = BSD-2c
+ OPENJPEG_LICENSE_FILES = LICENSE
+diff --git a/package/pkg-cmake.mk b/package/pkg-cmake.mk
+index a7c8dc3b34..f1c12b988e 100644
+--- a/package/pkg-cmake.mk
++++ b/package/pkg-cmake.mk
+@@ -109,6 +109,11 @@ define $(2)_CONFIGURE_CMDS
+ 	cd $$($$(PKG)_BUILDDIR) && \
+ 	rm -f CMakeCache.txt && \
+ 	PATH=$$(BR_PATH) \
++	PKG_CONFIG="$$(PKG_CONFIG_HOST_BINARY)" \
++	PKG_CONFIG_SYSROOT_DIR="/" \
++	PKG_CONFIG_LIBDIR="$$(HOST_DIR)/lib/pkgconfig:$$(HOST_DIR)/share/pkgconfig" \
++	PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1 \
++	PKG_CONFIG_ALLOW_SYSTEM_LIBS=1 \
+ 	$$($$(PKG)_CONF_ENV) $$(BR2_CMAKE) $$($$(PKG)_SRCDIR) \
+ 		-DCMAKE_INSTALL_SO_NO_EXE=0 \
+ 		-DCMAKE_FIND_ROOT_PATH="$$(HOST_DIR)" \
+diff --git a/package/pkg-kconfig.mk b/package/pkg-kconfig.mk
+index 215f01b430..0402f81ffe 100644
+--- a/package/pkg-kconfig.mk
++++ b/package/pkg-kconfig.mk
+@@ -189,7 +189,7 @@ $$($(2)_DIR)/.kconfig_editor_%: $$($(2)_DIR)/.stamp_kconfig_fixup_done
+ # which in turn depends on the (newly-set an non-existent) custom
+ # defconfig file.
+ #
+-# Instead, we use an PHONY rule that will catch that situation.
++# Instead, we use a PHONY rule that will catch that situation.
+ #
+ $(1)-check-configuration-done:
+ 	@if [ ! -f $$($(2)_DIR)/.stamp_kconfig_fixup_done ]; then \
+diff --git a/package/pkgconf/Config.in b/package/pkgconf/Config.in
+index f95847fa3c..9d5d9ab194 100644
+--- a/package/pkgconf/Config.in
++++ b/package/pkgconf/Config.in
+@@ -6,4 +6,4 @@ config BR2_PACKAGE_PKGCONF
+ 	  but was written from scratch in the summer of 2011 to replace
+ 	  pkg-config, which now needs itself to build itself
+ 
+-	  https://github.com/nenolod/pkgconf
++	  https://github.com/pkgconf/pkgconf
+diff --git a/package/postgresql/postgresql.hash b/package/postgresql/postgresql.hash
+index c65edf71da..62ce9a7407 100644
+--- a/package/postgresql/postgresql.hash
++++ b/package/postgresql/postgresql.hash
+@@ -1,2 +1,2 @@
+-# From https://ftp.postgresql.org/pub/source/v9.6.3/postgresql-9.6.3.tar.bz2.sha256
+-sha256 1645b3736901f6d854e695a937389e68ff2066ce0cde9d73919d6ab7c995b9c6  postgresql-9.6.3.tar.bz2
++# From https://ftp.postgresql.org/pub/source/v9.6.5/postgresql-9.6.5.tar.bz2.sha256
++sha256 06da12a7e3dddeb803962af8309fa06da9d6989f49e22865335f0a14bad0744c  postgresql-9.6.5.tar.bz2
+diff --git a/package/postgresql/postgresql.mk b/package/postgresql/postgresql.mk
+index 62b41cbeaa..7adb957cf0 100644
+--- a/package/postgresql/postgresql.mk
++++ b/package/postgresql/postgresql.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-POSTGRESQL_VERSION = 9.6.3
++POSTGRESQL_VERSION = 9.6.5
+ POSTGRESQL_SOURCE = postgresql-$(POSTGRESQL_VERSION).tar.bz2
+ POSTGRESQL_SITE = http://ftp.postgresql.org/pub/source/v$(POSTGRESQL_VERSION)
+ POSTGRESQL_LICENSE = PostgreSQL
+diff --git a/package/proxychains-ng/proxychains-ng.hash b/package/proxychains-ng/proxychains-ng.hash
+index e2e8c01af0..7ca4d5e27a 100644
+--- a/package/proxychains-ng/proxychains-ng.hash
++++ b/package/proxychains-ng/proxychains-ng.hash
+@@ -1,2 +1,5 @@
++# From https://sourceforge.net/projects/proxychains-ng/files/
++md5 34d840eb184e96bff418201c28a935c5  proxychains-ng-4.11.tar.bz2
++sha1 00bc3dc18f2b638c79112c99f082a7a2878beaad  proxychains-ng-4.11.tar.bz2
+ # Locally computed:
+-sha256  859a717e18ed88c9291078a6ed8748dfe95c61220993203890fef8a04d28dda5  proxychains-4.6.tar.bz2
++sha256  dcc4149808cd1fb5d9663cc09791f478805816b1f017381f424414c47f6376b6  proxychains-ng-4.11.tar.bz2
+diff --git a/package/proxychains-ng/proxychains-ng.mk b/package/proxychains-ng/proxychains-ng.mk
+index 54e7dcd631..cf2379db95 100644
+--- a/package/proxychains-ng/proxychains-ng.mk
++++ b/package/proxychains-ng/proxychains-ng.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-PROXYCHAINS_NG_VERSION = 4.6
+-PROXYCHAINS_NG_SOURCE = proxychains-$(PROXYCHAINS_NG_VERSION).tar.bz2
++PROXYCHAINS_NG_VERSION = 4.11
++PROXYCHAINS_NG_SOURCE = proxychains-ng-$(PROXYCHAINS_NG_VERSION).tar.bz2
+ PROXYCHAINS_NG_SITE = http://downloads.sourceforge.net/project/proxychains-ng
+ PROXYCHAINS_NG_LICENSE = GPLv2+
+ PROXYCHAINS_NG_LICENSE_FILES = COPYING
+diff --git a/package/python-libconfig/0001-Determine-boost_python-name-depending-on-current-Pyt.patch b/package/python-libconfig/0001-Determine-boost_python-name-depending-on-current-Pyt.patch
+new file mode 100644
+index 0000000000..b30efc124d
+--- /dev/null
++++ b/package/python-libconfig/0001-Determine-boost_python-name-depending-on-current-Pyt.patch
+@@ -0,0 +1,40 @@
++From 3bc4b9c0d60a735b1d63e52f74492ace39f02824 Mon Sep 17 00:00:00 2001
++From: Yegor Yefremov <yegorslists@googlemail.com>
++Date: Thu, 27 Jul 2017 09:46:07 +0200
++Subject: [PATCH] Determine boost_python name depending on current Python
++ version
++
++Python2 requires boost_python and Python3 requires boost_python3.
++
++Signed-off-by: Yegor Yefremov <yegorslists@googlemail.com>
++---
++ setup.py | 6 +++++-
++ 1 file changed, 5 insertions(+), 1 deletion(-)
++
++diff --git a/setup.py b/setup.py
++index fdf5c27..4b38569 100644
++--- a/setup.py
+++++ b/setup.py
++@@ -3,6 +3,10 @@
++ from setuptools import setup, find_packages, Extension
++ import sys, os
++ 
+++boostlib = "boost_python3"
+++if sys.version_info < (3, 0):
+++    boostlib = "boost_python"
+++
++ setup(
++     name				= 'pylibconfig',
++     description			= "libconfig bindings for Python",
++@@ -19,7 +23,7 @@ setup(
++         Extension(
++             "pylibconfig",
++             ["src/pylibconfig.cc"],
++-            libraries=["boost_python", "config++"]
+++            libraries=[boostlib, "config++"]
++             #include_dirs=includes,
++             #extra_link_args=lflags
++                  )
++-- 
++2.11.0
++
+diff --git a/package/python-service-identity/Config.in b/package/python-service-identity/Config.in
+index c9cbb6cca1..73593b0d61 100644
+--- a/package/python-service-identity/Config.in
++++ b/package/python-service-identity/Config.in
+@@ -1,10 +1,11 @@
+ config BR2_PACKAGE_PYTHON_SERVICE_IDENTITY
+ 	bool "python-service-identity"
++	depends on BR2_INSTALL_LIBSTDCPP # python-pyopenssl, python-pyasn
++	select BR2_PACKAGE_PYTHON_ATTRS # runtime
+ 	select BR2_PACKAGE_PYTHON_CHARACTERISTIC # runtime
+ 	select BR2_PACKAGE_PYTHON_PYASN # runtime
+ 	select BR2_PACKAGE_PYTHON_PYASN_MODULES # runtime
+ 	select BR2_PACKAGE_PYTHON_PYOPENSSL # runtime
+-	depends on BR2_INSTALL_LIBSTDCPP # python-pyopenssl, python-pyasn
+ 	help
+ 	  Service identity verification for pyOpenSSL.
+ 
+diff --git a/package/qt/0001-alsatest-fix-the-check-to-treat-alsalib-1.1.x-as-correct.patch b/package/qt/0001-alsatest-fix-the-check-to-treat-alsalib-1.1.x-as-correct.patch
+new file mode 100644
+index 0000000000..4cec4bde52
+--- /dev/null
++++ b/package/qt/0001-alsatest-fix-the-check-to-treat-alsalib-1.1.x-as-correct.patch
+@@ -0,0 +1,29 @@
++From b8f98d956501dfa4ce03a137f15d404930a56066 Mon Sep 17 00:00:00 2001
++From: Dmitry Shachnev <mitya57@gmail.com>
++Date: Sat, 5 Mar 2016 10:25:33 +0300
++Subject: [PATCH] alsatest: Fix the check to treat alsalib 1.1.x as correct
++ version
++
++Task-number: QTBUG-51681
++Change-Id: I63266c33342f02f4d1a5ea5786f5fbc5a1b421b3
++Reviewed-by: Oswald Buddenhagen <oswald.buddenhagen@theqtcompany.com>
++[Upstream commit: https://github.com/qtproject/qtbase/commit/b8f98d956501dfa4ce03a137f15d404930a56066]
++[Patch fixing ALSA detection. Taken from Qt5, but applies fine to Qt4.]
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++---
++ config.tests/unix/alsa/alsatest.cpp | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/config.tests/unix/alsa/alsatest.cpp b/config.tests/unix/alsa/alsatest.cpp
++index cab6533977..0b45819b61 100644
++--- a/config.tests/unix/alsa/alsatest.cpp
+++++ b/config.tests/unix/alsa/alsatest.cpp
++@@ -32,7 +32,7 @@
++ ****************************************************************************/
++ 
++ #include <alsa/asoundlib.h>
++-#if(!(SND_LIB_MAJOR == 1 && SND_LIB_MINOR == 0 && SND_LIB_SUBMINOR >= 10))
+++#if SND_LIB_VERSION < 0x1000a  // 1.0.10
++ #error "Alsa version found too old, require >= 1.0.10"
++ #endif
++ 
+diff --git a/package/qt/0001-configure.patch b/package/qt/0002-configure.patch
+similarity index 100%
+rename from package/qt/0001-configure.patch
+rename to package/qt/0002-configure.patch
+diff --git a/package/qt/0002-eglwsegl-use-system.patch b/package/qt/0003-eglwsegl-use-system.patch
+similarity index 100%
+rename from package/qt/0002-eglwsegl-use-system.patch
+rename to package/qt/0003-eglwsegl-use-system.patch
+diff --git a/package/qt/0003-fix-const-atomics.patch b/package/qt/0004-fix-const-atomics.patch
+similarity index 100%
+rename from package/qt/0003-fix-const-atomics.patch
+rename to package/qt/0004-fix-const-atomics.patch
+diff --git a/package/qt/0004-pthread_getattr_np.patch b/package/qt/0005-pthread_getattr_np.patch
+similarity index 100%
+rename from package/qt/0004-pthread_getattr_np.patch
+rename to package/qt/0005-pthread_getattr_np.patch
+diff --git a/package/qt/0005-script-qtdbus-no-gui.patch b/package/qt/0006-script-qtdbus-no-gui.patch
+similarity index 100%
+rename from package/qt/0005-script-qtdbus-no-gui.patch
+rename to package/qt/0006-script-qtdbus-no-gui.patch
+diff --git a/package/qt/0006-Add-initial-support-of-ARC-architecture.patch b/package/qt/0007-Add-initial-support-of-ARC-architecture.patch
+similarity index 100%
+rename from package/qt/0006-Add-initial-support-of-ARC-architecture.patch
+rename to package/qt/0007-Add-initial-support-of-ARC-architecture.patch
+diff --git a/package/qt/0007-Prevent-unaligned-access-on-ARC.patch b/package/qt/0008-Prevent-unaligned-access-on-ARC.patch
+similarity index 100%
+rename from package/qt/0007-Prevent-unaligned-access-on-ARC.patch
+rename to package/qt/0008-Prevent-unaligned-access-on-ARC.patch
+diff --git a/package/qt/0008-Fix-conversion-constructor-error-for-legacy-c-compil.patch b/package/qt/0009-Fix-conversion-constructor-error-for-legacy-c-compil.patch
+similarity index 100%
+rename from package/qt/0008-Fix-conversion-constructor-error-for-legacy-c-compil.patch
+rename to package/qt/0009-Fix-conversion-constructor-error-for-legacy-c-compil.patch
+diff --git a/package/qt/0009-Fix-library-inclusion-order-when-building-statically.patch b/package/qt/0010-Fix-library-inclusion-order-when-building-statically.patch
+similarity index 100%
+rename from package/qt/0009-Fix-library-inclusion-order-when-building-statically.patch
+rename to package/qt/0010-Fix-library-inclusion-order-when-building-statically.patch
+diff --git a/package/qt/0010-Fix-for-platform-socklen_t-on-other-C-libraries-than.patch b/package/qt/0011-Fix-for-platform-socklen_t-on-other-C-libraries-than.patch
+similarity index 100%
+rename from package/qt/0010-Fix-for-platform-socklen_t-on-other-C-libraries-than.patch
+rename to package/qt/0011-Fix-for-platform-socklen_t-on-other-C-libraries-than.patch
+diff --git a/package/qt/0011-Link-with-ldl-option-only-when-it-is-supported.patch b/package/qt/0012-Link-with-ldl-option-only-when-it-is-supported.patch
+similarity index 100%
+rename from package/qt/0011-Link-with-ldl-option-only-when-it-is-supported.patch
+rename to package/qt/0012-Link-with-ldl-option-only-when-it-is-supported.patch
+diff --git a/package/qt/0012-OpenGL-EGL-Avoid-X11-header-collision.patch b/package/qt/0013-OpenGL-EGL-Avoid-X11-header-collision.patch
+similarity index 100%
+rename from package/qt/0012-OpenGL-EGL-Avoid-X11-header-collision.patch
+rename to package/qt/0013-OpenGL-EGL-Avoid-X11-header-collision.patch
+diff --git a/package/qt/0013-src-corelib-arch-qatomic_arm.h-fix-build-on-ARMv8-32.patch b/package/qt/0013-src-corelib-arch-qatomic_arm.h-fix-build-on-ARMv8-32.patch
+new file mode 100644
+index 0000000000..645041acfe
+--- /dev/null
++++ b/package/qt/0013-src-corelib-arch-qatomic_arm.h-fix-build-on-ARMv8-32.patch
+@@ -0,0 +1,37 @@
++From 2281fa50f6e13278d3fd4f028377b8249b7b3cdb Mon Sep 17 00:00:00 2001
++From: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++Date: Fri, 8 Sep 2017 09:06:54 +0200
++Subject: [PATCH] src/corelib/arch/qatomic_arm.h: fix build on ARMv8 32-bit
++
++The Qt build fails on ARMv8 32-bit because it falls back to using the
++ARMv5 code that uses the swp instruction, which no longer exists:
++
++/tmp/ccSxVIzw.s: Assembler messages:
++/tmp/ccSxVIzw.s:127: Error: swp{b} use is obsoleted for ARMv8 and later
++/tmp/ccSxVIzw.s:190: Error: swp{b} use is obsoleted for ARMv8 and later
++
++So, this commit adjusts the ARM atomic code to assume ARMv8 is similar
++to ARMv7.
++
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++---
++ src/corelib/arch/qatomic_arm.h | 3 ++-
++ 1 file changed, 2 insertions(+), 1 deletion(-)
++
++diff --git a/src/corelib/arch/qatomic_arm.h b/src/corelib/arch/qatomic_arm.h
++index 77cd66f272..e011929d3e 100644
++--- a/src/corelib/arch/qatomic_arm.h
+++++ b/src/corelib/arch/qatomic_arm.h
++@@ -47,7 +47,8 @@ QT_BEGIN_HEADER
++ #if defined(__ARM_ARCH_7__) \
++     || defined(__ARM_ARCH_7A__) \
++     || defined(__ARM_ARCH_7R__) \
++-    || defined(__ARM_ARCH_7M__)
+++    || defined(__ARM_ARCH_7M__) \
+++    || defined(__ARM_ARCH_8A__)
++ # define QT_ARCH_ARMV7
++ QT_BEGIN_INCLUDE_HEADER
++ # include "QtCore/qatomic_armv7.h"
++-- 
++2.13.5
++
+diff --git a/package/qt/qt.hash b/package/qt/qt.hash
+index de81368511..301010cae1 100644
+--- a/package/qt/qt.hash
++++ b/package/qt/qt.hash
+@@ -1,4 +1,3 @@
+ # md5 http://download.qt.io/official_releases/qt/4.8/4.8.7/md5sums-4.8.7, sha256 locally computed:
+ md5    d990ee66bf7ab0c785589776f35ba6ad                                 qt-everywhere-opensource-src-4.8.7.tar.gz
+ sha256 e2882295097e47fe089f8ac741a95fef47e0a73a3f3cdf21b56990638f626ea0 qt-everywhere-opensource-src-4.8.7.tar.gz
+-sha256 e03740e20b8dbf52d163d8a4a37125e7c55b59a9a5e7cf7e89a08e07286b6135 b8f98d956501dfa4ce03a137f15d404930a56066.patch
+diff --git a/package/qt/qt.mk b/package/qt/qt.mk
+index 29dcc46b7b..8809b0c7bb 100644
+--- a/package/qt/qt.mk
++++ b/package/qt/qt.mk
+@@ -15,9 +15,6 @@ QT_VERSION_MAJOR = 4.8
+ QT_VERSION = $(QT_VERSION_MAJOR).7
+ QT_SOURCE = qt-everywhere-opensource-src-$(QT_VERSION).tar.gz
+ QT_SITE = http://download.qt-project.org/official_releases/qt/$(QT_VERSION_MAJOR)/$(QT_VERSION)
+-# Patch fixing ALSA detection. Taken from Qt5, but applies fine to
+-# Qt4.
+-QT_PATCH = https://github.com/qtproject/qtbase/commit/b8f98d956501dfa4ce03a137f15d404930a56066.patch
+ QT_DEPENDENCIES = host-pkgconf
+ QT_INSTALL_STAGING = YES
+ 
+diff --git a/package/rpcbind/rpcbind.mk b/package/rpcbind/rpcbind.mk
+index 4360d1f47a..f8f8c418e3 100644
+--- a/package/rpcbind/rpcbind.mk
++++ b/package/rpcbind/rpcbind.mk
+@@ -22,9 +22,9 @@ RPCBIND_CONF_OPTS += --with-systemdsystemunitdir=no
+ endif
+ 
+ define RPCBIND_INSTALL_INIT_SYSTEMD
+-	$(INSTALL) -m 0755 -D package/rpcbind/rpcbind.service \
++	$(INSTALL) -m 0644 -D package/rpcbind/rpcbind.service \
+ 		$(TARGET_DIR)/usr/lib/systemd/system/rpcbind.service
+-	$(INSTALL) -m 0755 -D package/rpcbind/rpcbind.socket \
++	$(INSTALL) -m 0644 -D package/rpcbind/rpcbind.socket \
+ 		$(TARGET_DIR)/usr/lib/systemd/system/rpcbind.socket
+ 	mkdir -p $(TARGET_DIR)/etc/systemd/system/sockets.target.wants
+ 	ln -fs ../../../../usr/lib/systemd/system/rpcbind.socket \
+diff --git a/package/ruby/0001-rubygems-2612-ruby24.patch b/package/ruby/0001-rubygems-2612-ruby24.patch
+new file mode 100644
+index 0000000000..ebbefffbed
+--- /dev/null
++++ b/package/ruby/0001-rubygems-2612-ruby24.patch
+@@ -0,0 +1,445 @@
++[PATCH] bump rubygems to 2.6.12
++
++Downloaded from upstream:
++https://bugs.ruby-lang.org/attachments/download/6692/rubygems-2612-ruby24.patch
++
++And converted to patch-p1.
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++diff --git a/lib/rubygems.rb b/lib/rubygems.rb
++index 5cd1a4c47a..bc5bf9b4c2 100644
++--- a/lib/rubygems.rb
+++++ b/lib/rubygems.rb
++@@ -10,7 +10,7 @@
++ require 'thread'
++ 
++ module Gem
++-  VERSION = "2.6.11"
+++  VERSION = "2.6.12"
++ end
++ 
++ # Must be first since it unloads the prelude from 1.9.2
++@@ -234,6 +234,7 @@ def self.needs
++ 
++   def self.finish_resolve(request_set=Gem::RequestSet.new)
++     request_set.import Gem::Specification.unresolved_deps.values
+++    request_set.import Gem.loaded_specs.values.map {|s| Gem::Dependency.new(s.name, s.version) }
++ 
++     request_set.resolve_current.each do |s|
++       s.full_spec.activate
++diff --git a/lib/rubygems/commands/open_command.rb b/lib/rubygems/commands/open_command.rb
++index a89b7421e3..059635e835 100644
++--- a/lib/rubygems/commands/open_command.rb
+++++ b/lib/rubygems/commands/open_command.rb
++@@ -72,7 +72,7 @@ def open_editor path
++   end
++ 
++   def spec_for name
++-    spec = Gem::Specification.find_all_by_name(name, @version).last
+++    spec = Gem::Specification.find_all_by_name(name, @version).first
++ 
++     return spec if spec
++ 
++diff --git a/lib/rubygems/commands/query_command.rb b/lib/rubygems/commands/query_command.rb
++index f25d120b88..70f8127292 100644
++--- a/lib/rubygems/commands/query_command.rb
+++++ b/lib/rubygems/commands/query_command.rb
++@@ -86,7 +86,7 @@ def execute
++       name = Array(options[:name])
++     else
++       args = options[:args].to_a
++-      name = options[:exact] ? args : args.map{|arg| /#{arg}/i }
+++      name = options[:exact] ? args.map{|arg| /\A#{Regexp.escape(arg)}\Z/ } : args.map{|arg| /#{arg}/i }
++     end
++ 
++     prerelease = options[:prerelease]
++diff --git a/lib/rubygems/commands/sources_command.rb b/lib/rubygems/commands/sources_command.rb
++index 9832afd214..7e46963a4c 100644
++--- a/lib/rubygems/commands/sources_command.rb
+++++ b/lib/rubygems/commands/sources_command.rb
++@@ -44,7 +44,7 @@ def add_source source_uri # :nodoc:
++     source = Gem::Source.new source_uri
++ 
++     begin
++-      if Gem.sources.include? source_uri then
+++      if Gem.sources.include? source then
++         say "source #{source_uri} already present in the cache"
++       else
++         source.load_specs :released
++diff --git a/lib/rubygems/dependency_list.rb b/lib/rubygems/dependency_list.rb
++index 35fe7c4c1a..d8314eaf60 100644
++--- a/lib/rubygems/dependency_list.rb
+++++ b/lib/rubygems/dependency_list.rb
++@@ -104,7 +104,7 @@ def find_name(full_name)
++   end
++ 
++   def inspect # :nodoc:
++-    "#<%s:0x%x %p>" % [self.class, object_id, map { |s| s.full_name }]
+++    "%s %p>" % [super[0..-2], map { |s| s.full_name }]
++   end
++ 
++   ##
++diff --git a/lib/rubygems/installer.rb b/lib/rubygems/installer.rb
++index f4d3e728de..967543c2d1 100644
++--- a/lib/rubygems/installer.rb
+++++ b/lib/rubygems/installer.rb
++@@ -214,7 +214,7 @@ def check_executable_overwrite filename # :nodoc:
++ 
++       ruby_executable = true
++       existing = io.read.slice(%r{
++-          ^(
+++          ^\s*(
++             gem \s |
++             load \s Gem\.bin_path\( |
++             load \s Gem\.activate_bin_path\(
++@@ -701,6 +701,8 @@ def verify_gem_home(unpack = false) # :nodoc:
++   # Return the text for an application file.
++ 
++   def app_script_text(bin_file_name)
+++    # note that the `load` lines cannot be indented, as old RG versions match
+++    # against the beginning of the line
++     return <<-TEXT
++ #{shebang bin_file_name}
++ #
++@@ -723,7 +725,12 @@ def app_script_text(bin_file_name)
++   end
++ end
++ 
+++if Gem.respond_to?(:activate_bin_path)
++ load Gem.activate_bin_path('#{spec.name}', '#{bin_file_name}', version)
+++else
+++gem #{spec.name.dump}, version
+++load Gem.bin_path(#{spec.name.dump}, #{bin_file_name.dump}, version)
+++end
++ TEXT
++   end
++ 
++diff --git a/lib/rubygems/platform.rb b/lib/rubygems/platform.rb
++index d22d91ae54..2dd9ed5782 100644
++--- a/lib/rubygems/platform.rb
+++++ b/lib/rubygems/platform.rb
++@@ -112,7 +112,7 @@ def initialize(arch)
++   end
++ 
++   def inspect
++-    "#<%s:0x%x @cpu=%p, @os=%p, @version=%p>" % [self.class, object_id, *to_a]
+++    "%s @cpu=%p, @os=%p, @version=%p>" % [super[0..-2], *to_a]
++   end
++ 
++   def to_a
++diff --git a/lib/rubygems/security.rb b/lib/rubygems/security.rb
++index 119d6d56f7..6963ca156f 100644
++--- a/lib/rubygems/security.rb
+++++ b/lib/rubygems/security.rb
++@@ -455,7 +455,7 @@ def self.create_cert_self_signed subject, key, age = ONE_YEAR,
++ 
++   ##
++   # Creates a new key pair of the specified +length+ and +algorithm+.  The
++-  # default is a 2048 bit RSA key.
+++  # default is a 3072 bit RSA key.
++ 
++   def self.create_key length = KEY_LENGTH, algorithm = KEY_ALGORITHM
++     algorithm.new length
++diff --git a/lib/rubygems/server.rb b/lib/rubygems/server.rb
++index 81df0e608e..df4eb566d3 100644
++--- a/lib/rubygems/server.rb
+++++ b/lib/rubygems/server.rb
++@@ -657,7 +657,7 @@ def root(req, res)
++       "only_one_executable" => true,
++       "full_name" => "rubygems-#{Gem::VERSION}",
++       "has_deps" => false,
++-      "homepage" => "http://docs.rubygems.org/",
+++      "homepage" => "http://guides.rubygems.org/",
++       "name" => 'rubygems',
++       "ri_installed" => true,
++       "summary" => "RubyGems itself",
++diff --git a/lib/rubygems/specification.rb b/lib/rubygems/specification.rb
++index a2f289d162..500f0af768 100644
++--- a/lib/rubygems/specification.rb
+++++ b/lib/rubygems/specification.rb
++@@ -2105,7 +2105,7 @@ def inspect # :nodoc:
++     if $DEBUG
++       super
++     else
++-      "#<#{self.class}:0x#{__id__.to_s(16)} #{full_name}>"
+++      "#{super[0..-2]} #{full_name}>"
++     end
++   end
++ 
++diff --git a/lib/rubygems/test_case.rb b/lib/rubygems/test_case.rb
++index 86b68e1efb..4e48f1eb4c 100644
++--- a/lib/rubygems/test_case.rb
+++++ b/lib/rubygems/test_case.rb
++@@ -484,7 +484,7 @@ def git_gem name = 'a', version = 1
++ 
++       system @git, 'add', gemspec
++       system @git, 'commit', '-a', '-m', 'a non-empty commit message', '--quiet'
++-      head = Gem::Util.popen('git', 'rev-parse', 'master').strip
+++      head = Gem::Util.popen(@git, 'rev-parse', 'master').strip
++     end
++ 
++     return name, git_spec.version, directory, head
++@@ -1498,6 +1498,8 @@ def self.key_path key_name
++ begin
++   gem 'rdoc'
++   require 'rdoc'
+++
+++  require 'rubygems/rdoc'
++ rescue LoadError, Gem::LoadError
++ end
++ 
++@@ -1514,3 +1516,4 @@ def self.key_path key_name
++ pid = $$
++ END {tmpdirs.each {|dir| Dir.rmdir(dir)} if $$ == pid}
++ Gem.clear_paths
+++Gem.loaded_specs.clear
++diff --git a/test/rubygems/test_gem.rb b/test/rubygems/test_gem.rb
++index a605f9cdfe..62b36dfd41 100644
++--- a/test/rubygems/test_gem.rb
+++++ b/test/rubygems/test_gem.rb
++@@ -75,6 +75,29 @@ def test_self_finish_resolve_wtf
++     end
++   end
++ 
+++  def test_self_finish_resolve_respects_loaded_specs
+++    save_loaded_features do
+++      a1 = new_spec "a", "1", "b" => "> 0"
+++      b1 = new_spec "b", "1", "c" => ">= 1"
+++      b2 = new_spec "b", "2", "c" => ">= 2"
+++      c1 = new_spec "c", "1"
+++      c2 = new_spec "c", "2"
+++
+++      install_specs c1, c2, b1, b2, a1
+++
+++      a1.activate
+++      c1.activate
+++
+++      assert_equal %w(a-1 c-1), loaded_spec_names
+++      assert_equal ["b (> 0)"], unresolved_names
+++
+++      Gem.finish_resolve
+++
+++      assert_equal %w(a-1 b-1 c-1), loaded_spec_names
+++      assert_equal [], unresolved_names
+++    end
+++  end
+++
++   def test_self_install
++     spec_fetcher do |f|
++       f.gem  'a', 1
++@@ -492,7 +515,7 @@ def test_self_find_files_with_gemfile
++     skip if RUBY_VERSION <= "1.8.7"
++ 
++     cwd = File.expand_path("test/rubygems", @@project_dir)
++-    $LOAD_PATH.unshift cwd
+++    actual_load_path = $LOAD_PATH.unshift(cwd).dup
++ 
++     discover_path = File.join 'lib', 'sff', 'discover.rb'
++ 
++@@ -518,12 +541,12 @@ def test_self_find_files_with_gemfile
++     expected = [
++       File.expand_path('test/rubygems/sff/discover.rb', @@project_dir),
++       File.join(foo1.full_gem_path, discover_path)
++-    ]
+++    ].sort
++ 
++-    assert_equal expected, Gem.find_files('sff/discover')
++-    assert_equal expected, Gem.find_files('sff/**.rb'), '[ruby-core:31730]'
+++    assert_equal expected, Gem.find_files('sff/discover').sort
+++    assert_equal expected, Gem.find_files('sff/**.rb').sort, '[ruby-core:31730]'
++   ensure
++-    assert_equal cwd, $LOAD_PATH.shift unless RUBY_VERSION <= "1.8.7"
+++    assert_equal cwd, actual_load_path.shift unless RUBY_VERSION <= "1.8.7"
++   end
++ 
++   def test_self_find_latest_files
++diff --git a/test/rubygems/test_gem_commands_open_command.rb b/test/rubygems/test_gem_commands_open_command.rb
++index 3ec38972e6..a96fa6ea23 100644
++--- a/test/rubygems/test_gem_commands_open_command.rb
+++++ b/test/rubygems/test_gem_commands_open_command.rb
++@@ -24,7 +24,8 @@ def test_execute
++     @cmd.options[:args] = %w[foo]
++     @cmd.options[:editor] = "#{Gem.ruby} -e0 --"
++ 
++-    spec = gem 'foo'
+++    gem 'foo', '1.0.0'
+++    spec = gem 'foo', '1.0.1'
++     mock = MiniTest::Mock.new
++     mock.expect(:call, true, [spec.full_gem_path])
++ 
++diff --git a/test/rubygems/test_gem_commands_query_command.rb b/test/rubygems/test_gem_commands_query_command.rb
++index 223f205b2d..d8d682b136 100644
++--- a/test/rubygems/test_gem_commands_query_command.rb
+++++ b/test/rubygems/test_gem_commands_query_command.rb
++@@ -642,7 +642,7 @@ def test_execute_local_details
++     assert_equal expected, @ui.output
++   end
++ 
++-  def test_execute_exact
+++  def test_execute_exact_remote
++     spec_fetcher do |fetcher|
++       fetcher.spec 'coolgem-omg', 3
++       fetcher.spec 'coolgem', '4.2.1'
++@@ -665,6 +665,60 @@ def test_execute_exact
++     assert_equal expected, @ui.output
++   end
++ 
+++  def test_execute_exact_local
+++    spec_fetcher do |fetcher|
+++      fetcher.spec 'coolgem-omg', 3
+++      fetcher.spec 'coolgem', '4.2.1'
+++      fetcher.spec 'wow_coolgem', 1
+++    end
+++
+++    @cmd.handle_options %w[--exact coolgem]
+++
+++    use_ui @ui do
+++      @cmd.execute
+++    end
+++
+++    expected = <<-EOF
+++
+++*** LOCAL GEMS ***
+++
+++coolgem (4.2.1)
+++    EOF
+++
+++    assert_equal expected, @ui.output
+++  end
+++
+++  def test_execute_exact_multiple
+++    spec_fetcher do |fetcher|
+++      fetcher.spec 'coolgem-omg', 3
+++      fetcher.spec 'coolgem', '4.2.1'
+++      fetcher.spec 'wow_coolgem', 1
+++
+++      fetcher.spec 'othergem-omg', 3
+++      fetcher.spec 'othergem', '1.2.3'
+++      fetcher.spec 'wow_othergem', 1
+++    end
+++
+++    @cmd.handle_options %w[--exact coolgem othergem]
+++
+++    use_ui @ui do
+++      @cmd.execute
+++    end
+++
+++    expected = <<-EOF
+++
+++*** LOCAL GEMS ***
+++
+++coolgem (4.2.1)
+++
+++*** LOCAL GEMS ***
+++
+++othergem (1.2.3)
+++    EOF
+++
+++    assert_equal expected, @ui.output
+++  end
+++
++   private
++ 
++   def add_gems_to_fetcher
++diff --git a/test/rubygems/test_gem_commands_sources_command.rb b/test/rubygems/test_gem_commands_sources_command.rb
++index 014b4b4c12..d5b6d99419 100644
++--- a/test/rubygems/test_gem_commands_sources_command.rb
+++++ b/test/rubygems/test_gem_commands_sources_command.rb
++@@ -108,6 +108,58 @@ def test_execute_add_redundant_source
++     assert_equal '', @ui.error
++   end
++ 
+++  def test_execute_add_redundant_source_trailing_slash
+++    # Remove pre-existing gem source (w/ slash)
+++    repo_with_slash = "http://gems.example.com/"
+++    @cmd.handle_options %W[--remove #{repo_with_slash}]
+++    use_ui @ui do
+++      @cmd.execute
+++    end
+++    source = Gem::Source.new repo_with_slash
+++    assert_equal false, Gem.sources.include?(source)
+++
+++    expected = <<-EOF
+++#{repo_with_slash} removed from sources
+++    EOF
+++
+++    assert_equal expected, @ui.output
+++    assert_equal '', @ui.error
+++
+++    # Re-add pre-existing gem source (w/o slash)
+++    repo_without_slash = "http://gems.example.com"
+++    @cmd.handle_options %W[--add #{repo_without_slash}]
+++    use_ui @ui do
+++      @cmd.execute
+++    end
+++    source = Gem::Source.new repo_without_slash
+++    assert_equal true, Gem.sources.include?(source)
+++
+++    expected = <<-EOF
+++http://gems.example.com/ removed from sources
+++http://gems.example.com added to sources
+++    EOF
+++
+++    assert_equal expected, @ui.output
+++    assert_equal '', @ui.error
+++
+++    # Re-add original gem source (w/ slash)
+++    @cmd.handle_options %W[--add #{repo_with_slash}]
+++    use_ui @ui do
+++      @cmd.execute
+++    end
+++    source = Gem::Source.new repo_with_slash
+++    assert_equal true, Gem.sources.include?(source)
+++
+++    expected = <<-EOF
+++http://gems.example.com/ removed from sources
+++http://gems.example.com added to sources
+++source http://gems.example.com/ already present in the cache
+++    EOF
+++
+++    assert_equal expected, @ui.output
+++    assert_equal '', @ui.error 
+++  end
+++
++   def test_execute_add_http_rubygems_org
++     http_rubygems_org = 'http://rubygems.org'
++ 
++diff --git a/test/rubygems/test_gem_installer.rb b/test/rubygems/test_gem_installer.rb
++index 6ceb2c6dfc..882981d344 100644
++--- a/test/rubygems/test_gem_installer.rb
+++++ b/test/rubygems/test_gem_installer.rb
++@@ -62,7 +62,12 @@ def test_app_script_text
++   end
++ end
++ 
+++if Gem.respond_to?(:activate_bin_path)
++ load Gem.activate_bin_path('a', 'executable', version)
+++else
+++gem "a", version
+++load Gem.bin_path("a", "executable", version)
+++end
++     EOF
++ 
++     wrapper = @installer.app_script_text 'executable'
++diff --git a/test/rubygems/test_require.rb b/test/rubygems/test_require.rb
++index dd606e44d4..936f78fb2a 100644
++--- a/test/rubygems/test_require.rb
+++++ b/test/rubygems/test_require.rb
++@@ -301,6 +301,17 @@ def test_default_gem_only
++     assert_equal %w(default-2.0.0.0), loaded_spec_names
++   end
++ 
+++  def test_realworld_default_gem
+++    skip "no default gems on ruby < 2.0" unless RUBY_VERSION >= "2"
+++    cmd = <<-RUBY
+++      $stderr = $stdout
+++      require "json"
+++      puts Gem.loaded_specs["json"].default_gem?
+++    RUBY
+++    output = Gem::Util.popen(Gem.ruby, "-e", cmd).strip
+++    assert_equal "true", output
+++  end
+++
++   def test_default_gem_and_normal_gem
++     default_gem_spec = new_default_spec("default", "2.0.0.0",
++                                         nil, "default/gem.rb")
+diff --git a/package/ruby/0002-rubygems-2613-ruby24.patch b/package/ruby/0002-rubygems-2613-ruby24.patch
+new file mode 100644
+index 0000000000..ea25d90347
+--- /dev/null
++++ b/package/ruby/0002-rubygems-2613-ruby24.patch
+@@ -0,0 +1,364 @@
++[PATCH] bump rubygems to 2.6.12
++
++Downloaded from upstream:
++https://bugs.ruby-lang.org/attachments/download/6693/rubygems-2613-ruby24.patch
++
++And converted to patch-p1.
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++
++diff --git a/lib/rubygems.rb b/lib/rubygems.rb
++index bc5bf9b4c2..55aa85b8b2 100644
++--- a/lib/rubygems.rb
+++++ b/lib/rubygems.rb
++@@ -10,7 +10,7 @@
++ require 'thread'
++ 
++ module Gem
++-  VERSION = "2.6.12"
+++  VERSION = "2.6.13"
++ end
++ 
++ # Must be first since it unloads the prelude from 1.9.2
++diff --git a/lib/rubygems/commands/query_command.rb b/lib/rubygems/commands/query_command.rb
++index 70f8127292..44144203e0 100644
++--- a/lib/rubygems/commands/query_command.rb
+++++ b/lib/rubygems/commands/query_command.rb
++@@ -226,7 +226,7 @@ def output_versions output, versions
++         end
++       end
++ 
++-      output << make_entry(matching_tuples, platforms)
+++      output << clean_text(make_entry(matching_tuples, platforms))
++     end
++   end
++ 
++@@ -353,7 +353,8 @@ def spec_platforms entry, platforms
++   end
++ 
++   def spec_summary entry, spec
++-    entry << "\n\n" << format_text(spec.summary, 68, 4)
+++    summary = truncate_text(spec.summary, "the summary for #{spec.full_name}")
+++    entry << "\n\n" << format_text(summary, 68, 4)
++   end
++ 
++ end
++diff --git a/lib/rubygems/installer.rb b/lib/rubygems/installer.rb
++index 967543c2d1..6fd3399dd4 100644
++--- a/lib/rubygems/installer.rb
+++++ b/lib/rubygems/installer.rb
++@@ -697,6 +697,11 @@ def verify_gem_home(unpack = false) # :nodoc:
++       unpack or File.writable?(gem_home)
++   end
++ 
+++  def verify_spec_name
+++    return if spec.name =~ Gem::Specification::VALID_NAME_PATTERN
+++    raise Gem::InstallError, "#{spec} has an invalid name"
+++  end
+++
++   ##
++   # Return the text for an application file.
++ 
++@@ -823,6 +828,8 @@ def pre_install_checks
++ 
++     ensure_loadable_spec
++ 
+++    verify_spec_name
+++
++     if options[:install_as_default]
++       Gem.ensure_default_gem_subdirectories gem_home
++     else
++diff --git a/lib/rubygems/remote_fetcher.rb b/lib/rubygems/remote_fetcher.rb
++index e6a13d4b8c..8f0cf0b402 100644
++--- a/lib/rubygems/remote_fetcher.rb
+++++ b/lib/rubygems/remote_fetcher.rb
++@@ -110,7 +110,7 @@ def api_endpoint(uri)
++     else
++       target = res.target.to_s.strip
++ 
++-      if /\.#{Regexp.quote(host)}\z/ =~ target
+++      if URI("http://" + target).host.end_with?(".#{host}")
++         return URI.parse "#{uri.scheme}://#{target}#{uri.path}"
++       end
++ 
++diff --git a/lib/rubygems/specification.rb b/lib/rubygems/specification.rb
++index 500f0af768..88e320c05a 100644
++--- a/lib/rubygems/specification.rb
+++++ b/lib/rubygems/specification.rb
++@@ -108,6 +108,8 @@ class Gem::Specification < Gem::BasicSpecification
++ 
++   private_constant :LOAD_CACHE if defined? private_constant
++ 
+++  VALID_NAME_PATTERN = /\A[a-zA-Z0-9\.\-\_]+\z/ # :nodoc:
+++
++   # :startdoc:
++ 
++   ##
++@@ -2671,9 +2673,15 @@ def validate packaging = true
++       end
++     end
++ 
++-    unless String === name then
+++    if !name.is_a?(String) then
++       raise Gem::InvalidSpecificationException,
++-            "invalid value for attribute name: \"#{name.inspect}\""
+++            "invalid value for attribute name: \"#{name.inspect}\" must be a string"
+++    elsif name !~ /[a-zA-Z]/ then
+++      raise Gem::InvalidSpecificationException,
+++            "invalid value for attribute name: #{name.dump} must include at least one letter"
+++    elsif name !~ VALID_NAME_PATTERN then
+++      raise Gem::InvalidSpecificationException,
+++            "invalid value for attribute name: #{name.dump} can only include letters, numbers, dashes, and underscores"
++     end
++ 
++     if raw_require_paths.empty? then
++diff --git a/lib/rubygems/text.rb b/lib/rubygems/text.rb
++index 732f1b99f2..b944b62c27 100644
++--- a/lib/rubygems/text.rb
+++++ b/lib/rubygems/text.rb
++@@ -6,13 +6,26 @@
++ 
++ module Gem::Text
++ 
+++  ##
+++  # Remove any non-printable characters and make the text suitable for
+++  # printing.
+++  def clean_text(text)
+++    text.gsub(/[\000-\b\v-\f\016-\037\177]/, ".".freeze)
+++  end
+++
+++  def truncate_text(text, description, max_length = 100_000)
+++    raise ArgumentError, "max_length must be positive" unless max_length > 0
+++    return text if text.size <= max_length
+++    "Truncating #{description} to #{max_length.to_s.reverse.gsub(/...(?=.)/,'\&,').reverse} characters:\n" + text[0, max_length]
+++  end
+++
++   ##
++   # Wraps +text+ to +wrap+ characters and optionally indents by +indent+
++   # characters
++ 
++   def format_text(text, wrap, indent=0)
++     result = []
++-    work = text.dup
+++    work = clean_text(text)
++ 
++     while work.length > wrap do
++       if work =~ /^(.{0,#{wrap}})[ \n]/ then
++diff --git a/test/rubygems/test_gem_commands_query_command.rb b/test/rubygems/test_gem_commands_query_command.rb
++index d8d682b136..469223c6c0 100644
++--- a/test/rubygems/test_gem_commands_query_command.rb
+++++ b/test/rubygems/test_gem_commands_query_command.rb
++@@ -116,6 +116,86 @@ def test_execute_details
++     This is a lot of text. This is a lot of text. This is a lot of text.
++     This is a lot of text.
++ 
+++pl (1)
+++    Platform: i386-linux
+++    Author: A User
+++    Homepage: http://example.com
+++
+++    this is a summary
+++    EOF
+++
+++    assert_equal expected, @ui.output
+++    assert_equal '', @ui.error
+++  end
+++
+++  def test_execute_details_cleans_text
+++    spec_fetcher do |fetcher|
+++      fetcher.spec 'a', 2 do |s|
+++        s.summary = 'This is a lot of text. ' * 4
+++        s.authors = ["Abraham Lincoln \x01", "\x02 Hirohito"]
+++        s.homepage = "http://a.example.com/\x03"
+++      end
+++
+++      fetcher.legacy_platform
+++    end
+++
+++    @cmd.handle_options %w[-r -d]
+++
+++    use_ui @ui do
+++      @cmd.execute
+++    end
+++
+++    expected = <<-EOF
+++
+++*** REMOTE GEMS ***
+++
+++a (2)
+++    Authors: Abraham Lincoln ., . Hirohito
+++    Homepage: http://a.example.com/.
+++
+++    This is a lot of text. This is a lot of text. This is a lot of text.
+++    This is a lot of text.
+++
+++pl (1)
+++    Platform: i386-linux
+++    Author: A User
+++    Homepage: http://example.com
+++
+++    this is a summary
+++    EOF
+++
+++    assert_equal expected, @ui.output
+++    assert_equal '', @ui.error
+++  end
+++
+++  def test_execute_details_truncates_summary
+++    spec_fetcher do |fetcher|
+++      fetcher.spec 'a', 2 do |s|
+++        s.summary = 'This is a lot of text. ' * 10_000
+++        s.authors = ["Abraham Lincoln \x01", "\x02 Hirohito"]
+++        s.homepage = "http://a.example.com/\x03"
+++      end
+++
+++      fetcher.legacy_platform
+++    end
+++
+++    @cmd.handle_options %w[-r -d]
+++
+++    use_ui @ui do
+++      @cmd.execute
+++    end
+++
+++    expected = <<-EOF
+++
+++*** REMOTE GEMS ***
+++
+++a (2)
+++    Authors: Abraham Lincoln ., . Hirohito
+++    Homepage: http://a.example.com/.
+++
+++    Truncating the summary for a-2 to 100,000 characters:
+++#{"    This is a lot of text. This is a lot of text. This is a lot of text.\n" * 1449}    This is a lot of te
+++
++ pl (1)
++     Platform: i386-linux
++     Author: A User
++diff --git a/test/rubygems/test_gem_installer.rb b/test/rubygems/test_gem_installer.rb
++index 882981d344..dd049214fb 100644
++--- a/test/rubygems/test_gem_installer.rb
+++++ b/test/rubygems/test_gem_installer.rb
++@@ -1448,6 +1448,26 @@ def test_pre_install_checks_wrong_rubygems_version
++     end
++   end
++ 
+++  def test_pre_install_checks_malicious_name
+++    spec = util_spec '../malicious', '1'
+++    def spec.full_name # so the spec is buildable
+++      "malicious-1"
+++    end
+++    def spec.validate; end
+++
+++    util_build_gem spec
+++
+++    gem = File.join(@gemhome, 'cache', spec.file_name)
+++
+++    use_ui @ui do
+++      @installer = Gem::Installer.at gem
+++      e = assert_raises Gem::InstallError do
+++        @installer.pre_install_checks
+++      end
+++      assert_equal '#<Gem::Specification name=../malicious version=1> has an invalid name', e.message
+++    end
+++  end
+++
++   def test_shebang
++     util_make_exec @spec, "#!/usr/bin/ruby"
++ 
++diff --git a/test/rubygems/test_gem_remote_fetcher.rb b/test/rubygems/test_gem_remote_fetcher.rb
++index cb994462cd..fbb7d89019 100644
++--- a/test/rubygems/test_gem_remote_fetcher.rb
+++++ b/test/rubygems/test_gem_remote_fetcher.rb
++@@ -241,6 +241,21 @@ def test_api_endpoint_ignores_trans_domain_values_that_end_with_original
++     dns.verify
++   end
++ 
+++  def test_api_endpoint_ignores_trans_domain_values_that_end_with_original_in_path
+++    uri = URI.parse "http://example.com/foo"
+++    target = MiniTest::Mock.new
+++    target.expect :target, "evil.com/a.example.com"
+++
+++    dns = MiniTest::Mock.new
+++    dns.expect :getresource, target, [String, Object]
+++
+++    fetch = Gem::RemoteFetcher.new nil, dns
+++    assert_equal URI.parse("http://example.com/foo"), fetch.api_endpoint(uri)
+++
+++    target.verify
+++    dns.verify
+++  end
+++
++   def test_api_endpoint_timeout_warning
++     uri = URI.parse "http://gems.example.com/foo"
++ 
++diff --git a/test/rubygems/test_gem_specification.rb b/test/rubygems/test_gem_specification.rb
++index d43289d745..0fcc11e78f 100644
++--- a/test/rubygems/test_gem_specification.rb
+++++ b/test/rubygems/test_gem_specification.rb
++@@ -2985,7 +2985,37 @@ def test_validate_name
++       @a1.validate
++     end
++ 
++-    assert_equal 'invalid value for attribute name: ":json"', e.message
+++    assert_equal 'invalid value for attribute name: ":json" must be a string', e.message
+++
+++    @a1.name = []
+++    e = assert_raises Gem::InvalidSpecificationException do
+++      @a1.validate
+++    end
+++    assert_equal "invalid value for attribute name: \"[]\" must be a string", e.message
+++
+++    @a1.name = ""
+++    e = assert_raises Gem::InvalidSpecificationException do
+++      @a1.validate
+++    end
+++    assert_equal "invalid value for attribute name: \"\" must include at least one letter", e.message
+++
+++    @a1.name = "12345"
+++    e = assert_raises Gem::InvalidSpecificationException do
+++      @a1.validate
+++    end
+++    assert_equal "invalid value for attribute name: \"12345\" must include at least one letter", e.message
+++
+++    @a1.name = "../malicious"
+++    e = assert_raises Gem::InvalidSpecificationException do
+++      @a1.validate
+++    end
+++    assert_equal "invalid value for attribute name: \"../malicious\" can only include letters, numbers, dashes, and underscores", e.message
+++
+++    @a1.name = "\ba\t"
+++    e = assert_raises Gem::InvalidSpecificationException do
+++      @a1.validate
+++    end
+++    assert_equal "invalid value for attribute name: \"\\ba\\t\" can only include letters, numbers, dashes, and underscores", e.message
++   end
++ 
++   def test_validate_non_nil
++diff --git a/test/rubygems/test_gem_text.rb b/test/rubygems/test_gem_text.rb
++index a6e22e04da..04f3f605e8 100644
++--- a/test/rubygems/test_gem_text.rb
+++++ b/test/rubygems/test_gem_text.rb
++@@ -36,6 +36,10 @@ def test_format_text_trailing # for two spaces after .
++     assert_equal expected, format_text(text, 78)
++   end
++ 
+++  def test_format_removes_nonprintable_characters
+++    assert_equal "text with weird .. stuff .", format_text("text with weird \x1b\x02 stuff \x7f", 40)
+++  end
+++
++   def test_min3
++     assert_equal 1, min3(1, 1, 1)
++     assert_equal 1, min3(1, 1, 2)
++@@ -74,4 +78,11 @@ def test_levenshtein_distance_replace
++     assert_equal 7, levenshtein_distance("xxxxxxx", "ZenTest")
++     assert_equal 7, levenshtein_distance("zentest", "xxxxxxx")
++   end
+++
+++  def test_truncate_text
+++    assert_equal "abc", truncate_text("abc", "desc")
+++    assert_equal "Truncating desc to 2 characters:\nab", truncate_text("abc", "desc", 2)
+++    s = "ab" * 500_001
+++    assert_equal "Truncating desc to 1,000,000 characters:\n#{s[0, 1_000_000]}", truncate_text(s, "desc", 1_000_000)
+++  end
++ end
+diff --git a/package/ruby/ruby.hash b/package/ruby/ruby.hash
+index 19722a3c96..624ce40f57 100644
+--- a/package/ruby/ruby.hash
++++ b/package/ruby/ruby.hash
+@@ -1,2 +1,2 @@
+-# From https://www.ruby-lang.org/en/news/2016/12/25/ruby-2-4-0-released/
+-sha256 3a87fef45cba48b9322236be60c455c13fd4220184ce7287600361319bb63690  ruby-2.4.0.tar.xz
++# From https://www.ruby-lang.org/en/news/2017/03/22/ruby-2-4-1-released/
++sha256 4fc8a9992de3e90191de369270ea4b6c1b171b7941743614cc50822ddc1fe654  ruby-2.4.1.tar.xz
+diff --git a/package/ruby/ruby.mk b/package/ruby/ruby.mk
+index f0dc63b471..d0a81f1d3e 100644
+--- a/package/ruby/ruby.mk
++++ b/package/ruby/ruby.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ RUBY_VERSION_MAJOR = 2.4
+-RUBY_VERSION = $(RUBY_VERSION_MAJOR).0
++RUBY_VERSION = $(RUBY_VERSION_MAJOR).1
+ RUBY_VERSION_EXT = 2.4.0
+ RUBY_SITE = http://cache.ruby-lang.org/pub/ruby/$(RUBY_VERSION_MAJOR)
+ RUBY_SOURCE = ruby-$(RUBY_VERSION).tar.xz
+diff --git a/package/samba4/samba4.hash b/package/samba4/samba4.hash
+index 0783b37d06..847be87c1c 100644
+--- a/package/samba4/samba4.hash
++++ b/package/samba4/samba4.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated
+-sha256 f4c17123e3cc852a5ecc7e38884b00deab57632b9519aebc243e2a94b9b5ace4  samba-4.5.12.tar.gz
++sha256  15dc04fd2b19081daf1118318f43f88ef7260b3fc6e4f86ee7c7913bb7c92ed9 samba-4.5.14.tar.gz
+diff --git a/package/samba4/samba4.mk b/package/samba4/samba4.mk
+index 3ffe11e15f..e4778d0a5d 100644
+--- a/package/samba4/samba4.mk
++++ b/package/samba4/samba4.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SAMBA4_VERSION = 4.5.12
++SAMBA4_VERSION = 4.5.14
+ SAMBA4_SITE = https://download.samba.org/pub/samba/stable
+ SAMBA4_SOURCE = samba-$(SAMBA4_VERSION).tar.gz
+ SAMBA4_INSTALL_STAGING = YES
+@@ -32,6 +32,10 @@ else
+ SAMBA4_CONF_OPTS += --disable-cups
+ endif
+ 
++ifeq ($(BR2_PACKAGE_DBUS),y)
++SAMBA4_DEPENDENCIES += dbus
++endif
++
+ ifeq ($(BR2_PACKAGE_DBUS)$(BR2_PACKAGE_AVAHI_DAEMON),yy)
+ SAMBA4_CONF_OPTS += --enable-avahi
+ SAMBA4_DEPENDENCIES += avahi
+diff --git a/package/snappy/snappy.mk b/package/snappy/snappy.mk
+index fcbcd1368f..bad0ef0a44 100644
+--- a/package/snappy/snappy.mk
++++ b/package/snappy/snappy.mk
+@@ -17,7 +17,7 @@ SNAPPY_INSTALL_STAGING = YES
+ SNAPPY_CONF_OPTS = --disable-gtest
+ 
+ # libsnappy links with libstdc++. Some libstdc++/arch variants use
+-# pthread symbols for internal locking if built with thead
++# pthread symbols for internal locking if built with thread
+ # support. libstdc++ does not have a .pc file, and its .la file does
+ # not mention -pthread.  So, static linkig to libstdc++ will fail if
+ # -pthread is not explicity linked to. Only do that for static builds.
+diff --git a/package/squashfs/squashfs.mk b/package/squashfs/squashfs.mk
+index 4f84872319..e8321ed60e 100644
+--- a/package/squashfs/squashfs.mk
++++ b/package/squashfs/squashfs.mk
+@@ -59,7 +59,7 @@ HOST_SQUASHFS_MAKE_ARGS = \
+ define SQUASHFS_BUILD_CMDS
+ 	$(TARGET_MAKE_ENV) $(MAKE)    \
+ 		CC="$(TARGET_CC)"           \
+-		EXTRA_CFLAGS="$(TARGET_CFLAGS)"   \
++		EXTRA_CFLAGS="$(TARGET_CFLAGS) -fgnu89-inline"   \
+ 		EXTRA_LDFLAGS="$(TARGET_LDFLAGS)" \
+ 		$(SQUASHFS_MAKE_ARGS) \
+ 		-C $(@D)/squashfs-tools/
+diff --git a/package/squid/squid.mk b/package/squid/squid.mk
+index cf0378a8d2..9abf3cd8e6 100644
+--- a/package/squid/squid.mk
++++ b/package/squid/squid.mk
+@@ -21,7 +21,7 @@ SQUID_CONF_ENV = \
+ 	ac_cv_func___va_copy=yes \
+ 	ac_cv_func_strnstr=no \
+ 	ac_cv_have_squid=yes \
+-	BUILXCXX="$(HOSTCXX)" \
++	BUILDCXX="$(HOSTCXX)" \
+ 	BUILDCXXFLAGS="$(HOST_CXXFLAGS)"
+ SQUID_CONF_OPTS = \
+ 	--enable-async-io=8 \
+diff --git a/package/strongswan/strongswan.hash b/package/strongswan/strongswan.hash
+index cbc4e3857a..820c712843 100644
+--- a/package/strongswan/strongswan.hash
++++ b/package/strongswan/strongswan.hash
+@@ -5,3 +5,6 @@ sha256	f8288faaea6a9cd8a7d413c0b76b7922be5da3dfcd01fd05cb30d2c55d3bbe89	strongsw
+ # Locally calculated
+ sha256	f5ba7f46cf7ae81dd81bc86f9e4cfa0c5c7c6987149b3bc9c0b8bf08598a1063  strongswan-4.4.0-5.5.2_gmp_mpz_powm_sec.patch
+ sha256	03db8c7a4133e877e8992e155c046dd27ec4810d50f239abf55595f0280caf31  strongswan-5.0.0-5.5.2_asn1_choice.patch
++sha256	c80e02c9a5eeaf10f0a8bdde3be6375dd2833e515af03dad3a700e93c4fd041a  strongswan-4.4.0-5.5.3_gmp_mpz_export.patch
++sha256	8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  COPYING
++sha256	2292e21797754548dccdef9eef6aee7584e552fbd890fa914e1de8d3577d23f0  LICENSE
+diff --git a/package/strongswan/strongswan.mk b/package/strongswan/strongswan.mk
+index 99862fd2bc..ce837d09e0 100644
+--- a/package/strongswan/strongswan.mk
++++ b/package/strongswan/strongswan.mk
+@@ -9,7 +9,8 @@ STRONGSWAN_SOURCE = strongswan-$(STRONGSWAN_VERSION).tar.bz2
+ STRONGSWAN_SITE = http://download.strongswan.org
+ STRONGSWAN_PATCH = \
+ 	$(STRONGSWAN_SITE)/patches/21_gmp_mpz_powm_sec_patch/strongswan-4.4.0-5.5.2_gmp_mpz_powm_sec.patch \
+-	$(STRONGSWAN_SITE)/patches/22_asn1_choice_patch/strongswan-5.0.0-5.5.2_asn1_choice.patch
++	$(STRONGSWAN_SITE)/patches/22_asn1_choice_patch/strongswan-5.0.0-5.5.2_asn1_choice.patch \
++	$(STRONGSWAN_SITE)/patches/23_gmp_mpz_export_patch/strongswan-4.4.0-5.5.3_gmp_mpz_export.patch
+ STRONGSWAN_LICENSE = GPLv2+
+ STRONGSWAN_LICENSE_FILES = COPYING LICENSE
+ STRONGSWAN_DEPENDENCIES = host-pkgconf
+diff --git a/package/subversion/subversion.hash b/package/subversion/subversion.hash
+index 1a85961fe1..6adb57c1ae 100644
+--- a/package/subversion/subversion.hash
++++ b/package/subversion/subversion.hash
+@@ -1,5 +1,4 @@
+ # From http://subversion.apache.org/download.cgi#recommended-release
+-sha1 8bd6a44a1aed30c4c6b6b068488dafb44eaa6adf  subversion-1.9.5.tar.bz2
+-# Locally calculated after checking PGP signature
+-# https://www.apache.org/dist/subversion/subversion-1.9.5.tar.bz2.asc
+-sha256 8a4fc68aff1d18dcb4dd9e460648d24d9e98657fbed496c582929c6b3ce555e5  subversion-1.9.5.tar.bz2
++sha1 874b81749cdc3e88152d103243c3623ac6338388  subversion-1.9.7.tar.bz2
++# From https://www.apache.org/dist/subversion/subversion-1.9.7.tar.bz2.sha512
++sha512 a55efd3edaddbc099450d849fcc6fe5a8d20b85ece966d8ac2fd73ee9cb4255a0349bbcfceb4e9fca6daf054ce7c648eff8d273c6873f5dade6e62dcea7eeb2b  subversion-1.9.7.tar.bz2
+diff --git a/package/subversion/subversion.mk b/package/subversion/subversion.mk
+index 05569c11a7..55738a826d 100644
+--- a/package/subversion/subversion.mk
++++ b/package/subversion/subversion.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SUBVERSION_VERSION = 1.9.5
++SUBVERSION_VERSION = 1.9.7
+ SUBVERSION_SOURCE = subversion-$(SUBVERSION_VERSION).tar.bz2
+ SUBVERSION_SITE = http://mirror.catn.com/pub/apache/subversion
+ SUBVERSION_LICENSE = Apache-2.0
+diff --git a/package/supervisor/supervisor.hash b/package/supervisor/supervisor.hash
+index 03f337e7d0..0ebc663be9 100644
+--- a/package/supervisor/supervisor.hash
++++ b/package/supervisor/supervisor.hash
+@@ -1,2 +1,4 @@
+ # Locally calculated
+-sha256 e32c546fe8d2a6e079ec4819c49fd24534d4075a58af39118d04367918b3c282  supervisor-3.1.3.tar.gz
++sha256 82f75089f719a7a3ca87f35c89a03c20fd3c0912552c96eb6fa40274ced6604e  supervisor-3.1.4.tar.gz
++sha256 a85a622378c6a892ead1ce5d0488e446e106bf014d3b763fdbc1ad1ae38ee491  COPYRIGHT.txt
++sha256 27ba0b2357ed6974d755ed53232c5ab8595622b3111bb91682708ea188cc3696  LICENSES.txt
+diff --git a/package/supervisor/supervisor.mk b/package/supervisor/supervisor.mk
+index 4c62b66feb..9b93b449a7 100644
+--- a/package/supervisor/supervisor.mk
++++ b/package/supervisor/supervisor.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-SUPERVISOR_VERSION = 3.1.3
+-SUPERVISOR_SITE = http://pypi.python.org/packages/source/s/supervisor
++SUPERVISOR_VERSION = 3.1.4
++SUPERVISOR_SITE = https://pypi.python.org/packages/12/50/cd330d1a0daffbbe54803cb0c4c1ada892b5d66db08befac385122858eee
+ SUPERVISOR_LICENSE = BSD-like, rdflib (http_client.py), PSF (medusa), ZPL-2.1
+ SUPERVISOR_LICENSE_FILES = COPYRIGHT.txt LICENSES.txt
+ SUPERVISOR_SETUP_TYPE = setuptools
+diff --git a/package/sysvinit/0002-musl-fix-compilation-errors.patch b/package/sysvinit/0002-musl-fix-compilation-errors.patch
+new file mode 100644
+index 0000000000..5dcdecf72b
+--- /dev/null
++++ b/package/sysvinit/0002-musl-fix-compilation-errors.patch
+@@ -0,0 +1,38 @@
++Fix various compilation errors when compiling against must libc
++
++Signed-off-by: Dagg Stompler <daggs@gmx.com>
++
++diff -Nupr a/src/init.c b/src/init.c
++--- a/src/init.c	2017-08-13 18:44:27.000000000 +0300
+++++ b/src/init.c	2017-08-13 18:34:45.000000000 +0300
++@@ -37,6 +37,7 @@
++ #include <sys/kd.h>
++ #endif
++ #include <sys/resource.h>
+++#include <sys/ttydefaults.h>
++ #include <stdlib.h>
++ #include <unistd.h>
++ #include <errno.h>
++diff -Nupr a/src/init.h b/src/init.h
++--- a/src/init.h	2017-08-13 19:35:46.000000000 +0300
+++++ b/src/init.h	2017-08-13 19:36:01.000000000 +0300
++@@ -22,6 +22,8 @@
++  *
++  */
++ 
+++#include <time.h>
+++
++ /* Standard configuration */
++ #define CHANGE_WAIT 0			/* Change runlevel while
++ 					   waiting for a process to exit? */
++diff -Nupr a/src/mountpoint.c b/src/mountpoint.c
++--- a/src/mountpoint.c	2017-08-13 20:28:26.000000000 +0300
+++++ b/src/mountpoint.c	2017-08-13 20:28:40.000000000 +0300
++@@ -24,6 +24,7 @@
++  */
++ 
++ #include <sys/stat.h>
+++#include <sys/types.h>
++ #include <unistd.h>
++ #include <stdlib.h>
++ #include <string.h>
+diff --git a/package/sysvinit/Config.in b/package/sysvinit/Config.in
+index 94f1612375..7f27a70fcc 100644
+--- a/package/sysvinit/Config.in
++++ b/package/sysvinit/Config.in
+@@ -4,6 +4,7 @@ config BR2_PACKAGE_SYSVINIT
+ 	depends on BR2_INIT_SYSV
+ 	depends on BR2_PACKAGE_BUSYBOX_SHOW_OTHERS
+ 	help
+-	  /sbin/init - parent of all processes
++	  System V style implementation of /sbin/init, parent of all
++	  processes
+ 
+ 	  http://savannah.nongnu.org/projects/sysvinit
+diff --git a/package/tcpdump/tcpdump.hash b/package/tcpdump/tcpdump.hash
+index 4eedc1c165..0eb56e695f 100644
+--- a/package/tcpdump/tcpdump.hash
++++ b/package/tcpdump/tcpdump.hash
+@@ -1,2 +1,3 @@
+-# Locally calculated after checking pgp signature at http://www.tcpdump.org/release/tcpdump-4.9.1.tar.gz.sig
+-sha256 f9448cf4deb2049acf713655c736342662e652ef40dbe0a8f6f8d5b9ce5bd8f3  tcpdump-4.9.1.tar.gz
++# Locally calculated after checking pgp signature at http://www.tcpdump.org/release/tcpdump-4.9.2.tar.gz.sig
++sha256 798b3536a29832ce0cbb07fafb1ce5097c95e308a6f592d14052e1ef1505fe79  tcpdump-4.9.2.tar.gz
++sha256 9b03d5d13e66d6de02a4bb2d0dd1cb9f41808d045962cdcc42350d5291b141a1  LICENSE
+diff --git a/package/tcpdump/tcpdump.mk b/package/tcpdump/tcpdump.mk
+index ac710b8f74..7bea4bf180 100644
+--- a/package/tcpdump/tcpdump.mk
++++ b/package/tcpdump/tcpdump.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-TCPDUMP_VERSION = 4.9.1
++TCPDUMP_VERSION = 4.9.2
+ TCPDUMP_SITE = http://www.tcpdump.org/release
+ TCPDUMP_LICENSE = BSD-3c
+ TCPDUMP_LICENSE_FILES = LICENSE
+diff --git a/package/tor/tor.hash b/package/tor/tor.hash
+index d42c534985..ba0b47af15 100644
+--- a/package/tor/tor.hash
++++ b/package/tor/tor.hash
+@@ -1,2 +1,2 @@
+ # Locally computed
+-sha256 c1959bebff9a546a54cbedb58c8289a42441991af417d2d16f7b336be8903221  tor-0.2.9.11.tar.gz
++sha256 6e7466625d53812f23c2ad60a873c5855f63f756fde0fc5cbeda8d32cee1086b  tor-0.2.9.12.tar.gz
+diff --git a/package/tor/tor.mk b/package/tor/tor.mk
+index 7bbd2f3430..4cc5c48351 100644
+--- a/package/tor/tor.mk
++++ b/package/tor/tor.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-TOR_VERSION = 0.2.9.11
++TOR_VERSION = 0.2.9.12
+ TOR_SITE = https://dist.torproject.org
+ TOR_LICENSE = BSD-3c
+ TOR_LICENSE_FILES = LICENSE
+diff --git a/package/transmission/Config.in b/package/transmission/Config.in
+index b47c36fdd3..38a459cdbe 100644
+--- a/package/transmission/Config.in
++++ b/package/transmission/Config.in
+@@ -39,12 +39,12 @@ config BR2_PACKAGE_TRANSMISSION_REMOTE
+ 
+ config BR2_PACKAGE_TRANSMISSION_GTK
+ 	bool "transmission-gtk"
+-	depends on BR2_PACKAGE_LIBGTK2 && BR2_ENABLE_LOCALE
++	depends on BR2_PACKAGE_LIBGTK3 && BR2_ENABLE_LOCALE
+ 	help
+ 	  Install transmission GTK-based GUI interface.
+ 
+ comment "transmission-gtk needs a toolchain w/ locale"
+-	depends on BR2_PACKAGE_LIBGTK2 && !BR2_ENABLE_LOCALE
++	depends on BR2_PACKAGE_LIBGTK3 && !BR2_ENABLE_LOCALE
+ endif
+ 
+ comment "transmission needs a toolchain w/ threads"
+diff --git a/package/transmission/transmission.mk b/package/transmission/transmission.mk
+index 923ba409d3..e4a36805c2 100644
+--- a/package/transmission/transmission.mk
++++ b/package/transmission/transmission.mk
+@@ -64,7 +64,7 @@ define TRANSMISSION_INSTALL_INIT_SYSV
+ endef
+ 
+ define TRANSMISSION_INSTALL_INIT_SYSTEMD
+-	$(INSTALL) -D -m 0755 $(@D)/daemon/transmission-daemon.service \
++	$(INSTALL) -D -m 0644 $(@D)/daemon/transmission-daemon.service \
+ 		$(TARGET_DIR)/usr/lib/systemd/system/transmission-daemon.service
+ 	mkdir -p $(TARGET_DIR)/etc/systemd/system/multi-user.target.wants
+ 	ln -fs ../../../../usr/lib/systemd/system/transmission-daemon.service \
+@@ -82,10 +82,10 @@ TRANSMISSION_CONF_OPTS += --disable-remote
+ endif
+ 
+ ifeq ($(BR2_PACKAGE_TRANSMISSION_GTK),y)
+-TRANSMISSION_CONF_OPTS += --enable-gtk
+-TRANSMISSION_DEPENDENCIES += libgtk2
++TRANSMISSION_CONF_OPTS += --with-gtk
++TRANSMISSION_DEPENDENCIES += libgtk3
+ else
+-TRANSMISSION_CONF_OPTS += --disable-gtk
++TRANSMISSION_CONF_OPTS += --without-gtk
+ endif
+ 
+ $(eval $(autotools-package))
+diff --git a/package/unrar/unrar.hash b/package/unrar/unrar.hash
+index 36450e05e3..81688d7b7d 100644
+--- a/package/unrar/unrar.hash
++++ b/package/unrar/unrar.hash
+@@ -1,2 +1,3 @@
+ # Locally computed:
+-sha256	e470c584332422893fb52e049f2cbd99e24dc6c6da971008b4e2ae4284f8796c	unrarsrc-5.4.5.tar.gz
++sha256	9b66e4353a9944bc140eb2a919ff99482dd548f858f5e296d809e8f7cdb2fcf4	unrarsrc-5.5.8.tar.gz
++sha256	6ecc1687808b7d66b24f874755abfed7464d9751ed0001cd4e8e5d9bf397ff8a	license.txt
+diff --git a/package/unrar/unrar.mk b/package/unrar/unrar.mk
+index f5a95eacc5..d6c97dff2c 100644
+--- a/package/unrar/unrar.mk
++++ b/package/unrar/unrar.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-UNRAR_VERSION = 5.4.5
++UNRAR_VERSION = 5.5.8
+ UNRAR_SOURCE = unrarsrc-$(UNRAR_VERSION).tar.gz
+ UNRAR_SITE = http://www.rarlab.com/rar
+ UNRAR_LICENSE = unrar
+diff --git a/package/valgrind/Config.in b/package/valgrind/Config.in
+index 40e219d95a..75b779d214 100644
+--- a/package/valgrind/Config.in
++++ b/package/valgrind/Config.in
+@@ -1,14 +1,19 @@
++config BR2_PACKAGE_VALGRIND_ARCH_SUPPORTS
++	bool
++	default y if BR2_ARM_CPU_ARMV7A
++	default y if BR2_mips || BR2_mipsel || BR2_mips64 || BR2_mips64el
++	default y if BR2_i386 || BR2_x86_64
++	default y if BR2_powerpc || BR2_powerpc64 || BR2_powerpc64le
++	depends on !BR2_MIPS_SOFT_FLOAT
++
+ comment "valgrind needs a toolchain w/ dynamic library"
++	depends on BR2_PACKAGE_VALGRIND_ARCH_SUPPORTS
+ 	depends on BR2_STATIC_LIBS
+ 
+ config BR2_PACKAGE_VALGRIND
+ 	bool "valgrind"
+-	depends on BR2_ARM_CPU_ARMV7A || BR2_i386 || \
+-		   BR2_mips || BR2_mipsel || BR2_mips64 || BR2_mips64el || \
+-		   BR2_powerpc || BR2_powerpc64 || BR2_powerpc64le || \
+-		   BR2_x86_64
++	depends on BR2_PACKAGE_VALGRIND_ARCH_SUPPORTS
+ 	depends on !BR2_STATIC_LIBS
+-	depends on !BR2_MIPS_SOFT_FLOAT
+ 	help
+ 	  Tool for debugging and profiling Linux programs.
+ 
+diff --git a/package/vim/vim.mk b/package/vim/vim.mk
+index ec494608e7..9ea3fc21f0 100644
+--- a/package/vim/vim.mk
++++ b/package/vim/vim.mk
+@@ -75,4 +75,7 @@ VIM_POST_INSTALL_TARGET_HOOKS += VIM_INSTALL_RUNTIME_CMDS
+ VIM_POST_INSTALL_TARGET_HOOKS += VIM_REMOVE_DOCS
+ endif
+ 
++HOST_VIM_DEPENDENCIES = host-ncurses
++
+ $(eval $(autotools-package))
++$(eval $(host-autotools-package))
+diff --git a/package/webkitgtk/0001-WTF-Failure-to-build-when-the-compiler-specifically-.patch b/package/webkitgtk/0001-WTF-Failure-to-build-when-the-compiler-specifically-.patch
+new file mode 100644
+index 0000000000..017771a07d
+--- /dev/null
++++ b/package/webkitgtk/0001-WTF-Failure-to-build-when-the-compiler-specifically-.patch
+@@ -0,0 +1,36 @@
++From 09d5520d910b63fba67bea1d8c71f5d426f345b7 Mon Sep 17 00:00:00 2001
++From: "aperez@igalia.com"
++ <aperez@igalia.com@268f45cc-cd09-0410-ab3c-d52691b4dbfc>
++Date: Wed, 12 Jul 2017 18:42:29 +0000
++Subject: [PATCH] [WTF] Failure to build when the compiler specifically targets
++ ARMv8-A / defines __ARM_ARCH_8A__
++ https://bugs.webkit.org/show_bug.cgi?id=174425
++
++Reviewed by Michael Catanzaro.
++
++* wtf/Platform.h: Also check for __ARCH_ARM_8A__ to detect ARMv8.
++
++Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
++
++git-svn-id: http://svn.webkit.org/repository/webkit/trunk@219415 268f45cc-cd09-0410-ab3c-d52691b4dbfc
++---
++ Source/WTF/wtf/Platform.h | 3 ++-
++ 1 file changed, 2 insertions(+), 1 deletion(-)
++
++diff --git a/Source/WTF/wtf/Platform.h b/Source/WTF/wtf/Platform.h
++index 44d929c333c..7dccb44fcbf 100644
++--- a/Source/WTF/wtf/Platform.h
+++++ b/Source/WTF/wtf/Platform.h
++@@ -238,7 +238,8 @@
++     || defined(__ARM_ARCH_7S__)
++ #define WTF_ARM_ARCH_VERSION 7
++ 
++-#elif defined(__ARM_ARCH_8__)
+++#elif defined(__ARM_ARCH_8__) \
+++    || defined(__ARM_ARCH_8A__)
++ #define WTF_ARM_ARCH_VERSION 8
++ 
++ /* MSVC sets _M_ARM */
++-- 
++2.13.3
++
+diff --git a/package/webkitgtk/0002-bmalloc-Failure-to-build-when-the-compiler-specifica.patch b/package/webkitgtk/0002-bmalloc-Failure-to-build-when-the-compiler-specifica.patch
+new file mode 100644
+index 0000000000..e1623bffa0
+--- /dev/null
++++ b/package/webkitgtk/0002-bmalloc-Failure-to-build-when-the-compiler-specifica.patch
+@@ -0,0 +1,36 @@
++From 07dab7fe552c53e7840e34d3c8bb1cc43a921706 Mon Sep 17 00:00:00 2001
++From: "aperez@igalia.com"
++ <aperez@igalia.com@268f45cc-cd09-0410-ab3c-d52691b4dbfc>
++Date: Wed, 12 Jul 2017 18:43:36 +0000
++Subject: [PATCH] bmalloc: Failure to build when the compiler specifically
++ targets ARMv8-A / defines __ARM_ARCH_8A__
++ https://bugs.webkit.org/show_bug.cgi?id=174424
++
++Reviewed by Michael Catanzaro.
++
++* bmalloc/BPlatform.h: Also check for __ARCH_ARM_8A__ to detect ARMv8.
++
++Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
++
++git-svn-id: http://svn.webkit.org/repository/webkit/trunk@219416 268f45cc-cd09-0410-ab3c-d52691b4dbfc
++---
++ Source/bmalloc/bmalloc/BPlatform.h | 3 ++-
++ 1 file changed, 2 insertions(+), 1 deletion(-)
++
++diff --git a/Source/bmalloc/bmalloc/BPlatform.h b/Source/bmalloc/bmalloc/BPlatform.h
++index 8d768db63fb..400143a63fb 100644
++--- a/Source/bmalloc/bmalloc/BPlatform.h
+++++ b/Source/bmalloc/bmalloc/BPlatform.h
++@@ -120,7 +120,8 @@
++ || defined(__ARM_ARCH_7S__)
++ #define BARM_ARCH_VERSION 7
++ 
++-#elif defined(__ARM_ARCH_8__)
+++#elif defined(__ARM_ARCH_8__) \
+++|| defined(__ARM_ARCH_8A__)
++ #define BARM_ARCH_VERSION 8
++ 
++ /* MSVC sets _M_ARM */
++-- 
++2.13.3
++
+diff --git a/package/webkitgtk/0003-Fix-broken-build-when-ENABLE_VIDEO-is-disabled.patch b/package/webkitgtk/0003-Fix-broken-build-when-ENABLE_VIDEO-is-disabled.patch
+new file mode 100644
+index 0000000000..b460b0c924
+--- /dev/null
++++ b/package/webkitgtk/0003-Fix-broken-build-when-ENABLE_VIDEO-is-disabled.patch
+@@ -0,0 +1,207 @@
++From c054224e551547c3e3593b60ca1226fa4ac41c01 Mon Sep 17 00:00:00 2001
++From: "timothy@hatcher.name"
++ <timothy@hatcher.name@268f45cc-cd09-0410-ab3c-d52691b4dbfc>
++Date: Tue, 11 Jul 2017 18:07:24 +0000
++Subject: [PATCH] Fix broken build when ENABLE_VIDEO is disabled.
++ https://bugs.webkit.org/show_bug.cgi?id=174368
++
++Reviewed by Alex Christensen.
++
++* dom/Document.cpp:
++* html/canvas/WebGLRenderingContextBase.cpp:
++(WebCore::WebGLRenderingContextBase::texSubImage2D):
++(WebCore::WebGLRenderingContextBase::texImage2D):
++* html/canvas/WebGLRenderingContextBase.h:
++* html/canvas/WebGLRenderingContextBase.idl:
++* testing/Internals.cpp:
++(WebCore::Internals::mediaResponseSources):
++(WebCore::Internals::mediaResponseContentRanges):
++* testing/Internals.h:
++* testing/Internals.idl:
++
++Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
++
++git-svn-id: http://svn.webkit.org/repository/webkit/trunk@219343 268f45cc-cd09-0410-ab3c-d52691b4dbfc
++---
++ .../html/canvas/WebGLRenderingContextBase.cpp      | 16 +++++++++++----
++ .../html/canvas/WebGLRenderingContextBase.h        | 12 ++++++++++-
++ .../html/canvas/WebGLRenderingContextBase.idl      |  4 ++++
++ Source/WebCore/testing/Internals.cpp               | 24 ++++++++++++++++++++++
++ Source/WebCore/testing/Internals.h                 |  2 ++
++ Source/WebCore/testing/Internals.idl               |  2 ++
++ 6 files changed, 55 insertions(+), 5 deletions(-)
++
++diff --git a/Source/WebCore/html/canvas/WebGLRenderingContextBase.cpp b/Source/WebCore/html/canvas/WebGLRenderingContextBase.cpp
++index f8fd63f7d87..a76a44ff06b 100644
++--- a/Source/WebCore/html/canvas/WebGLRenderingContextBase.cpp
+++++ b/Source/WebCore/html/canvas/WebGLRenderingContextBase.cpp
++@@ -3597,7 +3597,9 @@ ExceptionOr<void> WebGLRenderingContextBase::texSubImage2D(GC3Denum target, GC3D
++         else
++             texSubImage2DImpl(target, level, xoffset, yoffset, format, type, canvas->copiedImage(), GraphicsContext3D::HtmlDomCanvas, m_unpackFlipY, m_unpackPremultiplyAlpha);
++         return { };
++-    }, [&](const RefPtr<HTMLVideoElement>& video) -> ExceptionOr<void> {
+++    }
+++#if ENABLE(VIDEO)
+++    , [&](const RefPtr<HTMLVideoElement>& video) -> ExceptionOr<void> {
++         ExceptionCode ec = 0;
++         if (isContextLostOrPending() || !validateHTMLVideoElement("texSubImage2D", video.get(), ec))
++             return ec ? Exception { ec } : ExceptionOr<void> { };
++@@ -3620,7 +3622,9 @@ ExceptionOr<void> WebGLRenderingContextBase::texSubImage2D(GC3Denum target, GC3D
++             return { };
++         texSubImage2DImpl(target, level, xoffset, yoffset, format, type, image.get(), GraphicsContext3D::HtmlDomVideo, m_unpackFlipY, m_unpackPremultiplyAlpha);
++         return { };
++-    });
+++    }
+++#endif
+++    );
++ 
++     return WTF::visit(visitor, source.value());
++ }
++@@ -4107,7 +4111,9 @@ ExceptionOr<void> WebGLRenderingContextBase::texImage2D(GC3Denum target, GC3Dint
++         else
++             texImage2DImpl(target, level, internalformat, format, type, canvas->copiedImage(), GraphicsContext3D::HtmlDomCanvas, m_unpackFlipY, m_unpackPremultiplyAlpha);
++         return { };
++-    }, [&](const RefPtr<HTMLVideoElement>& video) -> ExceptionOr<void> {
+++    }
+++#if ENABLE(VIDEO)
+++    , [&](const RefPtr<HTMLVideoElement>& video) -> ExceptionOr<void> {
++         ExceptionCode ec = 0;
++         if (isContextLostOrPending() || !validateHTMLVideoElement("texImage2D", video.get(), ec)
++             || !validateTexFunc("texImage2D", TexImage, SourceHTMLVideoElement, target, level, internalformat, video->videoWidth(), video->videoHeight(), 0, format, type, 0, 0))
++@@ -4137,7 +4143,9 @@ ExceptionOr<void> WebGLRenderingContextBase::texImage2D(GC3Denum target, GC3Dint
++             return { };
++         texImage2DImpl(target, level, internalformat, format, type, image.get(), GraphicsContext3D::HtmlDomVideo, m_unpackFlipY, m_unpackPremultiplyAlpha);
++         return { };
++-    });
+++    }
+++#endif
+++    );
++ 
++     return WTF::visit(visitor, source.value());
++ }
++diff --git a/Source/WebCore/html/canvas/WebGLRenderingContextBase.h b/Source/WebCore/html/canvas/WebGLRenderingContextBase.h
++index 31e5542e612..d4738e834a1 100644
++--- a/Source/WebCore/html/canvas/WebGLRenderingContextBase.h
+++++ b/Source/WebCore/html/canvas/WebGLRenderingContextBase.h
++@@ -57,7 +57,6 @@ class EXTShaderTextureLOD;
++ class EXTsRGB;
++ class EXTFragDepth;
++ class HTMLImageElement;
++-class HTMLVideoElement;
++ class ImageData;
++ class IntSize;
++ class OESStandardDerivatives;
++@@ -85,6 +84,10 @@ class WebGLSharedObject;
++ class WebGLShaderPrecisionFormat;
++ class WebGLUniformLocation;
++ 
+++#if ENABLE(VIDEO)
+++class HTMLVideoElement;
+++#endif
+++
++ inline void clip1D(GC3Dint start, GC3Dsizei range, GC3Dsizei sourceRange, GC3Dint* clippedStart, GC3Dsizei* clippedRange)
++ {
++     ASSERT(clippedStart && clippedRange);
++@@ -244,7 +247,12 @@ public:
++ 
++     void texImage2D(GC3Denum target, GC3Dint level, GC3Denum internalformat, GC3Dsizei width, GC3Dsizei height, GC3Dint border, GC3Denum format, GC3Denum type, RefPtr<ArrayBufferView>&&);
++ 
+++#if ENABLE(VIDEO)
++     using TexImageSource = WTF::Variant<RefPtr<ImageData>, RefPtr<HTMLImageElement>, RefPtr<HTMLCanvasElement>, RefPtr<HTMLVideoElement>>;
+++#else
+++    using TexImageSource = WTF::Variant<RefPtr<ImageData>, RefPtr<HTMLImageElement>, RefPtr<HTMLCanvasElement>>;
+++#endif
+++
++     ExceptionOr<void> texImage2D(GC3Denum target, GC3Dint level, GC3Denum internalformat, GC3Denum format, GC3Denum type, std::optional<TexImageSource>);
++ 
++     void texParameterf(GC3Denum target, GC3Denum pname, GC3Dfloat param);
++@@ -677,7 +685,9 @@ protected:
++         SourceImageData,
++         SourceHTMLImageElement,
++         SourceHTMLCanvasElement,
+++#if ENABLE(VIDEO)
++         SourceHTMLVideoElement,
+++#endif
++     };
++ 
++     // Helper function for tex{Sub}Image2D to check if the input format/type/level/target/width/height/border/xoffset/yoffset are valid.
++diff --git a/Source/WebCore/html/canvas/WebGLRenderingContextBase.idl b/Source/WebCore/html/canvas/WebGLRenderingContextBase.idl
++index 63b64cdebd2..3111e798a89 100644
++--- a/Source/WebCore/html/canvas/WebGLRenderingContextBase.idl
+++++ b/Source/WebCore/html/canvas/WebGLRenderingContextBase.idl
++@@ -42,7 +42,11 @@ typedef (Float32Array or sequence<GLfloat>) Float32List;
++ typedef (Int32Array or sequence<GLint>) Int32List;
++ 
++ // FIXME: Should allow ImageBitmap too.
+++#ifdef ENABLE_VIDEO
++ typedef (ImageData or HTMLImageElement or HTMLCanvasElement or HTMLVideoElement) TexImageSource;
+++#else
+++typedef (ImageData or HTMLImageElement or HTMLCanvasElement) TexImageSource;
+++#endif
++ 
++ [
++     Conditional=WEBGL,
++diff --git a/Source/WebCore/testing/Internals.cpp b/Source/WebCore/testing/Internals.cpp
++index 6d26d556e33..6d64845fd27 100644
++--- a/Source/WebCore/testing/Internals.cpp
+++++ b/Source/WebCore/testing/Internals.cpp
++@@ -2765,6 +2765,30 @@ String Internals::getImageSourceURL(Element& element)
++ 
++ #if ENABLE(VIDEO)
++ 
+++Vector<String> Internals::mediaResponseSources(HTMLMediaElement& media)
+++{
+++    auto* resourceLoader = media.lastMediaResourceLoaderForTesting();
+++    if (!resourceLoader)
+++        return { };
+++    Vector<String> result;
+++    auto responses = resourceLoader->responsesForTesting();
+++    for (auto& response : responses)
+++        result.append(responseSourceToString(response));
+++    return result;
+++}
+++
+++Vector<String> Internals::mediaResponseContentRanges(HTMLMediaElement& media)
+++{
+++    auto* resourceLoader = media.lastMediaResourceLoaderForTesting();
+++    if (!resourceLoader)
+++        return { };
+++    Vector<String> result;
+++    auto responses = resourceLoader->responsesForTesting();
+++    for (auto& response : responses)
+++        result.append(response.httpHeaderField(HTTPHeaderName::ContentRange));
+++    return result;
+++}
+++
++ void Internals::simulateAudioInterruption(HTMLMediaElement& element)
++ {
++ #if USE(GSTREAMER)
++diff --git a/Source/WebCore/testing/Internals.h b/Source/WebCore/testing/Internals.h
++index f5c08a87dfd..d35f651e452 100644
++--- a/Source/WebCore/testing/Internals.h
+++++ b/Source/WebCore/testing/Internals.h
++@@ -401,6 +401,8 @@ public:
++     String getImageSourceURL(Element&);
++ 
++ #if ENABLE(VIDEO)
+++    Vector<String> mediaResponseSources(HTMLMediaElement&);
+++    Vector<String> mediaResponseContentRanges(HTMLMediaElement&);
++     void simulateAudioInterruption(HTMLMediaElement&);
++     ExceptionOr<bool> mediaElementHasCharacteristic(HTMLMediaElement&, const String&);
++ #endif
++diff --git a/Source/WebCore/testing/Internals.idl b/Source/WebCore/testing/Internals.idl
++index 155b70b4abf..3fe6885d362 100644
++--- a/Source/WebCore/testing/Internals.idl
+++++ b/Source/WebCore/testing/Internals.idl
++@@ -386,6 +386,8 @@ enum EventThrottlingBehavior {
++ 
++     void enableAutoSizeMode(boolean enabled, long minimumWidth, long minimumHeight, long maximumWidth, long maximumHeight);
++ 
+++    [Conditional=VIDEO] sequence<DOMString> mediaResponseSources(HTMLMediaElement media);
+++    [Conditional=VIDEO] sequence<DOMString> mediaResponseContentRanges(HTMLMediaElement media);
++     [Conditional=VIDEO] void simulateAudioInterruption(HTMLMediaElement element);
++     [Conditional=VIDEO, MayThrowException] boolean mediaElementHasCharacteristic(HTMLMediaElement element, DOMString characteristic);
++ 
++-- 
++2.13.3
++
+diff --git a/package/webkitgtk/0004-GTK-WPE-CFLAGS-from-pkg-config-for-E-GL-are-not-pass.patch b/package/webkitgtk/0004-GTK-WPE-CFLAGS-from-pkg-config-for-E-GL-are-not-pass.patch
+new file mode 100644
+index 0000000000..91c5116a2a
+--- /dev/null
++++ b/package/webkitgtk/0004-GTK-WPE-CFLAGS-from-pkg-config-for-E-GL-are-not-pass.patch
+@@ -0,0 +1,64 @@
++From 6579c307d85a9b447d3b7f13b25fb0a52177ed09 Mon Sep 17 00:00:00 2001
++From: Carlos Alberto Lopez Perez <clopez@igalia.com>
++Date: Thu, 3 Aug 2017 13:57:14 +0300
++Subject: [PATCH] [GTK][WPE] CFLAGS from pkg-config for (E)GL are not passed to
++ WebKit https://bugs.webkit.org/show_bug.cgi?id=175125
++
++Patch by Carlos Alberto Lopez Perez <clopez@igalia.com> on 2017-08-03
++Reviewed by NOBODY (OOPS!).
++
++* CMakeLists.txt: Pass GL-related flags to the WebKit component when
++  appropriate.
++
++Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
++
++---
++ Source/WebKit2/CMakeLists.txt | 31 +++++++++++++++++++++++++++++++
++ Source/WebKit2/ChangeLog      | 10 ++++++++++
++ 2 files changed, 41 insertions(+)
++
++diff --git a/Source/WebKit2/CMakeLists.txt b/Source/WebKit2/CMakeLists.txt
++index 2d8215f6a35..b25e9872de2 100644
++--- a/Source/WebKit2/CMakeLists.txt
+++++ b/Source/WebKit2/CMakeLists.txt
++@@ -88,6 +88,37 @@ set(WebKit2_SYSTEM_INCLUDE_DIRECTORIES
++ )
++ 
++ if (ENABLE_GRAPHICS_CONTEXT_3D)
+++    # For platforms that want to use system-provided OpenGL (ES) / EGL headers,
+++    # these include directories, libraries or definitions need to be
+++    # added before the ANGLE directories.
+++    if (USE_OPENGL)
+++        list(APPEND WebKit2_SYSTEM_INCLUDE_DIRECTORIES
+++            ${OPENGL_INCLUDE_DIRS}
+++        )
+++        list(APPEND WebKit2_LIBRARIES
+++            ${OPENGL_LIBRARIES}
+++        )
+++        add_definitions(${OPENGL_DEFINITIONS})
+++    elseif (USE_OPENGL_ES_2)
+++        list(APPEND WebKit2_SYSTEM_INCLUDE_DIRECTORIES
+++            ${OPENGLES2_INCLUDE_DIRS}
+++        )
+++        list(APPEND WebKit2_LIBRARIES
+++            ${OPENGLES2_LIBRARIES}
+++        )
+++        add_definitions(${OPENGLES2_DEFINITIONS})
+++    endif ()
+++
+++    if (USE_EGL)
+++        list(APPEND WebKit2_SYSTEM_INCLUDE_DIRECTORIES
+++            ${EGL_INCLUDE_DIRS}
+++        )
+++        list(APPEND WebKit2_LIBRARIES
+++            ${EGL_LIBRARIES}
+++        )
+++        add_definitions(${EGL_DEFINITIONS})
+++    endif ()
+++
++     list(APPEND WebKit2_INCLUDE_DIRECTORIES
++         "${THIRDPARTY_DIR}/ANGLE"
++         "${THIRDPARTY_DIR}/ANGLE/include/KHR"
++--
++2.13.4
++
+diff --git a/package/webkitgtk/webkitgtk.mk b/package/webkitgtk/webkitgtk.mk
+index 8329d52f9f..fc51031582 100644
+--- a/package/webkitgtk/webkitgtk.mk
++++ b/package/webkitgtk/webkitgtk.mk
+@@ -40,9 +40,13 @@ WEBKITGTK_CONF_OPTS += \
+ 	-DENABLE_WEB_AUDIO=ON
+ WEBKITGTK_DEPENDENCIES += gstreamer1 gst1-libav gst1-plugins-base gst1-plugins-good
+ else
++# ENABLE_MEDIA_STREAM has to be explicitly disabled because there is a missing
++# feature dependency in the WebKitGTK+ CMake files. This can be removed once
++# https://bugs.webkit.org/show_bug.cgi?id=174940 makes it into a release.
+ WEBKITGTK_CONF_OPTS += \
+ 	-DENABLE_VIDEO=OFF \
+-	-DENABLE_WEB_AUDIO=OFF
++	-DENABLE_WEB_AUDIO=OFF \
++	-DENABLE_MEDIA_STREAM=OFF
+ endif
+ 
+ # Only one target platform can be built, assume X11 > Wayland
+diff --git a/package/whois/whois.hash b/package/whois/whois.hash
+index 6f65074c2c..29623b529f 100644
+--- a/package/whois/whois.hash
++++ b/package/whois/whois.hash
+@@ -1,2 +1,2 @@
+-# From http://ftp.debian.org/debian/pool/main/w/whois/whois_5.2.14.dsc
+-sha256	a41daf41abed0fbfa8c9c4b0e4a3f5f22d9876dd6feb9091aac12f8f4c38b0d2	whois_5.2.14.tar.xz
++# From http://snapshot.debian.org/archive/debian/20170727T214450Z/pool/main/w/whois/whois_5.2.17.dsc
++sha256	257585678f571e18964667b41dc6543fe9da6123ac95743660c9c3ae1eba9664	whois_5.2.17.tar.xz
+diff --git a/package/whois/whois.mk b/package/whois/whois.mk
+index 29a18e3e1c..5836e1d7bb 100644
+--- a/package/whois/whois.mk
++++ b/package/whois/whois.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-WHOIS_VERSION = 5.2.14
+-WHOIS_SITE = http://snapshot.debian.org/archive/debian/20161230T032015Z/pool/main/w/whois
++WHOIS_VERSION = 5.2.17
++WHOIS_SITE = http://snapshot.debian.org/archive/debian/20170727T214450Z/pool/main/w/whois
+ WHOIS_SOURCE = whois_$(WHOIS_VERSION).tar.xz
+ # take precedence over busybox implementation
+ WHOIS_DEPENDENCIES = host-gettext $(if $(BR2_PACKAGE_BUSYBOX),busybox)
+diff --git a/package/xen/xen.hash b/package/xen/xen.hash
+index 0b14e2966c..c1aac7624b 100644
+--- a/package/xen/xen.hash
++++ b/package/xen/xen.hash
+@@ -1,2 +1,11 @@
+ # Locally computed
+ sha256 5b5385b476e59e4cf31ecc6dd605df38814b83432b8e8d917f18c8edfdfb708f xen-4.7.3.tar.gz
++sha256 fffcc0a4428723e6aea391ff4f1d27326b5a3763d2308cbde64e6a786502c702 xsa226-4.7.patch
++sha256 9923a47e5f86949800887596f098954a08ef73a01d74b1dbe16cab2e6b1fabb2 xsa227.patch
++sha256 5a7416f15ac9cd7cace354b6102ff58199fe0581f65a36a36869650c71784e48 xsa228-4.8.patch
++sha256 77a73f1c32d083e315ef0b1bbb119cb8840ceb5ada790cad76cbfb9116f725cc xsa230.patch
++sha256 ce29b56a0480f4835b37835b351e704d204bb0ccd22325f487127aa2776cc2cf xsa231-4.7.patch
++sha256 5068a78293daa58557c30c95141b775becfb650de6a5eda0d82a4a321ced551c xsa232.patch
++sha256 f721cc49ba692b2f36299b631451f51d7340b8b4732f74c98f01cb7a80d8662b xsa233.patch
++sha256 169e4e0eaa6b27e58ff0f4ce50e8fcc3f81b1e0a10210decf22d1b4cac7501fb xsa234-4.8.patch
++sha256 f30848eee71e66687b421b87be1d8e3f454c0eb395422546c62a689153d1e31c xsa235-4.7.patch
+diff --git a/package/xen/xen.mk b/package/xen/xen.mk
+index a973b408da..fe68960cb0 100644
+--- a/package/xen/xen.mk
++++ b/package/xen/xen.mk
+@@ -6,6 +6,16 @@
+ 
+ XEN_VERSION = 4.7.3
+ XEN_SITE = https://downloads.xenproject.org/release/xen/$(XEN_VERSION)
++XEN_PATCH = \
++	https://xenbits.xenproject.org/xsa/xsa226-4.7.patch \
++	https://xenbits.xenproject.org/xsa/xsa227.patch \
++	https://xenbits.xenproject.org/xsa/xsa228-4.8.patch \
++	https://xenbits.xenproject.org/xsa/xsa230.patch \
++	https://xenbits.xenproject.org/xsa/xsa231-4.7.patch \
++	https://xenbits.xenproject.org/xsa/xsa232.patch \
++	https://xenbits.xenproject.org/xsa/xsa233.patch \
++	https://xenbits.xenproject.org/xsa/xsa234-4.8.patch \
++	https://xenbits.xenproject.org/xsa/xsa235-4.7.patch
+ XEN_LICENSE = GPLv2
+ XEN_LICENSE_FILES = COPYING
+ XEN_DEPENDENCIES = host-python
+diff --git a/package/zmqpp/zmqpp.mk b/package/zmqpp/zmqpp.mk
+index 3e35fd758a..cf233b95e8 100644
+--- a/package/zmqpp/zmqpp.mk
++++ b/package/zmqpp/zmqpp.mk
+@@ -13,6 +13,10 @@ ZMQPP_LICENSE_FILES = LICENSE
+ ZMQPP_MAKE_OPTS = LD="$(TARGET_CXX)" BUILD_PATH=./build PREFIX=/usr
+ ZMQPP_LDFLAGS = $(TARGET_LDFLAGS) -lpthread
+ 
++ifeq ($(BR2_TOOLCHAIN_HAS_LIBATOMIC),y)
++ZMQPP_LDFLAGS += -latomic
++endif
++
+ ifeq ($(BR2_PACKAGE_ZMQPP_CLIENT),y)
+ ZMQPP_DEPENDENCIES += boost
+ endif
+diff --git a/support/download/git b/support/download/git
+index 056057c700..033a984f10 100755
+--- a/support/download/git
++++ b/support/download/git
+@@ -98,4 +98,4 @@ LC_ALL=C sort <"${basename}.list" >"${basename}.list.sorted"
+ # sources.buildroot.org and used in the *.hash files
+ tar cf - --numeric-owner --owner=0 --group=0 --mtime="${date}" --format=gnu \
+          -T "${basename}.list.sorted" >"${output}.tar"
+-gzip -n <"${output}.tar" >"${output}"
++gzip -6 -n <"${output}.tar" >"${output}"

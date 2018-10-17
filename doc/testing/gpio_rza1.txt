@@ -1,0 +1,65 @@
+Here is how to control GPIO pins from userspace.
+
+More information can be found here:
+  https://www.kernel.org/doc/Documentation/gpio/sysfs.txt
+
+
+----------------------------------------------
+About pin number assignments
+----------------------------------------------
+
+The I/O pins are assigned in:
+	linux-4.19/arch/arm/boot/dts/r7s72100.dtsi
+in the node:
+	pinctrl: pin-controller@fcfe3000
+
+Not all pins can be GPIO, but to make it easier to convert a GPIO
+name into a port number, dummy enteries	were added to the table.
+
+RZ/A1H and RZA/A1M have ports 0-11, 16 pins each  (192 pins in total)
+RZ/A1L has ports 0-9, 16 pins each  (160 pins in total)
+
+Therefore, "port number" = (port x 16) + bit.
+P7_1 = (7 x 16) + 1 = 113
+
+
+----------------------------------------------
+Example usage
+----------------------------------------------
+
+On the RSK board, LED0 is on P7_1.
+
+# Enable the use of a pin by passing the pin number to "export"
+echo 113 > /sys/class/gpio/export
+
+# Now see that a new "P7_1" interface has appeared
+ls /sys/class/gpio
+
+# Set that pin as a GPIO-OUT
+echo out > /sys/class/gpio/P7_1/direction
+
+# Turn LED0 on and off
+echo 0 > /sys/class/gpio/P7_1/value
+echo 1 > /sys/class/gpio/P7_1/value
+
+# If you are done with the pin, you can do this to remove the interface
+echo 113 > /sys/class/gpio/unexport
+
+
+# Read buttons on RZ RSK board
+
+SW1 = P1_9
+	echo 25 > /sys/class/gpio/export
+	echo in > /sys/class/gpio/P1_9/direction
+	cat /sys/class/gpio/P1_9/value
+
+SW2 = P1_8
+	echo 24 > /sys/class/gpio/export
+	echo in > /sys/class/gpio/P1_8/direction
+	cat /sys/class/gpio/P1_8/value
+
+SW3 = P1_11
+	echo 27 > /sys/class/gpio/export
+	echo in > /sys/class/gpio/P1_11/direction
+	cat /sys/class/gpio/P1_11/value
+

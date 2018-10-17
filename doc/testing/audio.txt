@@ -1,0 +1,127 @@
+This testing was done on the RZ/A1H RSK board.
+
+
+The following kernel configurations are needed.
+	CONFIG_SOUND=y
+	CONFIG_SND=y
+	CONFIG_SND_SOC=y
+	CONFIG_SND_SCUX_RSKRZA1=y
+	CONFIG_RZA_DMA=y
+
+
+The following Buildroot packages were used for testing:
+	[*] alsa-utils
+	BR2_PACKAGE_ALSA_UTILS=y
+
+	[*] alsa-utils -> [*] aplay/arecord.
+	BR2_PACKAGE_ALSA_UTILS_APLAY=y
+
+	[*] alsactl
+	BR2_PACKAGE_ALSA_UTILS_ALSACTL
+
+	[*] alsa-utils -> [*] amixer
+	BR2_PACKAGE_ALSA_UTILS_AMIXER=y
+
+	[*] mpg123
+	BR2_PACKAGE_MPG123=y
+
+------------------
+Mixer settings
+------------------
+Before the audio can be used, the audio channels and controls need to be configured correctly.
+In this BSP, that is done automatically during system boot in file
+
+	/etc/init.d/S99_rea_setup
+
+and specifically by the line:
+
+	alsactl restore
+
+The 'alsactl restore' commands sets the audio controls according to the file:
+	/var/lib/alsa/asound.state
+
+Most importantly, the controls 'SCR0 Control', 'SCR1 Control', 'SSI0 CapControl' and 'SSI0 Control' need to be set to 'On'.
+Additionally, the asound.state sets the 'PCM' playback level to 75%, and the 'Capture' level to '75%'
+You can use the command 'amixer' to review their current settings.
+
+To manually set these values without using 'alsactrl restore', you would do the following:
+
+amixer cset name="SRC0 Control" 1
+amixer cset name="SRC1 Control" 1
+amixer cset name="SSI0 CapControl" 1
+amixer cset name="SSI0 Control" 1
+
+amixer sset 'Capture',0 75%,75%
+amixer sset 'PCM',0 75%,75%
+
+Also, you can set the output volume as follows:
+
+# Set LINE out volume (Left% , Right%)
+amixer sset 'Digital Audio Input',0 50%,50%
+
+
+------------------
+Testing
+------------------
+* Playback
+	- To play WAV file:
+		$ cd sounds
+		$ aplay ring.wav
+	- To run mp3 file:
+		$ mpg123 Richard.mp3
+
+* Record
+	- Due to read-only filesystem, it is only possible to record to file at /tmp directory
+	- To record audio file:
+		$ arecord -f S16_LE -c1 -r44100 -d 50 /tmp/test-mic.wav
+	- Play recorded file:
+		$ cd /tmp
+		$ aplay test-mic.wav
+
+
+
+When changing the resistors use to the MIC input instead of LINE IN
+
+# Audio Input Control Registers 'MICL Gain'(0x15) and 'MICL Gain'(0x16)
+# Left/Right Microphone Preamplifier Enable
+# PAENL: Set from 0x0 (Microphones disabled) -> 0x4 (20dB)
+# PAENR: Set from 0x0 (Microphones disabled) -> 0x4 (20dB)
+i2cset -f -y 3 0x10 0x15 0x40
+i2cset -f -y 3 0x10 0x16 0x40
+
+
+-----------------------------
+Configurations for Stream it!
+-----------------------------
+
+On the Stream it! board, the Headphones (HPR/HPL) output on the audio codec chip are used instead of LINE OUT.
+So, this change was needed in both the driver and the external aduio code chip. Below you will see the i2c commands that make this change in the codec chip.
+
+
+Also on On Stream it! board, the MIC input is used instead of LINE IN. This this also needed to be set in the codec chip using the i2c commands below.
+
+
+Before playing or recording audio, you must first enter the command below in order to configure the Linux sound system and the external audio codec chip.
+
+
+echo "Audio setup"
+amixer set 'Right Input Mixer MICR' on
+amixer set 'Left Input Mixer MICL' on
+amixer set 'Left Input Mixer LINEIN1' off
+amixer set 'Right Input Mixer LINEIN2' off
+amixer set 'Digital Audio Input' 60%
+
+echo "Audio codec Setup"
+# Audio Input Control Registers 'MICL Gain'(0x15) and 'MICL Gain'(0x16)
+# Left/Right Microphone Preamplifier Enable
+# PAENL: Set from 0x0 (Microphones disabled) -> 0x4 (20dB)
+# PAENR: Set from 0x0 (Microphones disabled) -> 0x4 (20dB)
+i2cset -f -y 1 0x10 0x15 0x40
+i2cset -f -y 1 0x10 0x16 0x40
+
+# Audio Output Control Registers (0x1a)
+# Headphone Output Mode Enable
+# HPMODE: Set from 0x0 (Shutdown mode) -> 0x03 (Stereo mode)
+i2cset -f -y 1 0x10 0x1a 0x03
+
+

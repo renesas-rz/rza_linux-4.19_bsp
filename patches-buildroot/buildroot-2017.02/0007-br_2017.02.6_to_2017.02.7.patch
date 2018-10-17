@@ -1,0 +1,4026 @@
+diff --git a/CHANGES b/CHANGES
+index 56f1c32a5c..093f8f0473 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,21 @@
++2017.02.7, Released October 28th, 2017
++
++	Important / security related fixes.
++
++	Webkitgtk bumped to the 2.18.x series, fixing a large number
++	of security issues.
++
++	Defconfigs: wandboard: Correct rootfs offset
++
++	Toolchain: Linaro toolchains updated to 2017.08 release,
++	fixing a number of issues. Musl: fix for CVE-2017-15650.
++
++	Updated/fixed packages: busybox, bzip2, dnsmasq, git, go,
++	hostapd, irssi, iucode-tool, lame, libcurl, libffi, libnspr,
++	libnss, nodejs, openssh, openvpn, qemu, qt, redis, sdl2,
++	webkitgtk, wget, wpa_supplicant, xen, xlib_libXfont,
++	xlib_libXfont2, xserver_xorg-server
++
+ 2017.02.6, Released September 24th, 2017
+ 
+ 	Important / security related fixes.
+diff --git a/Config.in b/Config.in
+index 434935bff0..345d5c5b60 100644
+--- a/Config.in
++++ b/Config.in
+@@ -467,7 +467,7 @@ choice
+ config BR2_OPTIMIZE_0
+ 	bool "optimization level 0"
+ 	help
+-	  Do not optimize. This is the default.
++	  Do not optimize.
+ 
+ config BR2_OPTIMIZE_1
+ 	bool "optimization level 1"
+@@ -534,6 +534,7 @@ config BR2_OPTIMIZE_S
+ 	  -falign-loops -falign-labels -freorder-blocks
+ 	  -freorder-blocks-and-partition -fprefetch-loop-arrays
+ 	  -ftree-vect-loop-version
++	  This is the default.
+ 
+ endchoice
+ 
+diff --git a/Makefile b/Makefile
+index 3514d938b4..ae36c66b41 100644
+--- a/Makefile
++++ b/Makefile
+@@ -86,9 +86,9 @@ else # umask / $(CURDIR) / $(O)
+ all:
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2017.02.6
++export BR2_VERSION := 2017.02.7
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1506285000
++BR2_VERSION_EPOCH = 1509216000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+@@ -481,6 +481,8 @@ include Makefile.legacy
+ include package/Makefile.in
+ include support/dependencies/dependencies.mk
+ 
++PACKAGES += $(DEPENDENCIES_HOST_PREREQ)
++
+ include toolchain/*.mk
+ include toolchain/*/*.mk
+ 
+diff --git a/board/wandboard/genimage.cfg b/board/wandboard/genimage.cfg
+index b23a91b0b8..ad4a6a55d5 100644
+--- a/board/wandboard/genimage.cfg
++++ b/board/wandboard/genimage.cfg
+@@ -26,6 +26,7 @@ image sdcard.img {
+   partition rootfs {
+     partition-type = 0x83
+     image = "rootfs.ext4"
++    offset = 1M
+     size = 512M
+   }
+ }
+diff --git a/docs/manual/customize-outside-br.txt b/docs/manual/customize-outside-br.txt
+index ea0e12033e..b1eed326aa 100644
+--- a/docs/manual/customize-outside-br.txt
++++ b/docs/manual/customize-outside-br.txt
+@@ -199,7 +199,7 @@ and to the kernel configuration file as follows (e.g. by running
+ ----
+ BR2_GLOBAL_PATCH_DIR=$(BR2_EXTERNAL_BAR_42_PATH)/patches/
+ BR2_ROOTFS_OVERLAY=$(BR2_EXTERNAL_BAR_42_PATH)/board/<boardname>/overlay/
+-BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE=$(BR2_EXTERNAL_BAR_42_FOO)/board/<boardname>/kernel.config
++BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE=$(BR2_EXTERNAL_BAR_42_PATH)/board/<boardname>/kernel.config
+ ----
+ 
+ ===== Example layout
+@@ -263,7 +263,7 @@ illustration, of course):
+   |     |BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_BAR_42_PATH)/patches/"
+   |     |BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_BAR_42_PATH)/board/my-board/overlay/"
+   |     |BR2_ROOTFS_POST_IMAGE_SCRIPT="$(BR2_EXTERNAL_BAR_42_PATH)/board/my-board/post-image.sh"
+-  |     |BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE="$(BR2_EXTERNAL_BAR_42_FOO)/board/my-board/kernel.config"
++  |     |BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE="$(BR2_EXTERNAL_BAR_42_PATH)/board/my-board/kernel.config"
+   |     `----
+   |
+   |- patches/linux/0001-some-change.patch
+diff --git a/package/busybox/0003-wget-fix-for-brain-damaged-HTTP-servers.-Closes-9471.patch b/package/busybox/0003-wget-fix-for-brain-damaged-HTTP-servers.-Closes-9471.patch
+new file mode 100644
+index 0000000000..a39bc894ed
+--- /dev/null
++++ b/package/busybox/0003-wget-fix-for-brain-damaged-HTTP-servers.-Closes-9471.patch
+@@ -0,0 +1,87 @@
++From dac762a702d01c8c2d42135795cc9bf23ff324a2 Mon Sep 17 00:00:00 2001
++From: Denys Vlasenko <vda.linux@googlemail.com>
++Date: Wed, 11 Jan 2017 20:16:45 +0100
++Subject: [PATCH] wget: fix for brain-damaged HTTP servers. Closes 9471
++
++write(3, "GET / HTTP/1.1\r\nUser-Agent: Wget\r\nConnection: close\r\n\r\n", 74) = 74
++shutdown(3, SHUT_WR)    = 0
++alarm(900)              = 900
++read(3, "", 1024)       = 0
++write(2, "wget: error getting response\n", 29) = 29
++exit(1)
++
++The peer simply does not return anything. It closes its connection.
++
++Probably it detects wget closing its writing end: shutdown(3, SHUT_WR).
++
++The point it, closing write side of the socket is _valid_ for HTTP.
++wget sent the full request, it won't be sending anything more:
++it will only receive the response, and that's it.
++
++Signed-off-by: Denys Vlasenko <vda.linux@googlemail.com>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ networking/wget.c | 26 ++++++++++++++++++--------
++ 1 file changed, 18 insertions(+), 8 deletions(-)
++
++diff --git a/networking/wget.c b/networking/wget.c
++index b082a0f59..afb09f587 100644
++--- a/networking/wget.c
+++++ b/networking/wget.c
++@@ -141,6 +141,8 @@
++ #endif
++ 
++ 
+++#define SSL_SUPPORTED (ENABLE_FEATURE_WGET_OPENSSL || ENABLE_FEATURE_WGET_SSL_HELPER)
+++
++ struct host_info {
++ 	char *allocated;
++ 	const char *path;
++@@ -151,7 +153,7 @@ struct host_info {
++ };
++ static const char P_FTP[] ALIGN1 = "ftp";
++ static const char P_HTTP[] ALIGN1 = "http";
++-#if ENABLE_FEATURE_WGET_OPENSSL || ENABLE_FEATURE_WGET_SSL_HELPER
+++#if SSL_SUPPORTED
++ static const char P_HTTPS[] ALIGN1 = "https";
++ #endif
++ 
++@@ -452,7 +454,7 @@ static void parse_url(const char *src_url, struct host_info *h)
++ 		if (strcmp(url, P_FTP) == 0) {
++ 			h->port = bb_lookup_port(P_FTP, "tcp", 21);
++ 		} else
++-#if ENABLE_FEATURE_WGET_OPENSSL || ENABLE_FEATURE_WGET_SSL_HELPER
+++#if SSL_SUPPORTED
++ 		if (strcmp(url, P_HTTPS) == 0) {
++ 			h->port = bb_lookup_port(P_HTTPS, "tcp", 443);
++ 			h->protocol = P_HTTPS;
++@@ -1093,12 +1095,20 @@ static void download_one_url(const char *url)
++ 		}
++ 
++ 		fflush(sfp);
++-		/* If we use SSL helper, keeping our end of the socket open for writing
++-		 * makes our end (i.e. the same fd!) readable (EAGAIN instead of EOF)
++-		 * even after child closes its copy of the fd.
++-		 * This helps:
++-		 */
++-		shutdown(fileno(sfp), SHUT_WR);
+++
+++/* Tried doing this unconditionally.
+++ * Cloudflare and nginx/1.11.5 are shocked to see SHUT_WR on non-HTTPS.
+++ */
+++#if SSL_SUPPORTED
+++		if (target.protocol == P_HTTPS) {
+++			/* If we use SSL helper, keeping our end of the socket open for writing
+++			 * makes our end (i.e. the same fd!) readable (EAGAIN instead of EOF)
+++			 * even after child closes its copy of the fd.
+++			 * This helps:
+++			 */
+++			shutdown(fileno(sfp), SHUT_WR);
+++		}
+++#endif
++ 
++ 		/*
++ 		 * Retrieve HTTP response line and check for "200" status code.
++-- 
++2.11.0
++
+diff --git a/package/busybox/0004-unzip-properly-use-CDF-to-find-compressed-files.-Clo.patch b/package/busybox/0004-unzip-properly-use-CDF-to-find-compressed-files.-Clo.patch
+new file mode 100644
+index 0000000000..66d309d877
+--- /dev/null
++++ b/package/busybox/0004-unzip-properly-use-CDF-to-find-compressed-files.-Clo.patch
+@@ -0,0 +1,494 @@
++From fa654812e79d2422b41cfff6443e2abcb7737517 Mon Sep 17 00:00:00 2001
++From: Denys Vlasenko <vda.linux@googlemail.com>
++Date: Thu, 5 Jan 2017 11:43:53 +0100
++Subject: [PATCH] unzip: properly use CDF to find compressed files. Closes 9536
++
++function                                             old     new   delta
++unzip_main                                          2437    2350     -87
++
++Signed-off-by: Denys Vlasenko <vda.linux@googlemail.com>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ archival/unzip.c      | 285 +++++++++++++++++++++++++++++---------------------
++ testsuite/unzip.tests |   6 +-
++ 2 files changed, 168 insertions(+), 123 deletions(-)
++
++diff --git a/archival/unzip.c b/archival/unzip.c
++index c540485ac..edef22f75 100644
++--- a/archival/unzip.c
+++++ b/archival/unzip.c
++@@ -16,7 +16,6 @@
++  * TODO
++  * Zip64 + other methods
++  */
++-
++ //config:config UNZIP
++ //config:	bool "unzip"
++ //config:	default y
++@@ -24,8 +23,17 @@
++ //config:	  unzip will list or extract files from a ZIP archive,
++ //config:	  commonly found on DOS/WIN systems. The default behavior
++ //config:	  (with no options) is to extract the archive into the
++-//config:	  current directory. Use the `-d' option to extract to a
++-//config:	  directory of your choice.
+++//config:	  current directory.
+++//config:
+++//config:config FEATURE_UNZIP_CDF
+++//config:	bool "Read and use Central Directory data"
+++//config:	default y
+++//config:	depends on UNZIP
+++//config:	help
+++//config:	  If you know that you only need to deal with simple
+++//config:	  ZIP files without deleted/updated files, SFX archves etc,
+++//config:	  you can reduce code size by unselecting this option.
+++//config:	  To support less trivial ZIPs, say Y.
++ 
++ //applet:IF_UNZIP(APPLET(unzip, BB_DIR_USR_BIN, BB_SUID_DROP))
++ //kbuild:lib-$(CONFIG_UNZIP) += unzip.o
++@@ -80,30 +88,20 @@ typedef union {
++ 		uint32_t ucmpsize PACKED;       /* 18-21 */
++ 		uint16_t filename_len;          /* 22-23 */
++ 		uint16_t extra_len;             /* 24-25 */
+++		/* filename follows (not NUL terminated) */
+++		/* extra field follows */
+++		/* data follows */
++ 	} formatted PACKED;
++ } zip_header_t; /* PACKED - gcc 4.2.1 doesn't like it (spews warning) */
++ 
++-/* Check the offset of the last element, not the length.  This leniency
++- * allows for poor packing, whereby the overall struct may be too long,
++- * even though the elements are all in the right place.
++- */
++-struct BUG_zip_header_must_be_26_bytes {
++-	char BUG_zip_header_must_be_26_bytes[
++-		offsetof(zip_header_t, formatted.extra_len) + 2
++-			== ZIP_HEADER_LEN ? 1 : -1];
++-};
++-
++-#define FIX_ENDIANNESS_ZIP(zip_header) do { \
++-	(zip_header).formatted.version      = SWAP_LE16((zip_header).formatted.version     ); \
++-	(zip_header).formatted.method       = SWAP_LE16((zip_header).formatted.method      ); \
++-	(zip_header).formatted.modtime      = SWAP_LE16((zip_header).formatted.modtime     ); \
++-	(zip_header).formatted.moddate      = SWAP_LE16((zip_header).formatted.moddate     ); \
+++#define FIX_ENDIANNESS_ZIP(zip_header) \
+++do { if (BB_BIG_ENDIAN) { \
++ 	(zip_header).formatted.crc32        = SWAP_LE32((zip_header).formatted.crc32       ); \
++ 	(zip_header).formatted.cmpsize      = SWAP_LE32((zip_header).formatted.cmpsize     ); \
++ 	(zip_header).formatted.ucmpsize     = SWAP_LE32((zip_header).formatted.ucmpsize    ); \
++ 	(zip_header).formatted.filename_len = SWAP_LE16((zip_header).formatted.filename_len); \
++ 	(zip_header).formatted.extra_len    = SWAP_LE16((zip_header).formatted.extra_len   ); \
++-} while (0)
+++}} while (0)
++ 
++ #define CDF_HEADER_LEN 42
++ 
++@@ -115,8 +113,8 @@ typedef union {
++ 		uint16_t version_needed;        /* 2-3 */
++ 		uint16_t cdf_flags;             /* 4-5 */
++ 		uint16_t method;                /* 6-7 */
++-		uint16_t mtime;                 /* 8-9 */
++-		uint16_t mdate;                 /* 10-11 */
+++		uint16_t modtime;               /* 8-9 */
+++		uint16_t moddate;               /* 10-11 */
++ 		uint32_t crc32;                 /* 12-15 */
++ 		uint32_t cmpsize;               /* 16-19 */
++ 		uint32_t ucmpsize;              /* 20-23 */
++@@ -127,27 +125,27 @@ typedef union {
++ 		uint16_t internal_file_attributes; /* 32-33 */
++ 		uint32_t external_file_attributes PACKED; /* 34-37 */
++ 		uint32_t relative_offset_of_local_header PACKED; /* 38-41 */
+++		/* filename follows (not NUL terminated) */
+++		/* extra field follows */
+++		/* comment follows */
++ 	} formatted PACKED;
++ } cdf_header_t;
++ 
++-struct BUG_cdf_header_must_be_42_bytes {
++-	char BUG_cdf_header_must_be_42_bytes[
++-		offsetof(cdf_header_t, formatted.relative_offset_of_local_header) + 4
++-			== CDF_HEADER_LEN ? 1 : -1];
++-};
++-
++-#define FIX_ENDIANNESS_CDF(cdf_header) do { \
+++#define FIX_ENDIANNESS_CDF(cdf_header) \
+++do { if (BB_BIG_ENDIAN) { \
+++	(cdf_header).formatted.version_made_by = SWAP_LE16((cdf_header).formatted.version_made_by); \
+++	(cdf_header).formatted.version_needed = SWAP_LE16((cdf_header).formatted.version_needed); \
+++	(cdf_header).formatted.method       = SWAP_LE16((cdf_header).formatted.method      ); \
+++	(cdf_header).formatted.modtime      = SWAP_LE16((cdf_header).formatted.modtime     ); \
+++	(cdf_header).formatted.moddate      = SWAP_LE16((cdf_header).formatted.moddate     ); \
++ 	(cdf_header).formatted.crc32        = SWAP_LE32((cdf_header).formatted.crc32       ); \
++ 	(cdf_header).formatted.cmpsize      = SWAP_LE32((cdf_header).formatted.cmpsize     ); \
++ 	(cdf_header).formatted.ucmpsize     = SWAP_LE32((cdf_header).formatted.ucmpsize    ); \
++ 	(cdf_header).formatted.file_name_length = SWAP_LE16((cdf_header).formatted.file_name_length); \
++ 	(cdf_header).formatted.extra_field_length = SWAP_LE16((cdf_header).formatted.extra_field_length); \
++ 	(cdf_header).formatted.file_comment_length = SWAP_LE16((cdf_header).formatted.file_comment_length); \
++-	IF_DESKTOP( \
++-	(cdf_header).formatted.version_made_by = SWAP_LE16((cdf_header).formatted.version_made_by); \
++ 	(cdf_header).formatted.external_file_attributes = SWAP_LE32((cdf_header).formatted.external_file_attributes); \
++-	) \
++-} while (0)
+++}} while (0)
++ 
++ #define CDE_HEADER_LEN 16
++ 
++@@ -166,20 +164,38 @@ typedef union {
++ 	} formatted PACKED;
++ } cde_header_t;
++ 
++-struct BUG_cde_header_must_be_16_bytes {
+++#define FIX_ENDIANNESS_CDE(cde_header) \
+++do { if (BB_BIG_ENDIAN) { \
+++	(cde_header).formatted.cdf_offset = SWAP_LE32((cde_header).formatted.cdf_offset); \
+++}} while (0)
+++
+++struct BUG {
+++	/* Check the offset of the last element, not the length.  This leniency
+++	 * allows for poor packing, whereby the overall struct may be too long,
+++	 * even though the elements are all in the right place.
+++	 */
+++	char BUG_zip_header_must_be_26_bytes[
+++		offsetof(zip_header_t, formatted.extra_len) + 2
+++			== ZIP_HEADER_LEN ? 1 : -1];
+++	char BUG_cdf_header_must_be_42_bytes[
+++		offsetof(cdf_header_t, formatted.relative_offset_of_local_header) + 4
+++			== CDF_HEADER_LEN ? 1 : -1];
++ 	char BUG_cde_header_must_be_16_bytes[
++ 		sizeof(cde_header_t) == CDE_HEADER_LEN ? 1 : -1];
++ };
++ 
++-#define FIX_ENDIANNESS_CDE(cde_header) do { \
++-	(cde_header).formatted.cdf_offset = SWAP_LE32((cde_header).formatted.cdf_offset); \
++-} while (0)
++ 
++ enum { zip_fd = 3 };
++ 
++ 
++-#if ENABLE_DESKTOP
+++/* This value means that we failed to find CDF */
+++#define BAD_CDF_OFFSET ((uint32_t)0xffffffff)
+++
+++#if !ENABLE_FEATURE_UNZIP_CDF
++ 
+++# define find_cdf_offset() BAD_CDF_OFFSET
+++
+++#else
++ /* Seen in the wild:
++  * Self-extracting PRO2K3XP_32.exe contains 19078464 byte zip archive,
++  * where CDE was nearly 48 kbytes before EOF.
++@@ -188,25 +204,26 @@ enum { zip_fd = 3 };
++  * To make extraction work, bumped PEEK_FROM_END from 16k to 64k.
++  */
++ #define PEEK_FROM_END (64*1024)
++-
++-/* This value means that we failed to find CDF */
++-#define BAD_CDF_OFFSET ((uint32_t)0xffffffff)
++-
++ /* NB: does not preserve file position! */
++ static uint32_t find_cdf_offset(void)
++ {
++ 	cde_header_t cde_header;
+++	unsigned char *buf;
++ 	unsigned char *p;
++ 	off_t end;
++-	unsigned char *buf = xzalloc(PEEK_FROM_END);
++ 	uint32_t found;
++ 
++-	end = xlseek(zip_fd, 0, SEEK_END);
+++	end = lseek(zip_fd, 0, SEEK_END);
+++	if (end == (off_t) -1)
+++		return BAD_CDF_OFFSET;
+++
++ 	end -= PEEK_FROM_END;
++ 	if (end < 0)
++ 		end = 0;
+++
++ 	dbg("Looking for cdf_offset starting from 0x%"OFF_FMT"x", end);
++  	xlseek(zip_fd, end, SEEK_SET);
+++	buf = xzalloc(PEEK_FROM_END);
++ 	full_read(zip_fd, buf, PEEK_FROM_END);
++ 
++ 	found = BAD_CDF_OFFSET;
++@@ -252,30 +269,36 @@ static uint32_t find_cdf_offset(void)
++ static uint32_t read_next_cdf(uint32_t cdf_offset, cdf_header_t *cdf_ptr)
++ {
++ 	off_t org;
+++	uint32_t magic;
++ 
++-	org = xlseek(zip_fd, 0, SEEK_CUR);
+++	if (cdf_offset == BAD_CDF_OFFSET)
+++		return cdf_offset;
++ 
++-	if (!cdf_offset)
++-		cdf_offset = find_cdf_offset();
++-
++-	if (cdf_offset != BAD_CDF_OFFSET) {
++-		dbg("Reading CDF at 0x%x", (unsigned)cdf_offset);
++-		xlseek(zip_fd, cdf_offset + 4, SEEK_SET);
++-		xread(zip_fd, cdf_ptr->raw, CDF_HEADER_LEN);
++-		FIX_ENDIANNESS_CDF(*cdf_ptr);
++-		dbg("  file_name_length:%u extra_field_length:%u file_comment_length:%u",
++-			(unsigned)cdf_ptr->formatted.file_name_length,
++-			(unsigned)cdf_ptr->formatted.extra_field_length,
++-			(unsigned)cdf_ptr->formatted.file_comment_length
++-		);
++-		cdf_offset += 4 + CDF_HEADER_LEN
++-			+ cdf_ptr->formatted.file_name_length
++-			+ cdf_ptr->formatted.extra_field_length
++-			+ cdf_ptr->formatted.file_comment_length;
+++	org = xlseek(zip_fd, 0, SEEK_CUR);
+++	dbg("Reading CDF at 0x%x", (unsigned)cdf_offset);
+++	xlseek(zip_fd, cdf_offset, SEEK_SET);
+++	xread(zip_fd, &magic, 4);
+++	/* Central Directory End? */
+++	if (magic == ZIP_CDE_MAGIC) {
+++		dbg("got ZIP_CDE_MAGIC");
+++		return 0; /* EOF */
++ 	}
+++	xread(zip_fd, cdf_ptr->raw, CDF_HEADER_LEN);
+++	/* Caller doesn't need this: */
+++	/* dbg("Returning file position to 0x%"OFF_FMT"x", org); */
+++	/* xlseek(zip_fd, org, SEEK_SET); */
+++
+++	FIX_ENDIANNESS_CDF(*cdf_ptr);
+++	dbg("  file_name_length:%u extra_field_length:%u file_comment_length:%u",
+++		(unsigned)cdf_ptr->formatted.file_name_length,
+++		(unsigned)cdf_ptr->formatted.extra_field_length,
+++		(unsigned)cdf_ptr->formatted.file_comment_length
+++	);
+++	cdf_offset += 4 + CDF_HEADER_LEN
+++		+ cdf_ptr->formatted.file_name_length
+++		+ cdf_ptr->formatted.extra_field_length
+++		+ cdf_ptr->formatted.file_comment_length;
++ 
++-	dbg("Returning file position to 0x%"OFF_FMT"x", org);
++-	xlseek(zip_fd, org, SEEK_SET);
++ 	return cdf_offset;
++ };
++ #endif
++@@ -324,6 +347,7 @@ static void unzip_extract(zip_header_t *zip_header, int dst_fd)
++ 			bb_error_msg("bad length");
++ 		}
++ 	}
+++	/* TODO? method 12: bzip2, method 14: LZMA */
++ }
++ 
++ static void my_fgets80(char *buf80)
++@@ -339,15 +363,12 @@ int unzip_main(int argc, char **argv)
++ {
++ 	enum { O_PROMPT, O_NEVER, O_ALWAYS };
++ 
++-	zip_header_t zip_header;
++ 	smallint quiet = 0;
++-	IF_NOT_DESKTOP(const) smallint verbose = 0;
+++	IF_NOT_FEATURE_UNZIP_CDF(const) smallint verbose = 0;
++ 	smallint listing = 0;
++ 	smallint overwrite = O_PROMPT;
++ 	smallint x_opt_seen;
++-#if ENABLE_DESKTOP
++ 	uint32_t cdf_offset;
++-#endif
++ 	unsigned long total_usize;
++ 	unsigned long total_size;
++ 	unsigned total_entries;
++@@ -430,7 +451,7 @@ int unzip_main(int argc, char **argv)
++ 			break;
++ 
++ 		case 'v': /* Verbose list */
++-			IF_DESKTOP(verbose++;)
+++			IF_FEATURE_UNZIP_CDF(verbose++;)
++ 			listing = 1;
++ 			break;
++ 
++@@ -545,78 +566,102 @@ int unzip_main(int argc, char **argv)
++ 	total_usize = 0;
++ 	total_size = 0;
++ 	total_entries = 0;
++-#if ENABLE_DESKTOP
++-	cdf_offset = 0;
++-#endif
+++	cdf_offset = find_cdf_offset();	/* try to seek to the end, find CDE and CDF start */
++ 	while (1) {
++-		uint32_t magic;
+++		zip_header_t zip_header;
++ 		mode_t dir_mode = 0777;
++-#if ENABLE_DESKTOP
+++#if ENABLE_FEATURE_UNZIP_CDF
++ 		mode_t file_mode = 0666;
++ #endif
++ 
++-		/* Check magic number */
++-		xread(zip_fd, &magic, 4);
++-		/* Central directory? It's at the end, so exit */
++-		if (magic == ZIP_CDF_MAGIC) {
++-			dbg("got ZIP_CDF_MAGIC");
++-			break;
++-		}
++-#if ENABLE_DESKTOP
++-		/* Data descriptor? It was a streaming file, go on */
++-		if (magic == ZIP_DD_MAGIC) {
++-			dbg("got ZIP_DD_MAGIC");
++-			/* skip over duplicate crc32, cmpsize and ucmpsize */
++-			unzip_skip(3 * 4);
++-			continue;
++-		}
++-#endif
++-		if (magic != ZIP_FILEHEADER_MAGIC)
++-			bb_error_msg_and_die("invalid zip magic %08X", (int)magic);
++-		dbg("got ZIP_FILEHEADER_MAGIC");
++-
++-		/* Read the file header */
++-		xread(zip_fd, zip_header.raw, ZIP_HEADER_LEN);
++-		FIX_ENDIANNESS_ZIP(zip_header);
++-		if ((zip_header.formatted.method != 0) && (zip_header.formatted.method != 8)) {
++-			bb_error_msg_and_die("unsupported method %d", zip_header.formatted.method);
++-		}
++-#if !ENABLE_DESKTOP
++-		if (zip_header.formatted.zip_flags & SWAP_LE16(0x0009)) {
++-			bb_error_msg_and_die("zip flags 1 and 8 are not supported");
++-		}
++-#else
++-		if (zip_header.formatted.zip_flags & SWAP_LE16(0x0001)) {
++-			/* 0x0001 - encrypted */
++-			bb_error_msg_and_die("zip flag 1 (encryption) is not supported");
++-		}
+++		if (!ENABLE_FEATURE_UNZIP_CDF || cdf_offset == BAD_CDF_OFFSET) {
+++			/* Normally happens when input is unseekable.
+++			 *
+++			 * Valid ZIP file has Central Directory at the end
+++			 * with central directory file headers (CDFs).
+++			 * After it, there is a Central Directory End structure.
+++			 * CDFs identify what files are in the ZIP and where
+++			 * they are located. This allows ZIP readers to load
+++			 * the list of files without reading the entire ZIP archive.
+++			 * ZIP files may be appended to, only files specified in
+++			 * the CD are valid. Scanning for local file headers is
+++			 * not a correct algorithm.
+++			 *
+++			 * We try to do the above, and resort to "linear" reading
+++			 * of ZIP file only if seek failed or CDE wasn't found.
+++			 */
+++			uint32_t magic;
++ 
++-		if (cdf_offset != BAD_CDF_OFFSET) {
+++			/* Check magic number */
+++			xread(zip_fd, &magic, 4);
+++			/* Central directory? It's at the end, so exit */
+++			if (magic == ZIP_CDF_MAGIC) {
+++				dbg("got ZIP_CDF_MAGIC");
+++				break;
+++			}
+++			/* Data descriptor? It was a streaming file, go on */
+++			if (magic == ZIP_DD_MAGIC) {
+++				dbg("got ZIP_DD_MAGIC");
+++				/* skip over duplicate crc32, cmpsize and ucmpsize */
+++				unzip_skip(3 * 4);
+++				continue;
+++			}
+++			if (magic != ZIP_FILEHEADER_MAGIC)
+++				bb_error_msg_and_die("invalid zip magic %08X", (int)magic);
+++			dbg("got ZIP_FILEHEADER_MAGIC");
+++
+++			xread(zip_fd, zip_header.raw, ZIP_HEADER_LEN);
+++			FIX_ENDIANNESS_ZIP(zip_header);
+++			if ((zip_header.formatted.method != 0)
+++			 && (zip_header.formatted.method != 8)
+++			) {
+++				/* TODO? method 12: bzip2, method 14: LZMA */
+++				bb_error_msg_and_die("unsupported method %d", zip_header.formatted.method);
+++			}
+++			if (zip_header.formatted.zip_flags & SWAP_LE16(0x0009)) {
+++				bb_error_msg_and_die("zip flags 1 and 8 are not supported");
+++			}
+++		}
+++#if ENABLE_FEATURE_UNZIP_CDF
+++		else {
+++			/* cdf_offset is valid (and we know the file is seekable) */
++ 			cdf_header_t cdf_header;
++ 			cdf_offset = read_next_cdf(cdf_offset, &cdf_header);
++-			/*
++-			 * Note: cdf_offset can become BAD_CDF_OFFSET after the above call.
++-			 */
+++			if (cdf_offset == 0) /* EOF? */
+++				break;
+++# if 0
+++			xlseek(zip_fd,
+++				SWAP_LE32(cdf_header.formatted.relative_offset_of_local_header) + 4,
+++				SEEK_SET);
+++			xread(zip_fd, zip_header.raw, ZIP_HEADER_LEN);
+++			FIX_ENDIANNESS_ZIP(zip_header);
++ 			if (zip_header.formatted.zip_flags & SWAP_LE16(0x0008)) {
++ 				/* 0x0008 - streaming. [u]cmpsize can be reliably gotten
++-				 * only from Central Directory. See unzip_doc.txt
+++				 * only from Central Directory.
++ 				 */
++ 				zip_header.formatted.crc32    = cdf_header.formatted.crc32;
++ 				zip_header.formatted.cmpsize  = cdf_header.formatted.cmpsize;
++ 				zip_header.formatted.ucmpsize = cdf_header.formatted.ucmpsize;
++ 			}
+++# else
+++			/* CDF has the same data as local header, no need to read the latter */
+++			memcpy(&zip_header.formatted.version,
+++				&cdf_header.formatted.version_needed, ZIP_HEADER_LEN);
+++			xlseek(zip_fd,
+++				SWAP_LE32(cdf_header.formatted.relative_offset_of_local_header) + 4 + ZIP_HEADER_LEN,
+++				SEEK_SET);
+++# endif
++ 			if ((cdf_header.formatted.version_made_by >> 8) == 3) {
++ 				/* This archive is created on Unix */
++ 				dir_mode = file_mode = (cdf_header.formatted.external_file_attributes >> 16);
++ 			}
++ 		}
++-		if (cdf_offset == BAD_CDF_OFFSET
++-		 && (zip_header.formatted.zip_flags & SWAP_LE16(0x0008))
++-		) {
++-			/* If it's a streaming zip, we _require_ CDF */
++-			bb_error_msg_and_die("can't find file table");
++-		}
++ #endif
+++
+++		if (zip_header.formatted.zip_flags & SWAP_LE16(0x0001)) {
+++			/* 0x0001 - encrypted */
+++			bb_error_msg_and_die("zip flag 1 (encryption) is not supported");
+++		}
++ 		dbg("File cmpsize:0x%x extra_len:0x%x ucmpsize:0x%x",
++ 			(unsigned)zip_header.formatted.cmpsize,
++ 			(unsigned)zip_header.formatted.extra_len,
++@@ -751,7 +796,7 @@ int unzip_main(int argc, char **argv)
++ 			overwrite = O_ALWAYS;
++ 		case 'y': /* Open file and fall into unzip */
++ 			unzip_create_leading_dirs(dst_fn);
++-#if ENABLE_DESKTOP
+++#if ENABLE_FEATURE_UNZIP_CDF
++ 			dst_fd = xopen3(dst_fn, O_WRONLY | O_CREAT | O_TRUNC, file_mode);
++ #else
++ 			dst_fd = xopen(dst_fn, O_WRONLY | O_CREAT | O_TRUNC);
++diff --git a/testsuite/unzip.tests b/testsuite/unzip.tests
++index d8738a3bd..d9c45242c 100755
++--- a/testsuite/unzip.tests
+++++ b/testsuite/unzip.tests
++@@ -31,11 +31,10 @@ rmdir foo
++ rm foo.zip
++ 
++ # File containing some damaged encrypted stream
+++optional FEATURE_UNZIP_CDF
++ testing "unzip (bad archive)" "uudecode; unzip bad.zip 2>&1; echo \$?" \
++ "Archive:  bad.zip
++-  inflating: ]3j½r«IK-%Ix
++-unzip: corrupted data
++-unzip: inflate error
+++unzip: short read
++ 1
++ " \
++ "" "\
++@@ -49,6 +48,7 @@ BDYAAAAMAAEADQAAADIADQAAAEEAAAASw73Ct1DKokohPXQiNzA+FAI1HCcW
++ NzITNFBLBQUKAC4JAA04Cw0EOhZQSwUGAQAABAIAAgCZAAAAeQAAAAIALhM=
++ ====
++ "
+++SKIP=
++ 
++ rm *
++ 
++-- 
++2.11.0
++
+diff --git a/package/busybox/0005-typo-fix-in-config-help-text.patch b/package/busybox/0005-typo-fix-in-config-help-text.patch
+new file mode 100644
+index 0000000000..33b91707ec
+--- /dev/null
++++ b/package/busybox/0005-typo-fix-in-config-help-text.patch
+@@ -0,0 +1,27 @@
++From f8692dc6a0035788a83821fa18b987d8748f97a7 Mon Sep 17 00:00:00 2001
++From: Denys Vlasenko <vda.linux@googlemail.com>
++Date: Thu, 5 Jan 2017 11:47:28 +0100
++Subject: [PATCH] typo fix in config help text
++
++Signed-off-by: Denys Vlasenko <vda.linux@googlemail.com>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ archival/unzip.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/archival/unzip.c b/archival/unzip.c
++index edef22f75..f1726439d 100644
++--- a/archival/unzip.c
+++++ b/archival/unzip.c
++@@ -31,7 +31,7 @@
++ //config:	depends on UNZIP
++ //config:	help
++ //config:	  If you know that you only need to deal with simple
++-//config:	  ZIP files without deleted/updated files, SFX archves etc,
+++//config:	  ZIP files without deleted/updated files, SFX archives etc,
++ //config:	  you can reduce code size by unselecting this option.
++ //config:	  To support less trivial ZIPs, say Y.
++ 
++-- 
++2.11.0
++
+diff --git a/package/busybox/0006-unzip-remove-now-pointless-lseek-which-returns-curre.patch b/package/busybox/0006-unzip-remove-now-pointless-lseek-which-returns-curre.patch
+new file mode 100644
+index 0000000000..ebe08c4904
+--- /dev/null
++++ b/package/busybox/0006-unzip-remove-now-pointless-lseek-which-returns-curre.patch
+@@ -0,0 +1,50 @@
++From 50504d3a3badb8ab80bd33797abcbb3b7427c267 Mon Sep 17 00:00:00 2001
++From: Cristian Ionescu-Idbohrn <cristian.ionescu-idbohrn@axis.com>
++Date: Thu, 5 Jan 2017 19:07:54 +0100
++Subject: [PATCH] unzip: remove now-pointless lseek which returns current
++ position
++
++archival/unzip.c: In function 'read_next_cdf':
++archival/unzip.c:271:8: warning: variable 'org' set but
++                                 not used [-Wunused-but-set-variable]
++  off_t org;
++        ^~~
++
++Signed-off-by: Cristian Ionescu-Idbohrn <cristian.ionescu-idbohrn@axis.com>
++Signed-off-by: Denys Vlasenko <vda.linux@googlemail.com>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ archival/unzip.c | 5 -----
++ 1 file changed, 5 deletions(-)
++
++diff --git a/archival/unzip.c b/archival/unzip.c
++index f1726439d..98a71c09d 100644
++--- a/archival/unzip.c
+++++ b/archival/unzip.c
++@@ -268,13 +268,11 @@ static uint32_t find_cdf_offset(void)
++ 
++ static uint32_t read_next_cdf(uint32_t cdf_offset, cdf_header_t *cdf_ptr)
++ {
++-	off_t org;
++ 	uint32_t magic;
++ 
++ 	if (cdf_offset == BAD_CDF_OFFSET)
++ 		return cdf_offset;
++ 
++-	org = xlseek(zip_fd, 0, SEEK_CUR);
++ 	dbg("Reading CDF at 0x%x", (unsigned)cdf_offset);
++ 	xlseek(zip_fd, cdf_offset, SEEK_SET);
++ 	xread(zip_fd, &magic, 4);
++@@ -284,9 +282,6 @@ static uint32_t read_next_cdf(uint32_t cdf_offset, cdf_header_t *cdf_ptr)
++ 		return 0; /* EOF */
++ 	}
++ 	xread(zip_fd, cdf_ptr->raw, CDF_HEADER_LEN);
++-	/* Caller doesn't need this: */
++-	/* dbg("Returning file position to 0x%"OFF_FMT"x", org); */
++-	/* xlseek(zip_fd, org, SEEK_SET); */
++ 
++ 	FIX_ENDIANNESS_CDF(*cdf_ptr);
++ 	dbg("  file_name_length:%u extra_field_length:%u file_comment_length:%u",
++-- 
++2.11.0
++
+diff --git a/package/busybox/0007-unzip-do-not-use-CDF.extra_len-read-local-file-heade.patch b/package/busybox/0007-unzip-do-not-use-CDF.extra_len-read-local-file-heade.patch
+new file mode 100644
+index 0000000000..97482c3954
+--- /dev/null
++++ b/package/busybox/0007-unzip-do-not-use-CDF.extra_len-read-local-file-heade.patch
+@@ -0,0 +1,509 @@
++From ee72302ac5e3b0b2217f616ab316d3c89e5a1f4c Mon Sep 17 00:00:00 2001
++From: Denys Vlasenko <vda.linux@googlemail.com>
++Date: Sun, 8 Jan 2017 14:14:19 +0100
++Subject: [PATCH] unzip: do not use CDF.extra_len, read local file header.
++ Closes 9536
++
++While at it, shorten many field and variable names.
++
++function                                             old     new   delta
++unzip_main                                          2334    2376     +42
++
++Signed-off-by: Denys Vlasenko <vda.linux@googlemail.com>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ archival/unzip.c      | 236 ++++++++++++++++++++++++++------------------------
++ testsuite/unzip.tests |   4 +-
++ 2 files changed, 125 insertions(+), 115 deletions(-)
++
++diff --git a/archival/unzip.c b/archival/unzip.c
++index 98a71c09d..921493591 100644
++--- a/archival/unzip.c
+++++ b/archival/unzip.c
++@@ -62,8 +62,8 @@
++ enum {
++ #if BB_BIG_ENDIAN
++ 	ZIP_FILEHEADER_MAGIC = 0x504b0304,
++-	ZIP_CDF_MAGIC        = 0x504b0102, /* central directory's file header */
++-	ZIP_CDE_MAGIC        = 0x504b0506, /* "end of central directory" record */
+++	ZIP_CDF_MAGIC        = 0x504b0102, /* CDF item */
+++	ZIP_CDE_MAGIC        = 0x504b0506, /* End of CDF */
++ 	ZIP_DD_MAGIC         = 0x504b0708,
++ #else
++ 	ZIP_FILEHEADER_MAGIC = 0x04034b50,
++@@ -91,16 +91,16 @@ typedef union {
++ 		/* filename follows (not NUL terminated) */
++ 		/* extra field follows */
++ 		/* data follows */
++-	} formatted PACKED;
+++	} fmt PACKED;
++ } zip_header_t; /* PACKED - gcc 4.2.1 doesn't like it (spews warning) */
++ 
++-#define FIX_ENDIANNESS_ZIP(zip_header) \
+++#define FIX_ENDIANNESS_ZIP(zip) \
++ do { if (BB_BIG_ENDIAN) { \
++-	(zip_header).formatted.crc32        = SWAP_LE32((zip_header).formatted.crc32       ); \
++-	(zip_header).formatted.cmpsize      = SWAP_LE32((zip_header).formatted.cmpsize     ); \
++-	(zip_header).formatted.ucmpsize     = SWAP_LE32((zip_header).formatted.ucmpsize    ); \
++-	(zip_header).formatted.filename_len = SWAP_LE16((zip_header).formatted.filename_len); \
++-	(zip_header).formatted.extra_len    = SWAP_LE16((zip_header).formatted.extra_len   ); \
+++	(zip).fmt.crc32         = SWAP_LE32((zip).fmt.crc32       ); \
+++	(zip).fmt.cmpsize       = SWAP_LE32((zip).fmt.cmpsize     ); \
+++	(zip).fmt.ucmpsize      = SWAP_LE32((zip).fmt.ucmpsize    ); \
+++	(zip).fmt.filename_len  = SWAP_LE16((zip).fmt.filename_len); \
+++	(zip).fmt.extra_len     = SWAP_LE16((zip).fmt.extra_len   ); \
++ }} while (0)
++ 
++ #define CDF_HEADER_LEN 42
++@@ -118,39 +118,39 @@ typedef union {
++ 		uint32_t crc32;                 /* 12-15 */
++ 		uint32_t cmpsize;               /* 16-19 */
++ 		uint32_t ucmpsize;              /* 20-23 */
++-		uint16_t file_name_length;      /* 24-25 */
++-		uint16_t extra_field_length;    /* 26-27 */
+++		uint16_t filename_len;          /* 24-25 */
+++		uint16_t extra_len;             /* 26-27 */
++ 		uint16_t file_comment_length;   /* 28-29 */
++ 		uint16_t disk_number_start;     /* 30-31 */
++-		uint16_t internal_file_attributes; /* 32-33 */
++-		uint32_t external_file_attributes PACKED; /* 34-37 */
+++		uint16_t internal_attributes;   /* 32-33 */
+++		uint32_t external_attributes PACKED; /* 34-37 */
++ 		uint32_t relative_offset_of_local_header PACKED; /* 38-41 */
++ 		/* filename follows (not NUL terminated) */
++ 		/* extra field follows */
++-		/* comment follows */
++-	} formatted PACKED;
+++		/* file comment follows */
+++	} fmt PACKED;
++ } cdf_header_t;
++ 
++-#define FIX_ENDIANNESS_CDF(cdf_header) \
+++#define FIX_ENDIANNESS_CDF(cdf) \
++ do { if (BB_BIG_ENDIAN) { \
++-	(cdf_header).formatted.version_made_by = SWAP_LE16((cdf_header).formatted.version_made_by); \
++-	(cdf_header).formatted.version_needed = SWAP_LE16((cdf_header).formatted.version_needed); \
++-	(cdf_header).formatted.method       = SWAP_LE16((cdf_header).formatted.method      ); \
++-	(cdf_header).formatted.modtime      = SWAP_LE16((cdf_header).formatted.modtime     ); \
++-	(cdf_header).formatted.moddate      = SWAP_LE16((cdf_header).formatted.moddate     ); \
++-	(cdf_header).formatted.crc32        = SWAP_LE32((cdf_header).formatted.crc32       ); \
++-	(cdf_header).formatted.cmpsize      = SWAP_LE32((cdf_header).formatted.cmpsize     ); \
++-	(cdf_header).formatted.ucmpsize     = SWAP_LE32((cdf_header).formatted.ucmpsize    ); \
++-	(cdf_header).formatted.file_name_length = SWAP_LE16((cdf_header).formatted.file_name_length); \
++-	(cdf_header).formatted.extra_field_length = SWAP_LE16((cdf_header).formatted.extra_field_length); \
++-	(cdf_header).formatted.file_comment_length = SWAP_LE16((cdf_header).formatted.file_comment_length); \
++-	(cdf_header).formatted.external_file_attributes = SWAP_LE32((cdf_header).formatted.external_file_attributes); \
+++	(cdf).fmt.version_made_by = SWAP_LE16((cdf).fmt.version_made_by); \
+++	(cdf).fmt.version_needed = SWAP_LE16((cdf).fmt.version_needed); \
+++	(cdf).fmt.method        = SWAP_LE16((cdf).fmt.method      ); \
+++	(cdf).fmt.modtime       = SWAP_LE16((cdf).fmt.modtime     ); \
+++	(cdf).fmt.moddate       = SWAP_LE16((cdf).fmt.moddate     ); \
+++	(cdf).fmt.crc32         = SWAP_LE32((cdf).fmt.crc32       ); \
+++	(cdf).fmt.cmpsize       = SWAP_LE32((cdf).fmt.cmpsize     ); \
+++	(cdf).fmt.ucmpsize      = SWAP_LE32((cdf).fmt.ucmpsize    ); \
+++	(cdf).fmt.filename_len  = SWAP_LE16((cdf).fmt.filename_len); \
+++	(cdf).fmt.extra_len     = SWAP_LE16((cdf).fmt.extra_len   ); \
+++	(cdf).fmt.file_comment_length = SWAP_LE16((cdf).fmt.file_comment_length); \
+++	(cdf).fmt.external_attributes = SWAP_LE32((cdf).fmt.external_attributes); \
++ }} while (0)
++ 
++-#define CDE_HEADER_LEN 16
+++#define CDE_LEN 16
++ 
++ typedef union {
++-	uint8_t raw[CDE_HEADER_LEN];
+++	uint8_t raw[CDE_LEN];
++ 	struct {
++ 		/* uint32_t signature; 50 4b 05 06 */
++ 		uint16_t this_disk_no;
++@@ -159,14 +159,14 @@ typedef union {
++ 		uint16_t cdf_entries_total;
++ 		uint32_t cdf_size;
++ 		uint32_t cdf_offset;
++-		/* uint16_t file_comment_length; */
++-		/* .ZIP file comment (variable size) */
++-	} formatted PACKED;
++-} cde_header_t;
+++		/* uint16_t archive_comment_length; */
+++		/* archive comment follows */
+++	} fmt PACKED;
+++} cde_t;
++ 
++-#define FIX_ENDIANNESS_CDE(cde_header) \
+++#define FIX_ENDIANNESS_CDE(cde) \
++ do { if (BB_BIG_ENDIAN) { \
++-	(cde_header).formatted.cdf_offset = SWAP_LE32((cde_header).formatted.cdf_offset); \
+++	(cde).fmt.cdf_offset = SWAP_LE32((cde).fmt.cdf_offset); \
++ }} while (0)
++ 
++ struct BUG {
++@@ -175,13 +175,13 @@ struct BUG {
++ 	 * even though the elements are all in the right place.
++ 	 */
++ 	char BUG_zip_header_must_be_26_bytes[
++-		offsetof(zip_header_t, formatted.extra_len) + 2
+++		offsetof(zip_header_t, fmt.extra_len) + 2
++ 			== ZIP_HEADER_LEN ? 1 : -1];
++ 	char BUG_cdf_header_must_be_42_bytes[
++-		offsetof(cdf_header_t, formatted.relative_offset_of_local_header) + 4
+++		offsetof(cdf_header_t, fmt.relative_offset_of_local_header) + 4
++ 			== CDF_HEADER_LEN ? 1 : -1];
++-	char BUG_cde_header_must_be_16_bytes[
++-		sizeof(cde_header_t) == CDE_HEADER_LEN ? 1 : -1];
+++	char BUG_cde_must_be_16_bytes[
+++		sizeof(cde_t) == CDE_LEN ? 1 : -1];
++ };
++ 
++ 
++@@ -207,7 +207,7 @@ enum { zip_fd = 3 };
++ /* NB: does not preserve file position! */
++ static uint32_t find_cdf_offset(void)
++ {
++-	cde_header_t cde_header;
+++	cde_t cde;
++ 	unsigned char *buf;
++ 	unsigned char *p;
++ 	off_t end;
++@@ -228,7 +228,7 @@ static uint32_t find_cdf_offset(void)
++ 
++ 	found = BAD_CDF_OFFSET;
++ 	p = buf;
++-	while (p <= buf + PEEK_FROM_END - CDE_HEADER_LEN - 4) {
+++	while (p <= buf + PEEK_FROM_END - CDE_LEN - 4) {
++ 		if (*p != 'P') {
++ 			p++;
++ 			continue;
++@@ -240,19 +240,19 @@ static uint32_t find_cdf_offset(void)
++ 		if (*++p != 6)
++ 			continue;
++ 		/* we found CDE! */
++-		memcpy(cde_header.raw, p + 1, CDE_HEADER_LEN);
++-		FIX_ENDIANNESS_CDE(cde_header);
+++		memcpy(cde.raw, p + 1, CDE_LEN);
+++		FIX_ENDIANNESS_CDE(cde);
++ 		/*
++ 		 * I've seen .ZIP files with seemingly valid CDEs
++ 		 * where cdf_offset points past EOF - ??
++ 		 * This check ignores such CDEs:
++ 		 */
++-		if (cde_header.formatted.cdf_offset < end + (p - buf)) {
++-			found = cde_header.formatted.cdf_offset;
+++		if (cde.fmt.cdf_offset < end + (p - buf)) {
+++			found = cde.fmt.cdf_offset;
++ 			dbg("Possible cdf_offset:0x%x at 0x%"OFF_FMT"x",
++ 				(unsigned)found, end + (p-3 - buf));
++ 			dbg("  cdf_offset+cdf_size:0x%x",
++-				(unsigned)(found + SWAP_LE32(cde_header.formatted.cdf_size)));
+++				(unsigned)(found + SWAP_LE32(cde.fmt.cdf_size)));
++ 			/*
++ 			 * We do not "break" here because only the last CDE is valid.
++ 			 * I've seen a .zip archive which contained a .zip file,
++@@ -266,7 +266,7 @@ static uint32_t find_cdf_offset(void)
++ 	return found;
++ };
++ 
++-static uint32_t read_next_cdf(uint32_t cdf_offset, cdf_header_t *cdf_ptr)
+++static uint32_t read_next_cdf(uint32_t cdf_offset, cdf_header_t *cdf)
++ {
++ 	uint32_t magic;
++ 
++@@ -276,23 +276,25 @@ static uint32_t read_next_cdf(uint32_t cdf_offset, cdf_header_t *cdf_ptr)
++ 	dbg("Reading CDF at 0x%x", (unsigned)cdf_offset);
++ 	xlseek(zip_fd, cdf_offset, SEEK_SET);
++ 	xread(zip_fd, &magic, 4);
++-	/* Central Directory End? */
+++	/* Central Directory End? Assume CDF has ended.
+++	 * (more correct method is to use cde.cdf_entries_total counter)
+++	 */
++ 	if (magic == ZIP_CDE_MAGIC) {
++ 		dbg("got ZIP_CDE_MAGIC");
++ 		return 0; /* EOF */
++ 	}
++-	xread(zip_fd, cdf_ptr->raw, CDF_HEADER_LEN);
+++	xread(zip_fd, cdf->raw, CDF_HEADER_LEN);
++ 
++-	FIX_ENDIANNESS_CDF(*cdf_ptr);
++-	dbg("  file_name_length:%u extra_field_length:%u file_comment_length:%u",
++-		(unsigned)cdf_ptr->formatted.file_name_length,
++-		(unsigned)cdf_ptr->formatted.extra_field_length,
++-		(unsigned)cdf_ptr->formatted.file_comment_length
+++	FIX_ENDIANNESS_CDF(*cdf);
+++	dbg("  filename_len:%u extra_len:%u file_comment_length:%u",
+++		(unsigned)cdf->fmt.filename_len,
+++		(unsigned)cdf->fmt.extra_len,
+++		(unsigned)cdf->fmt.file_comment_length
++ 	);
++ 	cdf_offset += 4 + CDF_HEADER_LEN
++-		+ cdf_ptr->formatted.file_name_length
++-		+ cdf_ptr->formatted.extra_field_length
++-		+ cdf_ptr->formatted.file_comment_length;
+++		+ cdf->fmt.filename_len
+++		+ cdf->fmt.extra_len
+++		+ cdf->fmt.file_comment_length;
++ 
++ 	return cdf_offset;
++ };
++@@ -315,28 +317,28 @@ static void unzip_create_leading_dirs(const char *fn)
++ 	free(name);
++ }
++ 
++-static void unzip_extract(zip_header_t *zip_header, int dst_fd)
+++static void unzip_extract(zip_header_t *zip, int dst_fd)
++ {
++-	if (zip_header->formatted.method == 0) {
+++	if (zip->fmt.method == 0) {
++ 		/* Method 0 - stored (not compressed) */
++-		off_t size = zip_header->formatted.ucmpsize;
+++		off_t size = zip->fmt.ucmpsize;
++ 		if (size)
++ 			bb_copyfd_exact_size(zip_fd, dst_fd, size);
++ 	} else {
++ 		/* Method 8 - inflate */
++ 		transformer_state_t xstate;
++ 		init_transformer_state(&xstate);
++-		xstate.bytes_in = zip_header->formatted.cmpsize;
+++		xstate.bytes_in = zip->fmt.cmpsize;
++ 		xstate.src_fd = zip_fd;
++ 		xstate.dst_fd = dst_fd;
++ 		if (inflate_unzip(&xstate) < 0)
++ 			bb_error_msg_and_die("inflate error");
++ 		/* Validate decompression - crc */
++-		if (zip_header->formatted.crc32 != (xstate.crc32 ^ 0xffffffffL)) {
+++		if (zip->fmt.crc32 != (xstate.crc32 ^ 0xffffffffL)) {
++ 			bb_error_msg_and_die("crc error");
++ 		}
++ 		/* Validate decompression - size */
++-		if (zip_header->formatted.ucmpsize != xstate.bytes_out) {
+++		if (zip->fmt.ucmpsize != xstate.bytes_out) {
++ 			/* Don't die. Who knows, maybe len calculation
++ 			 * was botched somewhere. After all, crc matched! */
++ 			bb_error_msg("bad length");
++@@ -563,7 +565,7 @@ int unzip_main(int argc, char **argv)
++ 	total_entries = 0;
++ 	cdf_offset = find_cdf_offset();	/* try to seek to the end, find CDE and CDF start */
++ 	while (1) {
++-		zip_header_t zip_header;
+++		zip_header_t zip;
++ 		mode_t dir_mode = 0777;
++ #if ENABLE_FEATURE_UNZIP_CDF
++ 		mode_t file_mode = 0666;
++@@ -589,7 +591,7 @@ int unzip_main(int argc, char **argv)
++ 
++ 			/* Check magic number */
++ 			xread(zip_fd, &magic, 4);
++-			/* Central directory? It's at the end, so exit */
+++			/* CDF item? Assume there are no more files, exit */
++ 			if (magic == ZIP_CDF_MAGIC) {
++ 				dbg("got ZIP_CDF_MAGIC");
++ 				break;
++@@ -605,71 +607,74 @@ int unzip_main(int argc, char **argv)
++ 				bb_error_msg_and_die("invalid zip magic %08X", (int)magic);
++ 			dbg("got ZIP_FILEHEADER_MAGIC");
++ 
++-			xread(zip_fd, zip_header.raw, ZIP_HEADER_LEN);
++-			FIX_ENDIANNESS_ZIP(zip_header);
++-			if ((zip_header.formatted.method != 0)
++-			 && (zip_header.formatted.method != 8)
+++			xread(zip_fd, zip.raw, ZIP_HEADER_LEN);
+++			FIX_ENDIANNESS_ZIP(zip);
+++			if ((zip.fmt.method != 0)
+++			 && (zip.fmt.method != 8)
++ 			) {
++ 				/* TODO? method 12: bzip2, method 14: LZMA */
++-				bb_error_msg_and_die("unsupported method %d", zip_header.formatted.method);
+++				bb_error_msg_and_die("unsupported method %d", zip.fmt.method);
++ 			}
++-			if (zip_header.formatted.zip_flags & SWAP_LE16(0x0009)) {
+++			if (zip.fmt.zip_flags & SWAP_LE16(0x0009)) {
++ 				bb_error_msg_and_die("zip flags 1 and 8 are not supported");
++ 			}
++ 		}
++ #if ENABLE_FEATURE_UNZIP_CDF
++ 		else {
++ 			/* cdf_offset is valid (and we know the file is seekable) */
++-			cdf_header_t cdf_header;
++-			cdf_offset = read_next_cdf(cdf_offset, &cdf_header);
+++			cdf_header_t cdf;
+++			cdf_offset = read_next_cdf(cdf_offset, &cdf);
++ 			if (cdf_offset == 0) /* EOF? */
++ 				break;
++-# if 0
+++# if 1
++ 			xlseek(zip_fd,
++-				SWAP_LE32(cdf_header.formatted.relative_offset_of_local_header) + 4,
+++				SWAP_LE32(cdf.fmt.relative_offset_of_local_header) + 4,
++ 				SEEK_SET);
++-			xread(zip_fd, zip_header.raw, ZIP_HEADER_LEN);
++-			FIX_ENDIANNESS_ZIP(zip_header);
++-			if (zip_header.formatted.zip_flags & SWAP_LE16(0x0008)) {
+++			xread(zip_fd, zip.raw, ZIP_HEADER_LEN);
+++			FIX_ENDIANNESS_ZIP(zip);
+++			if (zip.fmt.zip_flags & SWAP_LE16(0x0008)) {
++ 				/* 0x0008 - streaming. [u]cmpsize can be reliably gotten
++ 				 * only from Central Directory.
++ 				 */
++-				zip_header.formatted.crc32    = cdf_header.formatted.crc32;
++-				zip_header.formatted.cmpsize  = cdf_header.formatted.cmpsize;
++-				zip_header.formatted.ucmpsize = cdf_header.formatted.ucmpsize;
+++				zip.fmt.crc32    = cdf.fmt.crc32;
+++				zip.fmt.cmpsize  = cdf.fmt.cmpsize;
+++				zip.fmt.ucmpsize = cdf.fmt.ucmpsize;
++ 			}
++ # else
++-			/* CDF has the same data as local header, no need to read the latter */
++-			memcpy(&zip_header.formatted.version,
++-				&cdf_header.formatted.version_needed, ZIP_HEADER_LEN);
+++			/* CDF has the same data as local header, no need to read the latter...
+++			 * ...not really. An archive was seen with cdf.extra_len == 6 but
+++			 * zip.extra_len == 0.
+++			 */
+++			memcpy(&zip.fmt.version,
+++				&cdf.fmt.version_needed, ZIP_HEADER_LEN);
++ 			xlseek(zip_fd,
++-				SWAP_LE32(cdf_header.formatted.relative_offset_of_local_header) + 4 + ZIP_HEADER_LEN,
+++				SWAP_LE32(cdf.fmt.relative_offset_of_local_header) + 4 + ZIP_HEADER_LEN,
++ 				SEEK_SET);
++ # endif
++-			if ((cdf_header.formatted.version_made_by >> 8) == 3) {
+++			if ((cdf.fmt.version_made_by >> 8) == 3) {
++ 				/* This archive is created on Unix */
++-				dir_mode = file_mode = (cdf_header.formatted.external_file_attributes >> 16);
+++				dir_mode = file_mode = (cdf.fmt.external_attributes >> 16);
++ 			}
++ 		}
++ #endif
++ 
++-		if (zip_header.formatted.zip_flags & SWAP_LE16(0x0001)) {
+++		if (zip.fmt.zip_flags & SWAP_LE16(0x0001)) {
++ 			/* 0x0001 - encrypted */
++ 			bb_error_msg_and_die("zip flag 1 (encryption) is not supported");
++ 		}
++ 		dbg("File cmpsize:0x%x extra_len:0x%x ucmpsize:0x%x",
++-			(unsigned)zip_header.formatted.cmpsize,
++-			(unsigned)zip_header.formatted.extra_len,
++-			(unsigned)zip_header.formatted.ucmpsize
+++			(unsigned)zip.fmt.cmpsize,
+++			(unsigned)zip.fmt.extra_len,
+++			(unsigned)zip.fmt.ucmpsize
++ 		);
++ 
++ 		/* Read filename */
++ 		free(dst_fn);
++-		dst_fn = xzalloc(zip_header.formatted.filename_len + 1);
++-		xread(zip_fd, dst_fn, zip_header.formatted.filename_len);
+++		dst_fn = xzalloc(zip.fmt.filename_len + 1);
+++		xread(zip_fd, dst_fn, zip.fmt.filename_len);
++ 
++ 		/* Skip extra header bytes */
++-		unzip_skip(zip_header.formatted.extra_len);
+++		unzip_skip(zip.fmt.extra_len);
++ 
++ 		/* Guard against "/abspath", "/../" and similar attacks */
++ 		overlapping_strcpy(dst_fn, strip_unsafe_prefix(dst_fn));
++@@ -684,32 +689,32 @@ int unzip_main(int argc, char **argv)
++ 				/* List entry */
++ 				char dtbuf[sizeof("mm-dd-yyyy hh:mm")];
++ 				sprintf(dtbuf, "%02u-%02u-%04u %02u:%02u",
++-					(zip_header.formatted.moddate >> 5) & 0xf,  // mm: 0x01e0
++-					(zip_header.formatted.moddate)      & 0x1f, // dd: 0x001f
++-					(zip_header.formatted.moddate >> 9) + 1980, // yy: 0xfe00
++-					(zip_header.formatted.modtime >> 11),       // hh: 0xf800
++-					(zip_header.formatted.modtime >> 5) & 0x3f  // mm: 0x07e0
++-					// seconds/2 are not shown, encoded in ----------- 0x001f
+++					(zip.fmt.moddate >> 5) & 0xf,  // mm: 0x01e0
+++					(zip.fmt.moddate)      & 0x1f, // dd: 0x001f
+++					(zip.fmt.moddate >> 9) + 1980, // yy: 0xfe00
+++					(zip.fmt.modtime >> 11),       // hh: 0xf800
+++					(zip.fmt.modtime >> 5) & 0x3f  // mm: 0x07e0
+++					// seconds/2 not shown, encoded in -- 0x001f
++ 				);
++ 				if (!verbose) {
++ 					//      "  Length      Date    Time    Name\n"
++ 					//      "---------  ---------- -----   ----"
++ 					printf(       "%9u  " "%s   "         "%s\n",
++-						(unsigned)zip_header.formatted.ucmpsize,
+++						(unsigned)zip.fmt.ucmpsize,
++ 						dtbuf,
++ 						dst_fn);
++ 				} else {
++-					unsigned long percents = zip_header.formatted.ucmpsize - zip_header.formatted.cmpsize;
+++					unsigned long percents = zip.fmt.ucmpsize - zip.fmt.cmpsize;
++ 					if ((int32_t)percents < 0)
++ 						percents = 0; /* happens if ucmpsize < cmpsize */
++ 					percents = percents * 100;
++-					if (zip_header.formatted.ucmpsize)
++-						percents /= zip_header.formatted.ucmpsize;
+++					if (zip.fmt.ucmpsize)
+++						percents /= zip.fmt.ucmpsize;
++ 					//      " Length   Method    Size  Cmpr    Date    Time   CRC-32   Name\n"
++ 					//      "--------  ------  ------- ---- ---------- ----- --------  ----"
++ 					printf(      "%8u  %s"        "%9u%4u%% " "%s "         "%08x  "  "%s\n",
++-						(unsigned)zip_header.formatted.ucmpsize,
++-						zip_header.formatted.method == 0 ? "Stored" : "Defl:N", /* Defl is method 8 */
+++						(unsigned)zip.fmt.ucmpsize,
+++						zip.fmt.method == 0 ? "Stored" : "Defl:N", /* Defl is method 8 */
++ /* TODO: show other methods?
++  *  1 - Shrunk
++  *  2 - Reduced with compression factor 1
++@@ -722,15 +727,16 @@ int unzip_main(int argc, char **argv)
++  * 10 - PKWARE Data Compression Library Imploding
++  * 11 - Reserved by PKWARE
++  * 12 - BZIP2
+++ * 14 - LZMA
++  */
++-						(unsigned)zip_header.formatted.cmpsize,
+++						(unsigned)zip.fmt.cmpsize,
++ 						(unsigned)percents,
++ 						dtbuf,
++-						zip_header.formatted.crc32,
+++						zip.fmt.crc32,
++ 						dst_fn);
++-					total_size += zip_header.formatted.cmpsize;
+++					total_size += zip.fmt.cmpsize;
++ 				}
++-				total_usize += zip_header.formatted.ucmpsize;
+++				total_usize += zip.fmt.ucmpsize;
++ 				i = 'n';
++ 			} else if (dst_fd == STDOUT_FILENO) {
++ 				/* Extracting to STDOUT */
++@@ -798,9 +804,11 @@ int unzip_main(int argc, char **argv)
++ #endif
++ 		case -1: /* Unzip */
++ 			if (!quiet) {
++-				printf("  inflating: %s\n", dst_fn);
+++				printf(/* zip.fmt.method == 0
+++					? " extracting: %s\n"
+++					: */ "  inflating: %s\n", dst_fn);
++ 			}
++-			unzip_extract(&zip_header, dst_fd);
+++			unzip_extract(&zip, dst_fd);
++ 			if (dst_fd != STDOUT_FILENO) {
++ 				/* closing STDOUT is potentially bad for future business */
++ 				close(dst_fd);
++@@ -811,7 +819,7 @@ int unzip_main(int argc, char **argv)
++ 			overwrite = O_NEVER;
++ 		case 'n':
++ 			/* Skip entry data */
++-			unzip_skip(zip_header.formatted.cmpsize);
+++			unzip_skip(zip.fmt.cmpsize);
++ 			break;
++ 
++ 		case 'r':
++diff --git a/testsuite/unzip.tests b/testsuite/unzip.tests
++index d9c45242c..2e4becdb8 100755
++--- a/testsuite/unzip.tests
+++++ b/testsuite/unzip.tests
++@@ -34,7 +34,9 @@ rm foo.zip
++ optional FEATURE_UNZIP_CDF
++ testing "unzip (bad archive)" "uudecode; unzip bad.zip 2>&1; echo \$?" \
++ "Archive:  bad.zip
++-unzip: short read
+++  inflating: ]3j½r«IK-%Ix
+++unzip: corrupted data
+++unzip: inflate error
++ 1
++ " \
++ "" "\
++-- 
++2.11.0
++
+diff --git a/package/busybox/0008-httpd-fix-handling-of-range-requests.patch b/package/busybox/0008-httpd-fix-handling-of-range-requests.patch
+new file mode 100644
+index 0000000000..3b9d70f742
+--- /dev/null
++++ b/package/busybox/0008-httpd-fix-handling-of-range-requests.patch
+@@ -0,0 +1,27 @@
++From 4316dff48aacb29307e1b52cb761fef603759b9d Mon Sep 17 00:00:00 2001
++From: Denys Vlasenko <vda.linux@googlemail.com>
++Date: Mon, 18 Sep 2017 13:09:11 +0200
++Subject: [PATCH] httpd: fix handling of range requests
++
++Signed-off-by: Denys Vlasenko <vda.linux@googlemail.com>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ networking/httpd.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/networking/httpd.c b/networking/httpd.c
++index d301d598d..84d819723 100644
++--- a/networking/httpd.c
+++++ b/networking/httpd.c
++@@ -2337,7 +2337,7 @@ static void handle_incoming_and_exit(const len_and_sockaddr *fromAddr)
++ 			if (STRNCASECMP(iobuf, "Range:") == 0) {
++ 				/* We know only bytes=NNN-[MMM] */
++ 				char *s = skip_whitespace(iobuf + sizeof("Range:")-1);
++-				if (is_prefixed_with(s, "bytes=") == 0) {
+++				if (is_prefixed_with(s, "bytes=")) {
++ 					s += sizeof("bytes=")-1;
++ 					range_start = BB_STRTOOFF(s, &s, 10);
++ 					if (s[0] != '-' || range_start < 0) {
++-- 
++2.11.0
++
+diff --git a/package/bzip2/bzip2.mk b/package/bzip2/bzip2.mk
+index 0597ab97d6..e07b0ed086 100644
+--- a/package/bzip2/bzip2.mk
++++ b/package/bzip2/bzip2.mk
+@@ -12,13 +12,13 @@ BZIP2_LICENSE_FILES = LICENSE
+ 
+ ifeq ($(BR2_STATIC_LIBS),)
+ define BZIP2_BUILD_SHARED_CMDS
+-	$(TARGET_MAKE_ENV)
++	$(TARGET_MAKE_ENV) \
+ 		$(MAKE) -C $(@D) -f Makefile-libbz2_so $(TARGET_CONFIGURE_OPTS)
+ endef
+ endif
+ 
+ define BZIP2_BUILD_CMDS
+-	$(TARGET_MAKE_ENV)
++	$(TARGET_MAKE_ENV) \
+ 		$(MAKE) -C $(@D) libbz2.a bzip2 bzip2recover $(TARGET_CONFIGURE_OPTS)
+ 	$(BZIP2_BUILD_SHARED_CMDS)
+ endef
+diff --git a/package/dnsmasq/dnsmasq.hash b/package/dnsmasq/dnsmasq.hash
+index a73e911a26..28e2e658e2 100644
+--- a/package/dnsmasq/dnsmasq.hash
++++ b/package/dnsmasq/dnsmasq.hash
+@@ -1,2 +1,6 @@
+ # Locally calculated after checking pgp signature
+-sha256	4b92698dee19ca0cb2a8f2e48f1d2dffd01a21eb15d1fbed4cf085630c8c9f96	dnsmasq-2.76.tar.xz
++# http://www.thekelleys.org.uk/dnsmasq/dnsmasq-2.78.tar.xz.asc
++sha256	89949f438c74b0c7543f06689c319484bd126cc4b1f8c745c742ab397681252b	dnsmasq-2.78.tar.xz
++# Locally calculated
++sha256	dcc100d4161cc0b7177545ab6e47216f84857cda3843847c792a25289852dcaa	COPYING
++sha256	8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903	COPYING-v3
+diff --git a/package/dnsmasq/dnsmasq.mk b/package/dnsmasq/dnsmasq.mk
+index e8240b9003..18216a6e22 100644
+--- a/package/dnsmasq/dnsmasq.mk
++++ b/package/dnsmasq/dnsmasq.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-DNSMASQ_VERSION = 2.76
++DNSMASQ_VERSION = 2.78
+ DNSMASQ_SOURCE = dnsmasq-$(DNSMASQ_VERSION).tar.xz
+ DNSMASQ_SITE = http://thekelleys.org.uk/dnsmasq
+ DNSMASQ_MAKE_ENV = $(TARGET_MAKE_ENV) CC="$(TARGET_CC)"
+@@ -58,7 +58,7 @@ DNSMASQ_MAKE_OPTS += LIBS+="-ldl"
+ endif
+ 
+ define DNSMASQ_ENABLE_LUA
+-	$(SED) 's/lua5.1/lua/g' $(DNSMASQ_DIR)/Makefile
++	$(SED) 's/lua5.2/lua/g' $(DNSMASQ_DIR)/Makefile
+ 	$(SED) 's^.*#define HAVE_LUASCRIPT.*^#define HAVE_LUASCRIPT^' \
+ 		$(DNSMASQ_DIR)/src/config.h
+ endef
+diff --git a/package/git/git.hash b/package/git/git.hash
+index b657422c8c..bc81f23a82 100644
+--- a/package/git/git.hash
++++ b/package/git/git.hash
+@@ -1,2 +1,2 @@
+ # From: https://www.kernel.org/pub/software/scm/git/sha256sums.asc
+-sha256 f8b8ac499034e9f6e44e67dd54351bc5654e228e4cd3b55f6f1c8e736c977ce6  git-2.12.4.tar.xz
++sha256 a8c3b3c7dd9202d0e80f824ceb74b4340b60aa8f1ec4ffdde3e982fa5ae16eab  git-2.12.5.tar.xz
+diff --git a/package/git/git.mk b/package/git/git.mk
+index 94cf7a797b..8ce29fcaf5 100644
+--- a/package/git/git.mk
++++ b/package/git/git.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-GIT_VERSION = 2.12.4
++GIT_VERSION = 2.12.5
+ GIT_SOURCE = git-$(GIT_VERSION).tar.xz
+ GIT_SITE = https://www.kernel.org/pub/software/scm/git
+ GIT_LICENSE = GPLv2, LGPLv2.1+
+diff --git a/package/go/go.mk b/package/go/go.mk
+index bd308902b2..a5ac74b590 100644
+--- a/package/go/go.mk
++++ b/package/go/go.mk
+@@ -52,7 +52,7 @@ HOST_GO_TARGET_ENV = \
+ # set, build in cgo support for any go programs that may need it.  Note that
+ # any target package needing cgo support must include
+ # 'depends on BR2_TOOLCHAIN_HAS_THREADS' in its config file.
+-ifeq (BR2_TOOLCHAIN_HAS_THREADS,y)
++ifeq ($(BR2_TOOLCHAIN_HAS_THREADS),y)
+ HOST_GO_CGO_ENABLED = 1
+ else
+ HOST_GO_CGO_ENABLED = 0
+@@ -74,8 +74,8 @@ HOST_GO_MAKE_ENV = \
+ 	GOARCH=$(GO_GOARCH) \
+ 	$(if $(GO_GOARM),GOARM=$(GO_GOARM)) \
+ 	GOOS=linux \
+-	CGO_ENABLED=$(HOST_GO_CGO_ENABLED) \
+-	CC=$(HOSTCC_NOCCACHE)
++	CC=$(HOSTCC_NOCCACHE) \
++	CXX=$(HOSTCXX_NOCCACHE)
+ 
+ HOST_GO_TARGET_CC = \
+ 	CC_FOR_TARGET="$(TARGET_CC)" \
+@@ -83,16 +83,18 @@ HOST_GO_TARGET_CC = \
+ 
+ HOST_GO_HOST_CC = \
+ 	CC_FOR_TARGET=$(HOSTCC_NOCCACHE) \
+-	CXX_FOR_TARGET=$(HOSTCC_NOCCACHE)
++	CXX_FOR_TARGET=$(HOSTCXX_NOCCACHE)
+ 
+ HOST_GO_TMP = $(@D)/host-go-tmp
+ 
+ define HOST_GO_BUILD_CMDS
+-	cd $(@D)/src && $(HOST_GO_MAKE_ENV) $(HOST_GO_HOST_CC) ./make.bash
++	cd $(@D)/src && \
++		$(HOST_GO_MAKE_ENV) $(HOST_GO_HOST_CC) CGO_ENABLED=0 ./make.bash
+ 	mkdir -p $(HOST_GO_TMP)
+ 	mv $(@D)/pkg/tool $(HOST_GO_TMP)/
+ 	mv $(@D)/bin/ $(HOST_GO_TMP)/
+-	cd $(@D)/src && $(HOST_GO_MAKE_ENV) $(HOST_GO_TARGET_CC) ./make.bash
++	cd $(@D)/src && \
++		$(HOST_GO_MAKE_ENV) $(HOST_GO_TARGET_CC) CGO_ENABLED=$(HOST_GO_CGO_ENABLED) ./make.bash
+ endef
+ 
+ define HOST_GO_INSTALL_CMDS
+diff --git a/package/hostapd/Config.in b/package/hostapd/Config.in
+index 62fbb66d63..1609d0df5d 100644
+--- a/package/hostapd/Config.in
++++ b/package/hostapd/Config.in
+@@ -10,7 +10,7 @@ config BR2_PACKAGE_HOSTAPD
+ 	  IEEE 802.1X/WPA/WPA2/EAP authenticators, RADIUS client,
+ 	  EAP server and RADIUS authentication server.
+ 
+-	  http://hostap.epitest.fi/
++	  http://w1.fi/hostapd/
+ 
+ if BR2_PACKAGE_HOSTAPD
+ 
+diff --git a/package/hostapd/hostapd.hash b/package/hostapd/hostapd.hash
+index fb891476b3..b20c89b184 100644
+--- a/package/hostapd/hostapd.hash
++++ b/package/hostapd/hostapd.hash
+@@ -1,2 +1,4 @@
+ # Locally calculated
+ sha256  01526b90c1d23bec4b0f052039cc4456c2fd19347b4d830d1d58a0a6aea7117d  hostapd-2.6.tar.gz
++sha256  529113cc81256c6178f3c1cf25dd8d3f33e6d770e4a180bd31c6ab7e4917f40b  rebased-v2.6-0001-hostapd-Avoid-key-reinstallation-in-FT-handshake.patch
++sha256  147c8abe07606905d16404fb2d2c8849796ca7c85ed8673c09bb50038bcdeb9e  rebased-v2.6-0005-Fix-PTK-rekeying-to-generate-a-new-ANonce.patch
+diff --git a/package/hostapd/hostapd.mk b/package/hostapd/hostapd.mk
+index a499011385..3ac1979c37 100644
+--- a/package/hostapd/hostapd.mk
++++ b/package/hostapd/hostapd.mk
+@@ -5,7 +5,10 @@
+ ################################################################################
+ 
+ HOSTAPD_VERSION = 2.6
+-HOSTAPD_SITE = http://hostap.epitest.fi/releases
++HOSTAPD_SITE = http://w1.fi/releases
++HOSTAPD_PATCH = \
++	http://w1.fi/security/2017-1/rebased-v2.6-0001-hostapd-Avoid-key-reinstallation-in-FT-handshake.patch \
++	http://w1.fi/security/2017-1/rebased-v2.6-0005-Fix-PTK-rekeying-to-generate-a-new-ANonce.patch
+ HOSTAPD_SUBDIR = hostapd
+ HOSTAPD_CONFIG = $(HOSTAPD_DIR)/$(HOSTAPD_SUBDIR)/.config
+ HOSTAPD_DEPENDENCIES = host-pkgconf libnl
+diff --git a/package/irssi/irssi.hash b/package/irssi/irssi.hash
+index 7b019025d8..0a6c3f614a 100644
+--- a/package/irssi/irssi.hash
++++ b/package/irssi/irssi.hash
+@@ -1,2 +1,4 @@
+ # Locally calculated after checking pgp signature
+-sha256	b85c07dbafe178213eccdc69f5f8f0ac024dea01c67244668f91ec1c06b986ca	irssi-1.0.4.tar.xz
++sha256	c2556427e12eb06cabfed40839ac6f57eb8b1aa6365fab6dfcd331b7a04bb914  irssi-1.0.5.tar.xz
++# Locally calculated
++sha256	a1a27cb2ecee8d5378fbb3562f577104a445d6d66fee89286e16758305e63e2b  COPYING
+diff --git a/package/irssi/irssi.mk b/package/irssi/irssi.mk
+index 4fef1125b1..3ea81a95db 100644
+--- a/package/irssi/irssi.mk
++++ b/package/irssi/irssi.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-IRSSI_VERSION = 1.0.4
++IRSSI_VERSION = 1.0.5
+ IRSSI_SOURCE = irssi-$(IRSSI_VERSION).tar.xz
+ # Do not use the github helper here. The generated tarball is *NOT* the
+ # same as the one uploaded by upstream for the release.
+diff --git a/package/iucode-tool/iucode-tool.hash b/package/iucode-tool/iucode-tool.hash
+index c1f3bef045..1dab8de978 100644
+--- a/package/iucode-tool/iucode-tool.hash
++++ b/package/iucode-tool/iucode-tool.hash
+@@ -1,2 +1,3 @@
+ # Locally computed
+-sha256	33271652032f20f866a212bc98ea01a8db65c4ac839fa820aa23da974fd6ff62	iucode-tool_1.5.tar.xz
++sha256 9810daf925b8a9ca244adc4e1916bcab65601c9ebe87e91c2281f78055982971  iucode-tool_2.2.tar.xz
++sha256 ab15fd526bd8dd18a9e77ebc139656bf4d33e97fc7238cd11bf60e2b9b8666c6  COPYING
+diff --git a/package/iucode-tool/iucode-tool.mk b/package/iucode-tool/iucode-tool.mk
+index 1dfda70293..3280c1ed63 100644
+--- a/package/iucode-tool/iucode-tool.mk
++++ b/package/iucode-tool/iucode-tool.mk
+@@ -4,11 +4,10 @@
+ #
+ ################################################################################
+ 
+-IUCODE_TOOL_VERSION = 1.5
++IUCODE_TOOL_VERSION = 2.2
+ IUCODE_TOOL_SOURCE = iucode-tool_$(IUCODE_TOOL_VERSION).tar.xz
+ IUCODE_TOOL_SITE = https://gitlab.com/iucode-tool/releases/raw/master
+ ifeq ($(BR2_PACKAGE_ARGP_STANDALONE),y)
+-IUCODE_TOOL_CONF_ENV = LIBS="-largp"
+ IUCODE_TOOL_DEPENDENCIES = argp-standalone
+ endif
+ IUCODE_TOOL_LICENSE = GPLv2+
+diff --git a/package/lame/0001-configure.patch b/package/lame/0001-configure.patch
+deleted file mode 100644
+index 7e407f28c0..0000000000
+--- a/package/lame/0001-configure.patch
++++ /dev/null
+@@ -1,69 +0,0 @@
+-Various patches to fix autoreconf errors.
+-
+-All patches besides
+-- AM_ICONV in configure.in
+-are already applied upstream:
+-http://lame.cvs.sourceforge.net/viewvc/lame/lame/configure.in?r1=1.145&r2=1.146
+-http://lame.cvs.sourceforge.net/viewvc/lame/lame/doc/html/Makefile.am?r1=1.8&r2=1.9
+-http://lame.cvs.sourceforge.net/viewvc/lame/lame/doc/man/Makefile.am?r1=1.1&r2=1.2
+-
+-libmp3lame/i386/Makefile.am patch ported from Debian
+-http://anonscm.debian.org/cgit/pkg-multimedia/lame.git/tree/debian/patches/ansi2knr2devnull.patch
+-
+-Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+-
+-diff -uNr lame-3.99.5.org/configure.in lame-3.99.5/configure.in
+---- lame-3.99.5.org/configure.in	2012-02-28 19:50:27.000000000 +0100
+-+++ lame-3.99.5/configure.in	2015-04-11 11:36:15.464835008 +0200
+-@@ -77,9 +77,6 @@
+- 	AC_MSG_RESULT(${GCC_version})
+- fi
+- 
+--dnl more automake stuff
+--AM_C_PROTOTYPES
+--
+- AC_CHECK_HEADER(dmalloc.h)
+- if test "${ac_cv_header_dmalloc_h}" = "yes"; then
+- 	AM_WITH_DMALLOC
+-@@ -376,8 +373,6 @@
+- AC_CHECK_LIB(curses, initscr, HAVE_TERMCAP="curses")
+- AC_CHECK_LIB(ncurses, initscr, HAVE_TERMCAP="ncurses")
+- 
+--AM_ICONV
+-- 
+- dnl math lib
+- AC_CHECK_LIB(m, cos, USE_LIBM="-lm")
+- dnl free fast math library
+-diff -uNr lame-3.99.5.org/doc/html/Makefile.am lame-3.99.5/doc/html/Makefile.am
+---- lame-3.99.5.org/doc/html/Makefile.am	2010-09-30 22:58:40.000000000 +0200
+-+++ lame-3.99.5/doc/html/Makefile.am	2015-04-11 11:37:02.880239754 +0200
+-@@ -1,6 +1,6 @@
+- ## $Id: Makefile.am,v 1.7 2010/09/30 20:58:40 jaz001 Exp $
+- 
+--AUTOMAKE_OPTIONS = foreign ansi2knr
+-+AUTOMAKE_OPTIONS = foreign
+- 
+- docdir = $(datadir)/doc
+- pkgdocdir = $(docdir)/$(PACKAGE)
+-diff -uNr lame-3.99.5.org/doc/man/Makefile.am lame-3.99.5/doc/man/Makefile.am
+---- lame-3.99.5.org/doc/man/Makefile.am	2000-10-22 13:39:44.000000000 +0200
+-+++ lame-3.99.5/doc/man/Makefile.am	2015-04-11 11:37:08.704167318 +0200
+-@@ -1,6 +1,6 @@
+- ## $Id: Makefile.am,v 1.1 2000/10/22 11:39:44 aleidinger Exp $
+- 
+--AUTOMAKE_OPTIONS = foreign ansi2knr
+-+AUTOMAKE_OPTIONS = foreign
+- 
+- man_MANS = lame.1
+- EXTRA_DIST = ${man_MANS}
+-diff -uNr lame-3.99.5.org/libmp3lame/i386/Makefile.am lame-3.99.5/libmp3lame/i386/Makefile.am
+---- lame-3.99.5.org/libmp3lame/i386/Makefile.am	2011-04-04 11:42:34.000000000 +0200
+-+++ lame-3.99.5/libmp3lame/i386/Makefile.am	2015-04-11 11:37:35.191833351 +0200
+-@@ -1,6 +1,6 @@
+- ## $Id: Makefile.am,v 1.26 2011/04/04 09:42:34 aleidinger Exp $
+- 
+--AUTOMAKE_OPTIONS = foreign $(top_srcdir)/ansi2knr
+-+AUTOMAKE_OPTIONS = foreign
+- 
+- DEFS = @DEFS@ @CONFIG_DEFS@
+- 
+diff --git a/package/lame/0002-gtk1-ac-directives.patch b/package/lame/0002-gtk1-ac-directives.patch
+deleted file mode 100644
+index 858ee0baf8..0000000000
+--- a/package/lame/0002-gtk1-ac-directives.patch
++++ /dev/null
+@@ -1,210 +0,0 @@
+-Include GTK-1 autoconf directives in build system.
+-Applied-Upstream: http://lame.cvs.sf.net/viewvc/lame/lame/acinclude.m4?r1=1.5&r2=1.6
+-
+-Downloaded from
+-http://lame.cvs.sf.net/viewvc/lame/lame/acinclude.m4?r1=1.5&r2=1.6&view=patch
+-
+-to fix autoreconf.
+-
+-Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+-
+---- a/acinclude.m4	2006/12/21 09:03:03	1.5
+-+++ b/acinclude.m4	2012/06/18 20:51:05	1.6
+-@@ -85,4 +85,197 @@
+- [AC_MSG_WARN(can't check for IEEE854 compliant 80 bit floats)]
+- )])]) # alex_IEEE854_FLOAT80
+- 
+-+# Configure paths for GTK+
+-+# Owen Taylor     97-11-3
+- 
+-+dnl AM_PATH_GTK([MINIMUM-VERSION, [ACTION-IF-FOUND [, ACTION-IF-NOT-FOUND [, MODULES]]]])
+-+dnl Test for GTK, and define GTK_CFLAGS and GTK_LIBS
+-+dnl
+-+AC_DEFUN([AM_PATH_GTK],
+-+[dnl
+-+dnl Get the cflags and libraries from the gtk-config script
+-+dnl
+-+AC_ARG_WITH(gtk-prefix,[  --with-gtk-prefix=PFX   Prefix where GTK is installed (optional)],
+-+            gtk_config_prefix="$withval", gtk_config_prefix="")
+-+AC_ARG_WITH(gtk-exec-prefix,[  --with-gtk-exec-prefix=PFX Exec prefix where GTK is installed (optional)],
+-+            gtk_config_exec_prefix="$withval", gtk_config_exec_prefix="")
+-+AC_ARG_ENABLE(gtktest, [  --disable-gtktest       Do not try to compile and run a test GTK program],
+-+        , enable_gtktest=yes)
+-+
+-+  for module in . $4
+-+  do
+-+      case "$module" in
+-+         gthread)
+-+             gtk_config_args="$gtk_config_args gthread"
+-+         ;;
+-+      esac
+-+  done
+-+
+-+  if test x$gtk_config_exec_prefix != x ; then
+-+     gtk_config_args="$gtk_config_args --exec-prefix=$gtk_config_exec_prefix"
+-+     if test x${GTK_CONFIG+set} != xset ; then
+-+        GTK_CONFIG=$gtk_config_exec_prefix/bin/gtk-config
+-+     fi
+-+  fi
+-+  if test x$gtk_config_prefix != x ; then
+-+     gtk_config_args="$gtk_config_args --prefix=$gtk_config_prefix"
+-+     if test x${GTK_CONFIG+set} != xset ; then
+-+        GTK_CONFIG=$gtk_config_prefix/bin/gtk-config
+-+     fi
+-+  fi
+-+
+-+  AC_PATH_PROG(GTK_CONFIG, gtk-config, no)
+-+  min_gtk_version=ifelse([$1], ,0.99.7,$1)
+-+  AC_MSG_CHECKING(for GTK - version >= $min_gtk_version)
+-+  no_gtk=""
+-+  if test "$GTK_CONFIG" = "no" ; then
+-+    no_gtk=yes
+-+  else
+-+    GTK_CFLAGS=`$GTK_CONFIG $gtk_config_args --cflags`
+-+    GTK_LIBS=`$GTK_CONFIG $gtk_config_args --libs`
+-+    gtk_config_major_version=`$GTK_CONFIG $gtk_config_args --version | \
+-+           sed 's/\([[0-9]]*\).\([[0-9]]*\).\([[0-9]]*\)/\1/'`
+-+    gtk_config_minor_version=`$GTK_CONFIG $gtk_config_args --version | \
+-+           sed 's/\([[0-9]]*\).\([[0-9]]*\).\([[0-9]]*\)/\2/'`
+-+    gtk_config_micro_version=`$GTK_CONFIG $gtk_config_args --version | \
+-+           sed 's/\([[0-9]]*\).\([[0-9]]*\).\([[0-9]]*\)/\3/'`
+-+    if test "x$enable_gtktest" = "xyes" ; then
+-+      ac_save_CFLAGS="$CFLAGS"
+-+      ac_save_LIBS="$LIBS"
+-+      CFLAGS="$CFLAGS $GTK_CFLAGS"
+-+      LIBS="$GTK_LIBS $LIBS"
+-+dnl
+-+dnl Now check if the installed GTK is sufficiently new. (Also sanity
+-+dnl checks the results of gtk-config to some extent
+-+dnl
+-+      rm -f conf.gtktest
+-+      AC_TRY_RUN([
+-+#include <gtk/gtk.h>
+-+#include <stdio.h>
+-+#include <stdlib.h>
+-+
+-+int
+-+main ()
+-+{
+-+  int major, minor, micro;
+-+  char *tmp_version;
+-+
+-+  system ("touch conf.gtktest");
+-+
+-+  /* HP/UX 9 (%@#!) writes to sscanf strings */
+-+  tmp_version = g_strdup("$min_gtk_version");
+-+  if (sscanf(tmp_version, "%d.%d.%d", &major, &minor, &micro) != 3) {
+-+     printf("%s, bad version string\n", "$min_gtk_version");
+-+     exit(1);
+-+   }
+-+
+-+  if ((gtk_major_version != $gtk_config_major_version) ||
+-+      (gtk_minor_version != $gtk_config_minor_version) ||
+-+      (gtk_micro_version != $gtk_config_micro_version))
+-+    {
+-+      printf("\n*** 'gtk-config --version' returned %d.%d.%d, but GTK+ (%d.%d.%d)\n",
+-+             $gtk_config_major_version, $gtk_config_minor_version, $gtk_config_micro_version,
+-+             gtk_major_version, gtk_minor_version, gtk_micro_version);
+-+      printf ("*** was found! If gtk-config was correct, then it is best\n");
+-+      printf ("*** to remove the old version of GTK+. You may also be able to fix the error\n");
+-+      printf("*** by modifying your LD_LIBRARY_PATH enviroment variable, or by editing\n");
+-+      printf("*** /etc/ld.so.conf. Make sure you have run ldconfig if that is\n");
+-+      printf("*** required on your system.\n");
+-+      printf("*** If gtk-config was wrong, set the environment variable GTK_CONFIG\n");
+-+      printf("*** to point to the correct copy of gtk-config, and remove the file config.cache\n");
+-+      printf("*** before re-running configure\n");
+-+    }
+-+#if defined (GTK_MAJOR_VERSION) && defined (GTK_MINOR_VERSION) && defined (GTK_MICRO_VERSION)
+-+  else if ((gtk_major_version != GTK_MAJOR_VERSION) ||
+-+     (gtk_minor_version != GTK_MINOR_VERSION) ||
+-+           (gtk_micro_version != GTK_MICRO_VERSION))
+-+    {
+-+      printf("*** GTK+ header files (version %d.%d.%d) do not match\n",
+-+       GTK_MAJOR_VERSION, GTK_MINOR_VERSION, GTK_MICRO_VERSION);
+-+      printf("*** library (version %d.%d.%d)\n",
+-+       gtk_major_version, gtk_minor_version, gtk_micro_version);
+-+    }
+-+#endif /* defined (GTK_MAJOR_VERSION) ... */
+-+  else
+-+    {
+-+      if ((gtk_major_version > major) ||
+-+        ((gtk_major_version == major) && (gtk_minor_version > minor)) ||
+-+        ((gtk_major_version == major) && (gtk_minor_version == minor) && (gtk_micro_version >= micro)))
+-+      {
+-+        return 0;
+-+       }
+-+     else
+-+      {
+-+        printf("\n*** An old version of GTK+ (%d.%d.%d) was found.\n",
+-+               gtk_major_version, gtk_minor_version, gtk_micro_version);
+-+        printf("*** You need a version of GTK+ newer than %d.%d.%d. The latest version of\n",
+-+         major, minor, micro);
+-+        printf("*** GTK+ is always available from ftp://ftp.gtk.org.\n");
+-+        printf("***\n");
+-+        printf("*** If you have already installed a sufficiently new version, this error\n");
+-+        printf("*** probably means that the wrong copy of the gtk-config shell script is\n");
+-+        printf("*** being found. The easiest way to fix this is to remove the old version\n");
+-+        printf("*** of GTK+, but you can also set the GTK_CONFIG environment to point to the\n");
+-+        printf("*** correct copy of gtk-config. (In this case, you will have to\n");
+-+        printf("*** modify your LD_LIBRARY_PATH enviroment variable, or edit /etc/ld.so.conf\n");
+-+        printf("*** so that the correct libraries are found at run-time))\n");
+-+      }
+-+    }
+-+  return 1;
+-+}
+-+],, no_gtk=yes,[echo $ac_n "cross compiling; assumed OK... $ac_c"])
+-+       CFLAGS="$ac_save_CFLAGS"
+-+       LIBS="$ac_save_LIBS"
+-+     fi
+-+  fi
+-+  if test "x$no_gtk" = x ; then
+-+     AC_MSG_RESULT(yes)
+-+     ifelse([$2], , :, [$2])
+-+  else
+-+     AC_MSG_RESULT(no)
+-+     if test "$GTK_CONFIG" = "no" ; then
+-+       echo "*** The gtk-config script installed by GTK could not be found"
+-+       echo "*** If GTK was installed in PREFIX, make sure PREFIX/bin is in"
+-+       echo "*** your path, or set the GTK_CONFIG environment variable to the"
+-+       echo "*** full path to gtk-config."
+-+     else
+-+       if test -f conf.gtktest ; then
+-+        :
+-+       else
+-+          echo "*** Could not run GTK test program, checking why..."
+-+          CFLAGS="$CFLAGS $GTK_CFLAGS"
+-+          LIBS="$LIBS $GTK_LIBS"
+-+          AC_TRY_LINK([
+-+#include <gtk/gtk.h>
+-+#include <stdio.h>
+-+],      [ return ((gtk_major_version) || (gtk_minor_version) || (gtk_micro_version)); ],
+-+        [ echo "*** The test program compiled, but did not run. This usually means"
+-+          echo "*** that the run-time linker is not finding GTK or finding the wrong"
+-+          echo "*** version of GTK. If it is not finding GTK, you'll need to set your"
+-+          echo "*** LD_LIBRARY_PATH environment variable, or edit /etc/ld.so.conf to point"
+-+          echo "*** to the installed location  Also, make sure you have run ldconfig if that"
+-+          echo "*** is required on your system"
+-+    echo "***"
+-+          echo "*** If you have an old version installed, it is best to remove it, although"
+-+          echo "*** you may also be able to get things to work by modifying LD_LIBRARY_PATH"
+-+          echo "***"
+-+          echo "*** If you have a RedHat 5.0 system, you should remove the GTK package that"
+-+          echo "*** came with the system with the command"
+-+          echo "***"
+-+          echo "***    rpm --erase --nodeps gtk gtk-devel" ],
+-+        [ echo "*** The test program failed to compile or link. See the file config.log for the"
+-+          echo "*** exact error that occured. This usually means GTK was incorrectly installed"
+-+          echo "*** or that you have moved GTK since it was installed. In the latter case, you"
+-+          echo "*** may want to edit the gtk-config script: $GTK_CONFIG" ])
+-+          CFLAGS="$ac_save_CFLAGS"
+-+          LIBS="$ac_save_LIBS"
+-+       fi
+-+     fi
+-+     GTK_CFLAGS=""
+-+     GTK_LIBS=""
+-+     ifelse([$3], , :, [$3])
+-+  fi
+-+  AC_SUBST(GTK_CFLAGS)
+-+  AC_SUBST(GTK_LIBS)
+-+  rm -f conf.gtktest
+-+])
+diff --git a/package/lame/0003-msse.patch b/package/lame/0003-msse.patch
+deleted file mode 100644
+index ca4f65f40b..0000000000
+--- a/package/lame/0003-msse.patch
++++ /dev/null
+@@ -1,24 +0,0 @@
+-Fix compile on 32bit Intel
+-
+-Downloaded from
+-http://anonscm.debian.org/cgit/pkg-multimedia/lame.git/tree/debian/patches/msse.patch
+-
+-Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+-
+-Description: Build xmm_quantize_sub.c with -msse
+-Author: Sebastian Ramacher <sramacher@debian.org>
+-Bug: http://sourceforge.net/p/lame/bugs/443/
+-Bug-Debian: https://bugs.debian.org/760047
+-Forwarded: http://sourceforge.net/p/lame/bugs/443/
+-Last-Update: 2014-08-31
+-
+---- lame-3.99.5+repack1.orig/libmp3lame/vector/Makefile.am
+-+++ lame-3.99.5+repack1/libmp3lame/vector/Makefile.am
+-@@ -20,6 +20,7 @@ xmm_sources = xmm_quantize_sub.c
+- 
+- if WITH_XMM
+- liblamevectorroutines_la_SOURCES = $(xmm_sources)
+-+liblamevectorroutines_la_CFLAGS = -msse
+- endif
+- 
+- noinst_HEADERS = lame_intrin.h
+diff --git a/package/lame/lame.hash b/package/lame/lame.hash
+index 875b49c2fc..58dc6f78ef 100644
+--- a/package/lame/lame.hash
++++ b/package/lame/lame.hash
+@@ -1,2 +1,3 @@
+ # Locally computed:
+-sha256  24346b4158e4af3bd9f2e194bb23eb473c75fb7377011523353196b19b9a23ff  lame-3.99.5.tar.gz
++sha256  ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e  lame-3.100.tar.gz
++sha256  bfe4a52dc4645385f356a8e83cc54216a293e3b6f1cb4f79f5fc0277abf937fd  COPYING
+diff --git a/package/lame/lame.mk b/package/lame/lame.mk
+index 934579953b..342e5c41c6 100644
+--- a/package/lame/lame.mk
++++ b/package/lame/lame.mk
+@@ -4,11 +4,9 @@
+ #
+ ################################################################################
+ 
+-LAME_VERSION_MAJOR = 3.99
+-LAME_VERSION = $(LAME_VERSION_MAJOR).5
+-LAME_SITE = http://downloads.sourceforge.net/project/lame/lame/$(LAME_VERSION_MAJOR)
++LAME_VERSION = 3.100
++LAME_SITE = http://downloads.sourceforge.net/project/lame/lame/$(LAME_VERSION)
+ LAME_DEPENDENCIES = host-pkgconf
+-LAME_AUTORECONF = YES
+ LAME_INSTALL_STAGING = YES
+ LAME_CONF_ENV = GTK_CONFIG=/bin/false
+ LAME_CONF_OPTS = --enable-dynamic-frontends
+diff --git a/package/libcurl/0001-curl-system.h-support-more-architectures.patch b/package/libcurl/0001-curl-system.h-support-more-architectures.patch
+deleted file mode 100644
+index 94d9a2a11f..0000000000
+--- a/package/libcurl/0001-curl-system.h-support-more-architectures.patch
++++ /dev/null
+@@ -1,47 +0,0 @@
+-From 7d84bd820ef412d251b643a4faced105668f4ebd Mon Sep 17 00:00:00 2001
+-From: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+-Date: Fri, 11 Aug 2017 18:52:37 +0200
+-Subject: [PATCH] curl/system.h: support more architectures
+-
+-The long list of architectures in include/curl/system.h is annoying to
+-maintain, and needs to be extended for each and every architecture to
+-support.
+-
+-Instead, let's rely on the __SIZEOF_LONG__ define of the gcc compiler
+-(we are in the GNUC condition anyway), which tells us if long is 4
+-bytes or 8 bytes.
+-
+-This fixes the build of libcurl 7.55.0 on architectures such as
+-OpenRISC or ARC.
+-
+-Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+----
+- include/curl/system.h | 5 +++--
+- 1 file changed, 3 insertions(+), 2 deletions(-)
+-
+-diff --git a/include/curl/system.h b/include/curl/system.h
+-index 79abf8f..0e13075 100644
+---- a/include/curl/system.h
+-+++ b/include/curl/system.h
+-@@ -403,7 +403,7 @@
+- #  if !defined(__LP64__) && (defined(__ILP32__) || \
+-       defined(__i386__) || defined(__ppc__) || defined(__arm__) || \
+-       defined(__sparc__) || defined(__mips__) || defined(__sh__) || \
+--      defined(__XTENSA__))
+-+      defined(__XTENSA__) || (defined(__SIZEOF_LONG__) && __SIZEOF_LONG__ == 4))
+- #    define CURL_SIZEOF_LONG           4
+- #    define CURL_TYPEOF_CURL_OFF_T     long long
+- #    define CURL_FORMAT_CURL_OFF_T     "lld"
+-@@ -412,7 +412,8 @@
+- #    define CURL_SUFFIX_CURL_OFF_T     LL
+- #    define CURL_SUFFIX_CURL_OFF_TU    ULL
+- #  elif defined(__LP64__) || \
+--        defined(__x86_64__) || defined(__ppc64__) || defined(__sparc64__)
+-+        defined(__x86_64__) || defined(__ppc64__) || defined(__sparc64__) || \
+-+        (defined(__SIZEOF_LONG__) && __SIZEOF_LONG__ == 8)
+- #    define CURL_SIZEOF_LONG           8
+- #    define CURL_TYPEOF_CURL_OFF_T     long
+- #    define CURL_FORMAT_CURL_OFF_T     "ld"
+--- 
+-2.9.4
+-
+diff --git a/package/libcurl/libcurl.hash b/package/libcurl/libcurl.hash
+index 6d49b67428..49292dfb9e 100644
+--- a/package/libcurl/libcurl.hash
++++ b/package/libcurl/libcurl.hash
+@@ -1,3 +1,4 @@
+ # Locally calculated after checking pgp signature
+-# https://curl.haxx.se/download/curl-7.55.0.tar.xz.asc
+-sha256 cdd58522f8607fd4e871df79d73acb3155075e2134641e5adab12a0962df059d  curl-7.55.0.tar.xz
++# https://curl.haxx.se/download/curl-7.56.1.tar.xz.asc
++sha256 8eed282cf3a0158d567a0feaa3c4619e8e847970597b5a2c81879e8f0d1a39d1  curl-7.56.1.tar.xz
++sha256 cbcf511f5702f7baf5424193a792bc9c18fab22bcbec2e6a587598389dc632c2  COPYING
+diff --git a/package/libcurl/libcurl.mk b/package/libcurl/libcurl.mk
+index dd0ccbfa46..57b9c2cbca 100644
+--- a/package/libcurl/libcurl.mk
++++ b/package/libcurl/libcurl.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBCURL_VERSION = 7.55.0
++LIBCURL_VERSION = 7.56.1
+ LIBCURL_SOURCE = curl-$(LIBCURL_VERSION).tar.xz
+ LIBCURL_SITE = https://curl.haxx.se/download
+ LIBCURL_DEPENDENCIES = host-pkgconf \
+@@ -22,6 +22,12 @@ LIBCURL_INSTALL_STAGING = YES
+ LIBCURL_CONF_OPTS = --disable-manual --disable-ntlm-wb \
+ 	--enable-hidden-symbols --with-random=/dev/urandom --disable-curldebug
+ 
++ifeq ($(BR2_TOOLCHAIN_HAS_THREADS),y)
++LIBCURL_CONF_OPTS += --enable-threaded-resolver
++else
++LIBCURL_CONF_OPTS += --disable-threaded-resolver
++endif
++
+ ifeq ($(BR2_PACKAGE_LIBCURL_VERBOSE),y)
+ LIBCURL_CONF_OPTS += --enable-verbose
+ else
+diff --git a/package/libffi/0005-mips-use-__linux__-and-not-linux.patch b/package/libffi/0005-mips-use-__linux__-and-not-linux.patch
+new file mode 100644
+index 0000000000..a48f3d3b6d
+--- /dev/null
++++ b/package/libffi/0005-mips-use-__linux__-and-not-linux.patch
+@@ -0,0 +1,37 @@
++From 1f43e5edfd91bee80e518432b80db01f1bf226e3 Mon Sep 17 00:00:00 2001
++From: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++Date: Sun, 22 Oct 2017 15:02:11 +0200
++Subject: [PATCH] mips: use __linux__ and not linux
++
++The "linux" symbol is not POSIX compliant [1], and therefore not
++defined when building with -std=c99. Due to this, the linux
++conditional block doesn't get used on Linux when building Python 3.x
++(which is built with -std=c99). To fix this, we use the POSIX
++compliant __linux__ symbol, which is defined when -std=c99 is used.
++
++This fixes the build of Python 3.x on MIPS/musl configuration, as it
++makes sures that <asm/sgidefs.h> gets included and not <sgidefs.h>.
++
++[1] https://sourceforge.net/p/predef/wiki/OperatingSystems/
++
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++---
++ src/mips/ffitarget.h | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/src/mips/ffitarget.h b/src/mips/ffitarget.h
++index 717d659..6faa358 100644
++--- a/src/mips/ffitarget.h
+++++ b/src/mips/ffitarget.h
++@@ -32,7 +32,7 @@
++ #error "Please do not include ffitarget.h directly into your source.  Use ffi.h instead."
++ #endif
++ 
++-#ifdef linux
+++#ifdef __linux__
++ # include <asm/sgidefs.h>
++ #elif defined(__rtems__)
++ /*
++-- 
++2.13.6
++
+diff --git a/package/libnspr/libnspr.hash b/package/libnspr/libnspr.hash
+index 9111a32c86..46c091e0da 100644
+--- a/package/libnspr/libnspr.hash
++++ b/package/libnspr/libnspr.hash
+@@ -1,2 +1,4 @@
+-# From https://ftp.mozilla.org/pub/nspr/releases/v4.14/src/SHA256SUMS
+-sha256	64fc18826257403a9132240aa3c45193d577a84b08e96f7e7770a97c074d17d5	nspr-4.14.tar.gz
++# From https://ftp.mozilla.org/pub/nspr/releases/v4.17/src/SHA256SUMS
++sha256	590a0aea29412ae22d7728038c21ef2ab42646e48172a47d2e4bb782846d1095  nspr-4.17.tar.gz
++# Locally calculated
++sha256	fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85  nspr/LICENSE
+diff --git a/package/libnspr/libnspr.mk b/package/libnspr/libnspr.mk
+index f891bb3bfb..b41b06291f 100644
+--- a/package/libnspr/libnspr.mk
++++ b/package/libnspr/libnspr.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBNSPR_VERSION = 4.14
++LIBNSPR_VERSION = 4.17
+ LIBNSPR_SOURCE = nspr-$(LIBNSPR_VERSION).tar.gz
+ LIBNSPR_SITE = https://ftp.mozilla.org/pub/mozilla.org/nspr/releases/v$(LIBNSPR_VERSION)/src
+ LIBNSPR_SUBDIR = nspr
+diff --git a/package/libnss/libnss.hash b/package/libnss/libnss.hash
+index 7be7e48a69..6c8ce83784 100644
+--- a/package/libnss/libnss.hash
++++ b/package/libnss/libnss.hash
+@@ -1,2 +1,4 @@
+-# From https://ftp.mozilla.org/pub/security/nss/releases/NSS_3_30_2_RTM/src/SHA256SUMS
+-sha256	0d4a77ff26bcee79fa8afe0125e0df6ae9e798b6b36782fa29e28febf7cfce24	nss-3.30.2.tar.gz
++# From https://ftp.mozilla.org/pub/security/nss/releases/NSS_3_33_RTM/src/SHA256SUMS
++sha256	98f0dabd36408e83dd3a11727336cc3cdfee4cbdd9aede2b2831eb2389c284e4  nss-3.33.tar.gz
++# Locally calculated
++sha256	a20c1a32d1f8102432360b42e932869f7c11c7cdbacf9cac554c422132af47f4  nss/COPYING
+diff --git a/package/libnss/libnss.mk b/package/libnss/libnss.mk
+index 3c38bb0c16..53e278557e 100644
+--- a/package/libnss/libnss.mk
++++ b/package/libnss/libnss.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBNSS_VERSION = 3.30.2
++LIBNSS_VERSION = 3.33
+ LIBNSS_SOURCE = nss-$(LIBNSS_VERSION).tar.gz
+ LIBNSS_SITE = https://ftp.mozilla.org/pub/mozilla.org/security/nss/releases/NSS_$(subst .,_,$(LIBNSS_VERSION))_RTM/src
+ LIBNSS_DISTDIR = dist
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index 89ac5b6a39..ed02cb54c1 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -214,15 +214,15 @@ endchoice
+ 
+ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+-	default "3.2.93"	if BR2_KERNEL_HEADERS_3_2
++	default "3.2.94"	if BR2_KERNEL_HEADERS_3_2
+ 	default "3.4.113"	if BR2_KERNEL_HEADERS_3_4
+ 	default "3.10.107"	if BR2_KERNEL_HEADERS_3_10
+ 	default "3.12.74"	if BR2_KERNEL_HEADERS_3_12
+-	default "3.18.71"	if BR2_KERNEL_HEADERS_3_18
++	default "3.18.72"	if BR2_KERNEL_HEADERS_3_18
+ 	default "3.19.8"	if BR2_KERNEL_HEADERS_3_19
+ 	default "4.0.9"		if BR2_KERNEL_HEADERS_4_0
+-	default "4.1.44"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.88"	if BR2_KERNEL_HEADERS_4_4
++	default "4.1.45"	if BR2_KERNEL_HEADERS_4_1
++	default "4.4.95"	if BR2_KERNEL_HEADERS_4_4
+ 	default "4.8.17"	if BR2_KERNEL_HEADERS_4_8
+-	default "4.9.51"	if BR2_KERNEL_HEADERS_4_9
++	default "4.9.59"	if BR2_KERNEL_HEADERS_4_9
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/midori/Config.in b/package/midori/Config.in
+index 0d7672c134..35dac156bd 100644
+--- a/package/midori/Config.in
++++ b/package/midori/Config.in
+@@ -1,7 +1,7 @@
+-comment "midori needs libgtk3 and a glibc toolchain w/ C++, gcc >= 4.9"
++comment "midori needs libgtk3 and a glibc toolchain w/ C++, gcc >= 5"
+ 	depends on BR2_PACKAGE_WEBKITGTK_ARCH_SUPPORTS
+ 	depends on !BR2_INSTALL_LIBSTDCPP || !BR2_PACKAGE_LIBGTK3 \
+-		|| !BR2_TOOLCHAIN_GCC_AT_LEAST_4_9 || !BR2_TOOLCHAIN_USES_GLIBC
++		|| !BR2_TOOLCHAIN_GCC_AT_LEAST_5 || !BR2_TOOLCHAIN_USES_GLIBC
+ 
+ config BR2_PACKAGE_MIDORI
+ 	bool "midori"
+@@ -18,7 +18,7 @@ config BR2_PACKAGE_MIDORI
+ 	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS # libgcrypt, gcr, gnupg2
+ 	depends on BR2_PACKAGE_LIBGTK3
+ 	depends on BR2_INSTALL_LIBSTDCPP # webkitgtk
+-	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_4_9 # webkitgtk
++	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_5 # webkitgtk
+ 	depends on BR2_TOOLCHAIN_USES_GLIBC # webkitgtk
+ 	depends on BR2_PACKAGE_WEBKITGTK_ARCH_SUPPORTS
+ 	help
+diff --git a/package/musl/0002-in-dns-parsing-callback-enforce-MAXADDRS-to-preclude.patch b/package/musl/0002-in-dns-parsing-callback-enforce-MAXADDRS-to-preclude.patch
+new file mode 100644
+index 0000000000..c6b5ef26b4
+--- /dev/null
++++ b/package/musl/0002-in-dns-parsing-callback-enforce-MAXADDRS-to-preclude.patch
+@@ -0,0 +1,35 @@
++From 45ca5d3fcb6f874bf5ba55d0e9651cef68515395 Mon Sep 17 00:00:00 2001
++From: Rich Felker <dalias@aerifal.cx>
++Date: Wed, 18 Oct 2017 14:50:03 -0400
++Subject: [PATCH] in dns parsing callback, enforce MAXADDRS to preclude
++ overflow
++
++MAXADDRS was chosen not to need enforcement, but the logic used to
++compute it assumes the answers received match the RR types of the
++queries. specifically, it assumes that only one replu contains A
++record answers. if the replies to both the A and the AAAA query have
++their answer sections filled with A records, MAXADDRS can be exceeded
++and clobber the stack of the calling function.
++
++this bug was found and reported by Felix Wilhelm.
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/network/lookup_name.c | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/src/network/lookup_name.c b/src/network/lookup_name.c
++index 066be4d5..209c20f0 100644
++--- a/src/network/lookup_name.c
+++++ b/src/network/lookup_name.c
++@@ -111,6 +111,7 @@ static int dns_parse_callback(void *c, int rr, const void *data, int len, const
++ {
++ 	char tmp[256];
++ 	struct dpc_ctx *ctx = c;
+++	if (ctx->cnt >= MAXADDRS) return -1;
++ 	switch (rr) {
++ 	case RR_A:
++ 		if (len != 4) return -1;
++-- 
++2.11.0
++
+diff --git a/package/nodejs/6.11.1/0002-inspector-don-t-build-when-ssl-support-is-disabled.patch b/package/nodejs/6.11.1/0002-inspector-don-t-build-when-ssl-support-is-disabled.patch
+deleted file mode 100644
+index c07cbf8c65..0000000000
+--- a/package/nodejs/6.11.1/0002-inspector-don-t-build-when-ssl-support-is-disabled.patch
++++ /dev/null
+@@ -1,35 +0,0 @@
+-From 7fa541f6c0a31e3ddcab6ea85040b531bbaa4651 Mon Sep 17 00:00:00 2001
+-From: Martin Bark <martin@barkynet.com>
+-Date: Tue, 12 Jul 2016 19:03:28 +0100
+-Subject: [PATCH] inspector: don't build when ssl support is disabled
+-
+-Signed-off-by: Martin Bark <martin@barkynet.com>
+----
+- node.gyp | 4 ++--
+- 1 file changed, 2 insertions(+), 2 deletions(-)
+-
+-diff --git a/node.gyp b/node.gyp
+-index 8a8bd00..fdccd60 100644
+---- a/node.gyp
+-+++ b/node.gyp
+-@@ -302,7 +302,7 @@
+-             'deps/v8/src/third_party/vtune/v8vtune.gyp:v8_vtune'
+-           ],
+-         }],
+--        [ 'v8_inspector=="true"', {
+-+        [ 'v8_inspector=="true" and node_use_openssl =="true"', {
+-           'defines': [
+-             'HAVE_INSPECTOR=1',
+-             'V8_INSPECTOR_USE_STL=1',
+-@@ -828,7 +828,7 @@
+-       ],
+- 
+-       'conditions': [
+--        ['v8_inspector=="true"', {
+-+        ['v8_inspector=="true" and node_use_openssl =="true"', {
+-           'sources': [
+-             'src/inspector_socket.cc',
+-             'test/cctest/test_inspector_socket.cc'
+--- 
+-2.7.4
+-
+diff --git a/package/nodejs/6.11.1/0001-gyp-force-link-command-to-use-CXX.patch b/package/nodejs/6.11.5/0001-gyp-force-link-command-to-use-CXX.patch
+similarity index 85%
+rename from package/nodejs/6.11.1/0001-gyp-force-link-command-to-use-CXX.patch
+rename to package/nodejs/6.11.5/0001-gyp-force-link-command-to-use-CXX.patch
+index 5746582c14..7b5a9947c5 100644
+--- a/package/nodejs/6.11.1/0001-gyp-force-link-command-to-use-CXX.patch
++++ b/package/nodejs/6.11.5/0001-gyp-force-link-command-to-use-CXX.patch
+@@ -15,12 +15,12 @@ diff --git a/tools/gyp/pylib/gyp/generator/make.py b/tools/gyp/pylib/gyp/generat
+ index b88a433..0a1f2e0 100644
+ --- a/tools/gyp/pylib/gyp/generator/make.py
+ +++ b/tools/gyp/pylib/gyp/generator/make.py
+-@@ -142,7 +142,7 @@ cmd_alink_thin = rm -f $@ && $(AR.$(TOOLSET)) crsT $@ $(filter %.o,$^)
++@@ -147,7 +147,7 @@ cmd_alink_thin = rm -f $@ && $(AR.$(TOOLSET)) crsT $@ $(filter %.o,$^)
+  # special "figure out circular dependencies" flags around the entire
+  # input list during linking.
+  quiet_cmd_link = LINK($(TOOLSET)) $@
+--cmd_link = $(LINK.$(TOOLSET)) $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -o $@ -Wl,--start-group $(LD_INPUTS) -Wl,--end-group $(LIBS)
+-+cmd_link = $(CXX.$(TOOLSET)) $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -o $@ -Wl,--start-group $(LD_INPUTS) -Wl,--end-group $(LIBS)
++-cmd_link = $(LINK.$(TOOLSET)) $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -o $@ -Wl,--start-group $(LD_INPUTS) $(LIBS) -Wl,--end-group
+++cmd_link = $(CXX.$(TOOLSET)) $(GYP_LDFLAGS) $(LDFLAGS.$(TOOLSET)) -o $@ -Wl,--start-group $(LD_INPUTS) $(LIBS) -Wl,--end-group
+  
+  # We support two kinds of shared objects (.so):
+  # 1) shared_library, which is just bundling together many dependent libraries
+diff --git a/package/nodejs/6.11.1/0003-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch b/package/nodejs/6.11.5/0002-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch
+similarity index 90%
+rename from package/nodejs/6.11.1/0003-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch
+rename to package/nodejs/6.11.5/0002-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch
+index f07fdc2455..c22311ed3f 100644
+--- a/package/nodejs/6.11.1/0003-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch
++++ b/package/nodejs/6.11.5/0002-src-add-HAVE_OPENSSL-directive-to-openssl_config.patch
+@@ -33,9 +33,9 @@ diff --git a/src/node.cc b/src/node.cc
+ index 57415bba41..ec78339d89 100644
+ --- a/src/node.cc
+ +++ b/src/node.cc
+-@@ -4233,8 +4233,10 @@ void Init(int* argc,
+-   if (config_warning_file.empty())
+-     SafeGetenv("NODE_REDIRECT_WARNINGS", &config_warning_file);
++@@ -4389,8 +4389,10 @@ void Init(int* argc,
++   V8::SetFlagsFromString(NODE_V8_OPTIONS, sizeof(NODE_V8_OPTIONS) - 1);
++ #endif
+  
+ +#if HAVE_OPENSSL
+    if (openssl_config.empty())
+diff --git a/package/nodejs/Config.in b/package/nodejs/Config.in
+index 31dcfb67d9..9ce02306e4 100644
+--- a/package/nodejs/Config.in
++++ b/package/nodejs/Config.in
+@@ -43,7 +43,7 @@ config BR2_PACKAGE_NODEJS_V8_ARCH_SUPPORTS
+ 
+ config BR2_PACKAGE_NODEJS_VERSION_STRING
+ 	string
+-	default "6.11.1"		if BR2_PACKAGE_NODEJS_V8_ARCH_SUPPORTS
++	default "6.11.5"		if BR2_PACKAGE_NODEJS_V8_ARCH_SUPPORTS
+ 	default "0.10.48"
+ 
+ config BR2_PACKAGE_NODEJS_NPM
+diff --git a/package/nodejs/nodejs.hash b/package/nodejs/nodejs.hash
+index 2dbbdc7cc2..319774c62d 100644
+--- a/package/nodejs/nodejs.hash
++++ b/package/nodejs/nodejs.hash
+@@ -1,5 +1,5 @@
+ # From upstream URL: http://nodejs.org/dist/v0.10.48/SHASUMS256.txt
+ sha256  365a93d9acc076a0d93f087d269f376abeebccad599a9dab72f2f6ed96c8ae6e  node-v0.10.48.tar.xz
+ 
+-# From upstream URL: http://nodejs.org/dist/v6.11.1/SHASUMS256.txt
+-sha256  6f6655b85919aa54cb045a6d69a226849802fcc26491d0db4ce59873e41cc2b8  node-v6.11.1.tar.xz
++# From upstream URL: http://nodejs.org/dist/v6.11.5/SHASUMS256.txt
++sha256  1c6de415216799fbaeca82304b3fef87accc7101ebf2ead7d5c545e0779e8aaf  node-v6.11.5.tar.xz
+diff --git a/package/openssh/0001-configure-ac-detect-mips-abi.patch b/package/openssh/0001-configure-ac-detect-mips-abi.patch
+new file mode 100644
+index 0000000000..0d43e6baf0
+--- /dev/null
++++ b/package/openssh/0001-configure-ac-detect-mips-abi.patch
+@@ -0,0 +1,44 @@
++From f4fcd8c788a4854d4ebae400cf55e3957f906835 Mon Sep 17 00:00:00 2001
++From: Vicente Olivert Riera <Vincent.Riera@imgtec.com>
++Date: Tue, 20 Jun 2017 16:42:11 +0100
++Subject: [PATCH] configure.ac: detect MIPS ABI
++
++Signed-off-by: Vicente Olivert Riera <Vincent.Riera@imgtec.com>
++[Upstream commit: ttps://github.com/openssh/openssh-portable/commit/f4fcd8c788a4854d4ebae400cf55e3957f906835]
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++---
++ configure.ac | 21 +++++++++++++++++++++
++ 1 file changed, 21 insertions(+)
++
++diff --git a/configure.ac b/configure.ac
++index 18079acba..f990cfe08 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -746,6 +746,27 @@ main() { if (NSVersionOfRunTimeLibrary("System") >= (60 << 16))
++ 	fi
++ 	AC_CHECK_HEADERS([linux/seccomp.h linux/filter.h linux/audit.h], [],
++ 	    [], [#include <linux/types.h>])
+++	# Obtain MIPS ABI
+++	case "$host" in
+++	mips*)
+++		AC_COMPILE_IFELSE([
+++#if _MIPS_SIM != _ABIO32
+++#error
+++#endif
+++			],[mips_abi="o32"],[AC_COMPILE_IFELSE([
+++#if _MIPS_SIM != _ABIN32
+++#error
+++#endif
+++				],[mips_abi="n32"],[AC_COMPILE_IFELSE([
+++#if _MIPS_SIM != _ABI64
+++#error
+++#endif
+++					],[mips_abi="n64"],[AC_MSG_ERROR([unknown MIPS ABI])
+++				])
+++			])
+++		])
+++		;;
+++	esac
++ 	AC_MSG_CHECKING([for seccomp architecture])
++ 	seccomp_audit_arch=
++ 	case "$host" in
+diff --git a/package/openssh/0002-configure-ac-properly-set-seccomp-audit-arch-for-mips64.patch b/package/openssh/0002-configure-ac-properly-set-seccomp-audit-arch-for-mips64.patch
+new file mode 100644
+index 0000000000..879af5e3d5
+--- /dev/null
++++ b/package/openssh/0002-configure-ac-properly-set-seccomp-audit-arch-for-mips64.patch
+@@ -0,0 +1,63 @@
++From afc3e31b637db9dae106d4fad78f7b481c8c24e3 Mon Sep 17 00:00:00 2001
++From: Vicente Olivert Riera <Vincent.Riera@imgtec.com>
++Date: Tue, 20 Jun 2017 16:42:28 +0100
++Subject: [PATCH] configure.ac: properly set seccomp_audit_arch for MIPS64
++
++Currently seccomp_audit_arch is set to AUDIT_ARCH_MIPS64 or
++AUDIT_ARCH_MIPSEL64 (depending on the endinness) when openssh is built
++for MIPS64. However, that's only valid for n64 ABI. The right macros for
++n32 ABI defined in seccomp.h are AUDIT_ARCH_MIPS64N32 and
++AUDIT_ARCH_MIPSEL64N32, for big and little endian respectively.
++
++Because of that an sshd built for MIPS64 n32 rejects connection attempts
++and the output of strace reveals that the problem is related to seccomp
++audit:
++
++[pid   194] prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, {len=57,
++filter=0x555d5da0}) = 0
++[pid   194] write(7, "\0\0\0]\0\0\0\5\0\0\0Ulist_hostkey_types: "..., 97) = ?
++[pid   193] <... poll resumed> )        = 2 ([{fd=5, revents=POLLIN|POLLHUP},
++{fd=6, revents=POLLHUP}])
++[pid   194] +++ killed by SIGSYS +++
++
++This patch fixes that problem by setting the right value to
++seccomp_audit_arch taking into account the MIPS64 ABI.
++
++Signed-off-by: Vicente Olivert Riera <Vincent.Riera@imgtec.com>
++[Upstream commit: https://github.com/openssh/openssh-portable/commit/afc3e31b637db9dae106d4fad78f7b481c8c24e3]
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++---
++ configure.ac | 18 ++++++++++++++++--
++ 1 file changed, 16 insertions(+), 2 deletions(-)
++
++diff --git a/configure.ac b/configure.ac
++index f990cfe08..5d640f679 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -801,10 +801,24 @@ main() { if (NSVersionOfRunTimeLibrary("System") >= (60 << 16))
++ 		seccomp_audit_arch=AUDIT_ARCH_MIPSEL
++ 		;;
++ 	mips64-*)
++-		seccomp_audit_arch=AUDIT_ARCH_MIPS64
+++		case "$mips_abi" in
+++		"n32")
+++			seccomp_audit_arch=AUDIT_ARCH_MIPS64N32
+++			;;
+++		"n64")
+++			seccomp_audit_arch=AUDIT_ARCH_MIPS64
+++			;;
+++		esac
++ 		;;
++ 	mips64el-*)
++-		seccomp_audit_arch=AUDIT_ARCH_MIPSEL64
+++		case "$mips_abi" in
+++		"n32")
+++			seccomp_audit_arch=AUDIT_ARCH_MIPSEL64N32
+++			;;
+++		"n64")
+++			seccomp_audit_arch=AUDIT_ARCH_MIPSEL64
+++			;;
+++		esac
++ 		;;
++ 	esac
++ 	if test "x$seccomp_audit_arch" != "x" ; then
+diff --git a/package/openssh/0001-fix-pam-uclibc-pthreads-clash.patch b/package/openssh/0003-fix-pam-uclibc-pthreads-clash.patch
+similarity index 100%
+rename from package/openssh/0001-fix-pam-uclibc-pthreads-clash.patch
+rename to package/openssh/0003-fix-pam-uclibc-pthreads-clash.patch
+diff --git a/package/openssh/0002-fix-howmany-include.patch b/package/openssh/0004-fix-howmany-include.patch
+similarity index 100%
+rename from package/openssh/0002-fix-howmany-include.patch
+rename to package/openssh/0004-fix-howmany-include.patch
+diff --git a/package/openssh/openssh.hash b/package/openssh/openssh.hash
+index ed628fa98b..d8a4da32ad 100644
+--- a/package/openssh/openssh.hash
++++ b/package/openssh/openssh.hash
+@@ -1,4 +1,4 @@
+-# From http://www.openssh.com/txt/release-7.5 (base64 encoded)
+-sha256 9846e3c5fab9f0547400b4d2c017992f914222b3fd1f8eee6c7dc6bc5e59f9f0  openssh-7.5p1.tar.gz
+-sha256 310860606c4175cdfd095e724f624df27340c89a916f7a09300bcb7988d5cfbf  afc3e31b637db9dae106d4fad78f7b481c8c24e3.patch
+-sha256 395aa1006967713b599555440e09f898781a5559e496223587401768ece10904  f4fcd8c788a4854d4ebae400cf55e3957f906835.patch
++# From http://www.openssh.com/txt/release-7.6 (base64 encoded)
++sha256 a323caeeddfe145baaa0db16e98d784b1fbc7dd436a6bf1f479dfd5cd1d21723  openssh-7.6p1.tar.gz
++# Locally calculated
++sha256 05a4c25ef464e19656c5259bd4f4da8428efab01044f3541b79fbb3ff209350f  LICENCE
+diff --git a/package/openssh/openssh.mk b/package/openssh/openssh.mk
+index dea7b472f0..368cb33fef 100644
+--- a/package/openssh/openssh.mk
++++ b/package/openssh/openssh.mk
+@@ -4,16 +4,14 @@
+ #
+ ################################################################################
+ 
+-OPENSSH_VERSION = 7.5p1
++OPENSSH_VERSION = 7.6p1
+ OPENSSH_SITE = http://ftp.openbsd.org/pub/OpenBSD/OpenSSH/portable
+ OPENSSH_LICENSE = BSD-3c, BSD-2c, Public Domain
+ OPENSSH_LICENSE_FILES = LICENCE
+ # Autoreconf needed due to the following patches modifying configure.ac:
+-# f4fcd8c788a4854d4ebae400cf55e3957f906835.patch
+-# afc3e31b637db9dae106d4fad78f7b481c8c24e3.patch
++# 0001-configure-ac-detect-mips-abi.patch
++# 0002-configure-ac-properly-set-seccomp-audit-arch-for-mips64.patch
+ OPENSSH_AUTORECONF = YES
+-OPENSSH_PATCH = https://github.com/openssh/openssh-portable/commit/f4fcd8c788a4854d4ebae400cf55e3957f906835.patch \
+-	https://github.com/openssh/openssh-portable/commit/afc3e31b637db9dae106d4fad78f7b481c8c24e3.patch
+ OPENSSH_CONF_ENV = LD="$(TARGET_CC)" LDFLAGS="$(TARGET_CFLAGS)"
+ OPENSSH_CONF_OPTS = \
+ 	--sysconfdir=/etc/ssh \
+diff --git a/package/openvpn/openvpn.hash b/package/openvpn/openvpn.hash
+index 1db3a31e1d..318f9edb88 100644
+--- a/package/openvpn/openvpn.hash
++++ b/package/openvpn/openvpn.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated after checking signature
+-sha256 15e15fc97f189b52aee7c90ec8355aa77469c773125110b4c2f089abecde36fb  openvpn-2.4.3.tar.xz
++sha256 96cd1b8fe1e8cb2920f07c3fd3985faea756e16fdeebd11d3e146d5bd2b04a80  openvpn-2.4.4.tar.xz
+diff --git a/package/openvpn/openvpn.mk b/package/openvpn/openvpn.mk
+index 31b6e00ae3..6cbc35dc11 100644
+--- a/package/openvpn/openvpn.mk
++++ b/package/openvpn/openvpn.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-OPENVPN_VERSION = 2.4.3
++OPENVPN_VERSION = 2.4.4
+ OPENVPN_SOURCE = openvpn-$(OPENVPN_VERSION).tar.xz
+ OPENVPN_SITE = http://swupdate.openvpn.net/community/releases
+ OPENVPN_DEPENDENCIES = host-pkgconf openssl
+diff --git a/package/qemu/0001-user-exec-fix-usage-of-mcontext-structure-on-ARM-uCl.patch b/package/qemu/0001-user-exec-fix-usage-of-mcontext-structure-on-ARM-uCl.patch
+new file mode 100644
+index 0000000000..6d6d024d9d
+--- /dev/null
++++ b/package/qemu/0001-user-exec-fix-usage-of-mcontext-structure-on-ARM-uCl.patch
+@@ -0,0 +1,35 @@
++From d3f1e7e9ff9aae3f770b0bcb9aa3c2f787f76a1b Mon Sep 17 00:00:00 2001
++From: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++Date: Fri, 5 May 2017 09:07:15 +0200
++Subject: [PATCH] user-exec: fix usage of mcontext structure on ARM/uClibc
++
++user-exec.c has some conditional code to decide how to use the
++mcontext structure. Unfortunately, since uClibc defines __GLIBC__, but
++with old versions of __GLIBC__ and __GLIBC_MINOR__, an old code path
++gets used, which doesn't apply to uClibc.
++
++Fix this by excluding __UCLIBC__, which ensures we fall back to the
++general case of using uc_mcontext.arm_pc, which works fine with
++uClibc.
++
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++---
++ user-exec.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/user-exec.c b/user-exec.c
++index 6db0758..2b3d116 100644
++--- a/user-exec.c
+++++ b/user-exec.c
++@@ -409,7 +409,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
++ 
++ #if defined(__NetBSD__)
++     pc = uc->uc_mcontext.__gregs[_REG_R15];
++-#elif defined(__GLIBC__) && (__GLIBC__ < 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ <= 3))
+++#elif defined(__GLIBC__) && !defined(__UCLIBC__) && (__GLIBC__ < 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ <= 3))
++     pc = uc->uc_mcontext.gregs[R15];
++ #else
++     pc = uc->uc_mcontext.arm_pc;
++-- 
++2.7.4
++
+diff --git a/package/qemu/qemu.hash b/package/qemu/qemu.hash
+index 572a5c911a..405d192508 100644
+--- a/package/qemu/qemu.hash
++++ b/package/qemu/qemu.hash
+@@ -1,2 +1,2 @@
+ # Locally computed, tarball verified with GPG signature
+-sha256 326e739506ba690daf69fc17bd3913a6c313d9928d743bd8eddb82f403f81e53  qemu-2.7.0.tar.bz2
++sha256 7b50634d729dcabe4a96d74062832274fa2f4c883e82904f5e6955f801edab54  qemu-2.8.1.1.tar.xz
+diff --git a/package/qemu/qemu.mk b/package/qemu/qemu.mk
+index 66efcba345..1cb6ed1128 100644
+--- a/package/qemu/qemu.mk
++++ b/package/qemu/qemu.mk
+@@ -4,9 +4,9 @@
+ #
+ ################################################################################
+ 
+-QEMU_VERSION = 2.7.0
+-QEMU_SOURCE = qemu-$(QEMU_VERSION).tar.bz2
+-QEMU_SITE = http://wiki.qemu.org/download
++QEMU_VERSION = 2.8.1.1
++QEMU_SOURCE = qemu-$(QEMU_VERSION).tar.xz
++QEMU_SITE = http://download.qemu.org
+ QEMU_LICENSE = GPLv2, LGPLv2.1, MIT, BSD-3c, BSD-2c, Others/BSD-1c
+ QEMU_LICENSE_FILES = COPYING COPYING.LIB
+ # NOTE: there is no top-level license file for non-(L)GPL licenses;
+diff --git a/package/qt/0014-Enable-QtWebKit-with-newer-GCC.patch b/package/qt/0014-Enable-QtWebKit-with-newer-GCC.patch
+new file mode 100644
+index 0000000000..1e555e721f
+--- /dev/null
++++ b/package/qt/0014-Enable-QtWebKit-with-newer-GCC.patch
+@@ -0,0 +1,50 @@
++From f566411fb314b7e4ab01f28e25e942cfaf8c59b7 Mon Sep 17 00:00:00 2001
++From: Evgeniy Didin <didin@synopsys.com>
++Date: Fri, 15 Sep 2017 19:43:48 +0300
++Subject: [PATCH] qt: Allow enabling of QtWebKit with GCC 6+
++
++Building Qt with QtWebKit on configuration step there is
++a check which disables QtWebKit build with GCC 6+.
++Back in the day nobody thought about building Qt with GCC
++version greater than 5.x. And now with modern GCCs like
++6.x and 7.x this assumption gets in the way.
++
++Given in Buildroot today we don't have GCC older than 4.9 
++it should be safe to remove now meaningless check completely.
++
++Signed-off-by: Evgeniy Didin <didin@synopsys.com>
++Cc: Alexey Brodkin <abrodkin@synopsys.com>
++Cc: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++
++---
++ configure | 14 --------------
++ 1 file changed, 14 deletions(-)
++
++diff --git a/configure b/configure
++index 10ad7ca0b0..8771144a65 100755
++--- a/configure
+++++ b/configure
++@@ -7731,20 +7731,6 @@ case "$XPLATFORM" in
++ 	canBuildWebKit="no"
++ 	canBuildQtXmlPatterns="no"
++ 	;;
++-    *-g++*)
++-	# Check gcc's version
++-	case "$(${QMAKE_CONF_COMPILER} -dumpversion)" in
++-	    5*|4*|3.4*)
++-		;;
++-            3.3*)
++-                canBuildWebKit="no"
++-                ;;
++-	    *)
++-		canBuildWebKit="no"
++-		canBuildQtXmlPatterns="no"
++-		;;
++-	esac
++-	;;
++     solaris-cc*)
++         # Check the compiler version
++         case `${QMAKE_CONF_COMPILER} -V 2>&1 | awk '{print $4}'` in
++-- 
++2.11.0
++
+diff --git a/package/redis/redis.hash b/package/redis/redis.hash
+index 3cd86470bd..ce2d66b8c2 100644
+--- a/package/redis/redis.hash
++++ b/package/redis/redis.hash
+@@ -1,4 +1,4 @@
+ # From https://github.com/antirez/redis-hashes/blob/master/README
+-sha1 6780d1abb66f33a97aad0edbe020403d0a15b67f  redis-3.2.8.tar.gz
+-# Calculated based on the hash above
+-sha256 61b373c23d18e6cc752a69d5ab7f676c6216dc2853e46750a8c4ed791d68482c  redis-3.2.8.tar.gz
++sha256 31ae927cab09f90c9ca5954aab7aeecc3bb4da6087d3d12ba0a929ceb54081b5  redis-3.2.11.tar.gz
++# Locally calculated
++sha256 cbf420a3672475a6e2765e3c0984c1f81efe0212afb94a3c998ee63bfd661063  COPYING
+diff --git a/package/redis/redis.mk b/package/redis/redis.mk
+index c16bd238dc..d356b23a92 100644
+--- a/package/redis/redis.mk
++++ b/package/redis/redis.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-REDIS_VERSION = 3.2.8
++REDIS_VERSION = 3.2.11
+ REDIS_SITE = http://download.redis.io/releases
+ REDIS_LICENSE = BSD-3c (core); MIT and BSD family licenses (Bundled components)
+ REDIS_LICENSE_FILES = COPYING
+diff --git a/package/sdl2/0001-ppc.patch b/package/sdl2/0001-ppc.patch
+deleted file mode 100644
+index 0161103067..0000000000
+--- a/package/sdl2/0001-ppc.patch
++++ /dev/null
+@@ -1,47 +0,0 @@
+-Fixed bug 3466 - Can't build 2.0.5 on ppc64
+-
+-/home/fedora/SDL2-2.0.5/src/video/SDL_blit_N.c: In function 'calc_swizzle32':
+-/home/fedora/SDL2-2.0.5/src/video/SDL_blit_N.c:127:5: error: ISO C90 forbids mixed declarations and code [-Werror=declaration-after-statement]
+-const vector unsigned char plus = VECUINT8_LITERAL(0x00, 0x00, 0x00, 0x00,
+-^ 
+-
+-Downloaded from upstream repo
+-https://hg.libsdl.org/SDL/rev/5184186d4366
+-
+-Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+-
+-diff -r 71d4148e32de -r 5184186d4366 src/video/SDL_blit_N.c
+---- a/src/video/SDL_blit_N.c	Wed Oct 19 21:22:42 2016 -0700
+-+++ b/src/video/SDL_blit_N.c	Sat Oct 22 11:01:55 2016 -0700
+-@@ -118,12 +118,6 @@
+-         16, 8, 0, 24,
+-         0, NULL
+-     };
+--    if (!srcfmt) {
+--        srcfmt = &default_pixel_format;
+--    }
+--    if (!dstfmt) {
+--        dstfmt = &default_pixel_format;
+--    }
+-     const vector unsigned char plus = VECUINT8_LITERAL(0x00, 0x00, 0x00, 0x00,
+-                                                        0x04, 0x04, 0x04, 0x04,
+-                                                        0x08, 0x08, 0x08, 0x08,
+-@@ -136,6 +130,14 @@
+-     Uint32 gmask = RESHIFT(srcfmt->Gshift) << (dstfmt->Gshift);
+-     Uint32 bmask = RESHIFT(srcfmt->Bshift) << (dstfmt->Bshift);
+-     Uint32 amask;
+-+
+-+    if (!srcfmt) {
+-+        srcfmt = &default_pixel_format;
+-+    }
+-+    if (!dstfmt) {
+-+        dstfmt = &default_pixel_format;
+-+    }
+-+
+-     /* Use zero for alpha if either surface doesn't have alpha */
+-     if (dstfmt->Amask) {
+-         amask =
+-
+-
+-
+-
+diff --git a/package/sdl2/0002-gcc6.patch b/package/sdl2/0002-gcc6.patch
+deleted file mode 100644
+index 6b5e901dfe..0000000000
+--- a/package/sdl2/0002-gcc6.patch
++++ /dev/null
+@@ -1,64 +0,0 @@
+-
+-# HG changeset patch
+-# User Sam Lantinga <slouken@libsdl.org>
+-# Date 1479201270 28800
+-# Node ID ea44906e19b837f4d5b309525ca79ed9d00b1897
+-# Parent  6b2307dbec54f0bf4d5d8abf86241e29f3a03562
+-Fixed bug 3490 - Build failure with --enable-video-directfb
+-
+-felix
+-
+-Building SDL 2.0.5, or even the Mercurial snapshot (r10608) with GCC 6.2.1 and --enable-video-directfb generates a number of compiler diagnostics and fails.
+-
+-Downloaded from upstream repo
+-https://hg.libsdl.org/SDL/rev/ea44906e19b8
+-
+-Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+-
+-diff -r 6b2307dbec54 -r ea44906e19b8 src/video/directfb/SDL_DirectFB_render.c
+---- a/src/video/directfb/SDL_DirectFB_render.c	Tue Nov 15 01:12:27 2016 -0800
+-+++ b/src/video/directfb/SDL_DirectFB_render.c	Tue Nov 15 01:14:30 2016 -0800
+-@@ -1273,7 +1273,7 @@
+-                      Uint32 format, void * pixels, int pitch)
+- {
+-     Uint32 sdl_format;
+--    void * laypixels;
+-+    unsigned char* laypixels;
+-     int laypitch;
+-     DFBSurfacePixelFormat dfb_format;
+-     DirectFB_RenderData *data = (DirectFB_RenderData *) renderer->driverdata;
+-@@ -1303,7 +1303,7 @@
+-     SDL_Window *window = renderer->window;
+-     SDL_DFB_WINDOWDATA(window);
+-     Uint32 sdl_format;
+--    void * laypixels;
+-+    unsigned char* laypixels;
+-     int laypitch;
+-     DFBSurfacePixelFormat dfb_format;
+- 
+-diff -r 6b2307dbec54 -r ea44906e19b8 src/video/directfb/SDL_DirectFB_shape.c
+---- a/src/video/directfb/SDL_DirectFB_shape.c	Tue Nov 15 01:12:27 2016 -0800
+-+++ b/src/video/directfb/SDL_DirectFB_shape.c	Tue Nov 15 01:14:30 2016 -0800
+-@@ -37,17 +37,19 @@
+- SDL_WindowShaper*
+- DirectFB_CreateShaper(SDL_Window* window) {
+-     SDL_WindowShaper* result = NULL;
+-+    SDL_ShapeData* data;
+-+    int resized_properly;
+- 
+-     result = malloc(sizeof(SDL_WindowShaper));
+-     result->window = window;
+-     result->mode.mode = ShapeModeDefault;
+-     result->mode.parameters.binarizationCutoff = 1;
+-     result->userx = result->usery = 0;
+--    SDL_ShapeData* data = SDL_malloc(sizeof(SDL_ShapeData));
+-+    data = SDL_malloc(sizeof(SDL_ShapeData));
+-     result->driverdata = data;
+-     data->surface = NULL;
+-     window->shaper = result;
+--    int resized_properly = DirectFB_ResizeWindowShape(window);
+-+    resized_properly = DirectFB_ResizeWindowShape(window);
+-     SDL_assert(resized_properly == 0);
+- 
+-     return result;
+-
+diff --git a/package/sdl2/sdl2.hash b/package/sdl2/sdl2.hash
+index d69d43811d..588f8f49ef 100644
+--- a/package/sdl2/sdl2.hash
++++ b/package/sdl2/sdl2.hash
+@@ -1,2 +1,4 @@
+-# Locally calculated after checking http://www.libsdl.org/release/SDL2-2.0.5.tar.gz.sig
+-sha256 442038cf55965969f2ff06d976031813de643af9c9edc9e331bd761c242e8785  SDL2-2.0.5.tar.gz
++# Locally calculated after checking http://www.libsdl.org/release/SDL2-2.0.7.tar.gz.sig
++sha256 ee35c74c4313e2eda104b14b1b86f7db84a04eeab9430d56e001cea268bf4d5e  SDL2-2.0.7.tar.gz
++# Locally calculated
++sha256 bbd2edb1789c33de29bb9f8d1dbe2774584a9ce8c4e3162944b7a3a447f5e85d  COPYING.txt
+diff --git a/package/sdl2/sdl2.mk b/package/sdl2/sdl2.mk
+index 2ec12e639e..ce5f074142 100644
+--- a/package/sdl2/sdl2.mk
++++ b/package/sdl2/sdl2.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SDL2_VERSION = 2.0.5
++SDL2_VERSION = 2.0.7
+ SDL2_SOURCE = SDL2-$(SDL2_VERSION).tar.gz
+ SDL2_SITE = http://www.libsdl.org/release
+ SDL2_LICENSE = zlib
+@@ -20,7 +20,8 @@ SDL2_CONF_OPTS += \
+ 	--disable-pulseaudio \
+ 	--disable-video-opengl \
+ 	--disable-video-opengles \
+-	--disable-video-wayland
++	--disable-video-wayland \
++	--disable-video-rpi
+ 
+ # We must enable static build to get compilation successful.
+ SDL2_CONF_OPTS += --enable-static
+diff --git a/package/webkitgtk/0001-WTF-Failure-to-build-when-the-compiler-specifically-.patch b/package/webkitgtk/0001-WTF-Failure-to-build-when-the-compiler-specifically-.patch
+deleted file mode 100644
+index 017771a07d..0000000000
+--- a/package/webkitgtk/0001-WTF-Failure-to-build-when-the-compiler-specifically-.patch
++++ /dev/null
+@@ -1,36 +0,0 @@
+-From 09d5520d910b63fba67bea1d8c71f5d426f345b7 Mon Sep 17 00:00:00 2001
+-From: "aperez@igalia.com"
+- <aperez@igalia.com@268f45cc-cd09-0410-ab3c-d52691b4dbfc>
+-Date: Wed, 12 Jul 2017 18:42:29 +0000
+-Subject: [PATCH] [WTF] Failure to build when the compiler specifically targets
+- ARMv8-A / defines __ARM_ARCH_8A__
+- https://bugs.webkit.org/show_bug.cgi?id=174425
+-
+-Reviewed by Michael Catanzaro.
+-
+-* wtf/Platform.h: Also check for __ARCH_ARM_8A__ to detect ARMv8.
+-
+-Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
+-
+-git-svn-id: http://svn.webkit.org/repository/webkit/trunk@219415 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+----
+- Source/WTF/wtf/Platform.h | 3 ++-
+- 1 file changed, 2 insertions(+), 1 deletion(-)
+-
+-diff --git a/Source/WTF/wtf/Platform.h b/Source/WTF/wtf/Platform.h
+-index 44d929c333c..7dccb44fcbf 100644
+---- a/Source/WTF/wtf/Platform.h
+-+++ b/Source/WTF/wtf/Platform.h
+-@@ -238,7 +238,8 @@
+-     || defined(__ARM_ARCH_7S__)
+- #define WTF_ARM_ARCH_VERSION 7
+- 
+--#elif defined(__ARM_ARCH_8__)
+-+#elif defined(__ARM_ARCH_8__) \
+-+    || defined(__ARM_ARCH_8A__)
+- #define WTF_ARM_ARCH_VERSION 8
+- 
+- /* MSVC sets _M_ARM */
+--- 
+-2.13.3
+-
+diff --git a/package/webkitgtk/0002-bmalloc-Failure-to-build-when-the-compiler-specifica.patch b/package/webkitgtk/0002-bmalloc-Failure-to-build-when-the-compiler-specifica.patch
+deleted file mode 100644
+index e1623bffa0..0000000000
+--- a/package/webkitgtk/0002-bmalloc-Failure-to-build-when-the-compiler-specifica.patch
++++ /dev/null
+@@ -1,36 +0,0 @@
+-From 07dab7fe552c53e7840e34d3c8bb1cc43a921706 Mon Sep 17 00:00:00 2001
+-From: "aperez@igalia.com"
+- <aperez@igalia.com@268f45cc-cd09-0410-ab3c-d52691b4dbfc>
+-Date: Wed, 12 Jul 2017 18:43:36 +0000
+-Subject: [PATCH] bmalloc: Failure to build when the compiler specifically
+- targets ARMv8-A / defines __ARM_ARCH_8A__
+- https://bugs.webkit.org/show_bug.cgi?id=174424
+-
+-Reviewed by Michael Catanzaro.
+-
+-* bmalloc/BPlatform.h: Also check for __ARCH_ARM_8A__ to detect ARMv8.
+-
+-Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
+-
+-git-svn-id: http://svn.webkit.org/repository/webkit/trunk@219416 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+----
+- Source/bmalloc/bmalloc/BPlatform.h | 3 ++-
+- 1 file changed, 2 insertions(+), 1 deletion(-)
+-
+-diff --git a/Source/bmalloc/bmalloc/BPlatform.h b/Source/bmalloc/bmalloc/BPlatform.h
+-index 8d768db63fb..400143a63fb 100644
+---- a/Source/bmalloc/bmalloc/BPlatform.h
+-+++ b/Source/bmalloc/bmalloc/BPlatform.h
+-@@ -120,7 +120,8 @@
+- || defined(__ARM_ARCH_7S__)
+- #define BARM_ARCH_VERSION 7
+- 
+--#elif defined(__ARM_ARCH_8__)
+-+#elif defined(__ARM_ARCH_8__) \
+-+|| defined(__ARM_ARCH_8A__)
+- #define BARM_ARCH_VERSION 8
+- 
+- /* MSVC sets _M_ARM */
+--- 
+-2.13.3
+-
+diff --git a/package/webkitgtk/0003-Fix-broken-build-when-ENABLE_VIDEO-is-disabled.patch b/package/webkitgtk/0003-Fix-broken-build-when-ENABLE_VIDEO-is-disabled.patch
+deleted file mode 100644
+index b460b0c924..0000000000
+--- a/package/webkitgtk/0003-Fix-broken-build-when-ENABLE_VIDEO-is-disabled.patch
++++ /dev/null
+@@ -1,207 +0,0 @@
+-From c054224e551547c3e3593b60ca1226fa4ac41c01 Mon Sep 17 00:00:00 2001
+-From: "timothy@hatcher.name"
+- <timothy@hatcher.name@268f45cc-cd09-0410-ab3c-d52691b4dbfc>
+-Date: Tue, 11 Jul 2017 18:07:24 +0000
+-Subject: [PATCH] Fix broken build when ENABLE_VIDEO is disabled.
+- https://bugs.webkit.org/show_bug.cgi?id=174368
+-
+-Reviewed by Alex Christensen.
+-
+-* dom/Document.cpp:
+-* html/canvas/WebGLRenderingContextBase.cpp:
+-(WebCore::WebGLRenderingContextBase::texSubImage2D):
+-(WebCore::WebGLRenderingContextBase::texImage2D):
+-* html/canvas/WebGLRenderingContextBase.h:
+-* html/canvas/WebGLRenderingContextBase.idl:
+-* testing/Internals.cpp:
+-(WebCore::Internals::mediaResponseSources):
+-(WebCore::Internals::mediaResponseContentRanges):
+-* testing/Internals.h:
+-* testing/Internals.idl:
+-
+-Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
+-
+-git-svn-id: http://svn.webkit.org/repository/webkit/trunk@219343 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+----
+- .../html/canvas/WebGLRenderingContextBase.cpp      | 16 +++++++++++----
+- .../html/canvas/WebGLRenderingContextBase.h        | 12 ++++++++++-
+- .../html/canvas/WebGLRenderingContextBase.idl      |  4 ++++
+- Source/WebCore/testing/Internals.cpp               | 24 ++++++++++++++++++++++
+- Source/WebCore/testing/Internals.h                 |  2 ++
+- Source/WebCore/testing/Internals.idl               |  2 ++
+- 6 files changed, 55 insertions(+), 5 deletions(-)
+-
+-diff --git a/Source/WebCore/html/canvas/WebGLRenderingContextBase.cpp b/Source/WebCore/html/canvas/WebGLRenderingContextBase.cpp
+-index f8fd63f7d87..a76a44ff06b 100644
+---- a/Source/WebCore/html/canvas/WebGLRenderingContextBase.cpp
+-+++ b/Source/WebCore/html/canvas/WebGLRenderingContextBase.cpp
+-@@ -3597,7 +3597,9 @@ ExceptionOr<void> WebGLRenderingContextBase::texSubImage2D(GC3Denum target, GC3D
+-         else
+-             texSubImage2DImpl(target, level, xoffset, yoffset, format, type, canvas->copiedImage(), GraphicsContext3D::HtmlDomCanvas, m_unpackFlipY, m_unpackPremultiplyAlpha);
+-         return { };
+--    }, [&](const RefPtr<HTMLVideoElement>& video) -> ExceptionOr<void> {
+-+    }
+-+#if ENABLE(VIDEO)
+-+    , [&](const RefPtr<HTMLVideoElement>& video) -> ExceptionOr<void> {
+-         ExceptionCode ec = 0;
+-         if (isContextLostOrPending() || !validateHTMLVideoElement("texSubImage2D", video.get(), ec))
+-             return ec ? Exception { ec } : ExceptionOr<void> { };
+-@@ -3620,7 +3622,9 @@ ExceptionOr<void> WebGLRenderingContextBase::texSubImage2D(GC3Denum target, GC3D
+-             return { };
+-         texSubImage2DImpl(target, level, xoffset, yoffset, format, type, image.get(), GraphicsContext3D::HtmlDomVideo, m_unpackFlipY, m_unpackPremultiplyAlpha);
+-         return { };
+--    });
+-+    }
+-+#endif
+-+    );
+- 
+-     return WTF::visit(visitor, source.value());
+- }
+-@@ -4107,7 +4111,9 @@ ExceptionOr<void> WebGLRenderingContextBase::texImage2D(GC3Denum target, GC3Dint
+-         else
+-             texImage2DImpl(target, level, internalformat, format, type, canvas->copiedImage(), GraphicsContext3D::HtmlDomCanvas, m_unpackFlipY, m_unpackPremultiplyAlpha);
+-         return { };
+--    }, [&](const RefPtr<HTMLVideoElement>& video) -> ExceptionOr<void> {
+-+    }
+-+#if ENABLE(VIDEO)
+-+    , [&](const RefPtr<HTMLVideoElement>& video) -> ExceptionOr<void> {
+-         ExceptionCode ec = 0;
+-         if (isContextLostOrPending() || !validateHTMLVideoElement("texImage2D", video.get(), ec)
+-             || !validateTexFunc("texImage2D", TexImage, SourceHTMLVideoElement, target, level, internalformat, video->videoWidth(), video->videoHeight(), 0, format, type, 0, 0))
+-@@ -4137,7 +4143,9 @@ ExceptionOr<void> WebGLRenderingContextBase::texImage2D(GC3Denum target, GC3Dint
+-             return { };
+-         texImage2DImpl(target, level, internalformat, format, type, image.get(), GraphicsContext3D::HtmlDomVideo, m_unpackFlipY, m_unpackPremultiplyAlpha);
+-         return { };
+--    });
+-+    }
+-+#endif
+-+    );
+- 
+-     return WTF::visit(visitor, source.value());
+- }
+-diff --git a/Source/WebCore/html/canvas/WebGLRenderingContextBase.h b/Source/WebCore/html/canvas/WebGLRenderingContextBase.h
+-index 31e5542e612..d4738e834a1 100644
+---- a/Source/WebCore/html/canvas/WebGLRenderingContextBase.h
+-+++ b/Source/WebCore/html/canvas/WebGLRenderingContextBase.h
+-@@ -57,7 +57,6 @@ class EXTShaderTextureLOD;
+- class EXTsRGB;
+- class EXTFragDepth;
+- class HTMLImageElement;
+--class HTMLVideoElement;
+- class ImageData;
+- class IntSize;
+- class OESStandardDerivatives;
+-@@ -85,6 +84,10 @@ class WebGLSharedObject;
+- class WebGLShaderPrecisionFormat;
+- class WebGLUniformLocation;
+- 
+-+#if ENABLE(VIDEO)
+-+class HTMLVideoElement;
+-+#endif
+-+
+- inline void clip1D(GC3Dint start, GC3Dsizei range, GC3Dsizei sourceRange, GC3Dint* clippedStart, GC3Dsizei* clippedRange)
+- {
+-     ASSERT(clippedStart && clippedRange);
+-@@ -244,7 +247,12 @@ public:
+- 
+-     void texImage2D(GC3Denum target, GC3Dint level, GC3Denum internalformat, GC3Dsizei width, GC3Dsizei height, GC3Dint border, GC3Denum format, GC3Denum type, RefPtr<ArrayBufferView>&&);
+- 
+-+#if ENABLE(VIDEO)
+-     using TexImageSource = WTF::Variant<RefPtr<ImageData>, RefPtr<HTMLImageElement>, RefPtr<HTMLCanvasElement>, RefPtr<HTMLVideoElement>>;
+-+#else
+-+    using TexImageSource = WTF::Variant<RefPtr<ImageData>, RefPtr<HTMLImageElement>, RefPtr<HTMLCanvasElement>>;
+-+#endif
+-+
+-     ExceptionOr<void> texImage2D(GC3Denum target, GC3Dint level, GC3Denum internalformat, GC3Denum format, GC3Denum type, std::optional<TexImageSource>);
+- 
+-     void texParameterf(GC3Denum target, GC3Denum pname, GC3Dfloat param);
+-@@ -677,7 +685,9 @@ protected:
+-         SourceImageData,
+-         SourceHTMLImageElement,
+-         SourceHTMLCanvasElement,
+-+#if ENABLE(VIDEO)
+-         SourceHTMLVideoElement,
+-+#endif
+-     };
+- 
+-     // Helper function for tex{Sub}Image2D to check if the input format/type/level/target/width/height/border/xoffset/yoffset are valid.
+-diff --git a/Source/WebCore/html/canvas/WebGLRenderingContextBase.idl b/Source/WebCore/html/canvas/WebGLRenderingContextBase.idl
+-index 63b64cdebd2..3111e798a89 100644
+---- a/Source/WebCore/html/canvas/WebGLRenderingContextBase.idl
+-+++ b/Source/WebCore/html/canvas/WebGLRenderingContextBase.idl
+-@@ -42,7 +42,11 @@ typedef (Float32Array or sequence<GLfloat>) Float32List;
+- typedef (Int32Array or sequence<GLint>) Int32List;
+- 
+- // FIXME: Should allow ImageBitmap too.
+-+#ifdef ENABLE_VIDEO
+- typedef (ImageData or HTMLImageElement or HTMLCanvasElement or HTMLVideoElement) TexImageSource;
+-+#else
+-+typedef (ImageData or HTMLImageElement or HTMLCanvasElement) TexImageSource;
+-+#endif
+- 
+- [
+-     Conditional=WEBGL,
+-diff --git a/Source/WebCore/testing/Internals.cpp b/Source/WebCore/testing/Internals.cpp
+-index 6d26d556e33..6d64845fd27 100644
+---- a/Source/WebCore/testing/Internals.cpp
+-+++ b/Source/WebCore/testing/Internals.cpp
+-@@ -2765,6 +2765,30 @@ String Internals::getImageSourceURL(Element& element)
+- 
+- #if ENABLE(VIDEO)
+- 
+-+Vector<String> Internals::mediaResponseSources(HTMLMediaElement& media)
+-+{
+-+    auto* resourceLoader = media.lastMediaResourceLoaderForTesting();
+-+    if (!resourceLoader)
+-+        return { };
+-+    Vector<String> result;
+-+    auto responses = resourceLoader->responsesForTesting();
+-+    for (auto& response : responses)
+-+        result.append(responseSourceToString(response));
+-+    return result;
+-+}
+-+
+-+Vector<String> Internals::mediaResponseContentRanges(HTMLMediaElement& media)
+-+{
+-+    auto* resourceLoader = media.lastMediaResourceLoaderForTesting();
+-+    if (!resourceLoader)
+-+        return { };
+-+    Vector<String> result;
+-+    auto responses = resourceLoader->responsesForTesting();
+-+    for (auto& response : responses)
+-+        result.append(response.httpHeaderField(HTTPHeaderName::ContentRange));
+-+    return result;
+-+}
+-+
+- void Internals::simulateAudioInterruption(HTMLMediaElement& element)
+- {
+- #if USE(GSTREAMER)
+-diff --git a/Source/WebCore/testing/Internals.h b/Source/WebCore/testing/Internals.h
+-index f5c08a87dfd..d35f651e452 100644
+---- a/Source/WebCore/testing/Internals.h
+-+++ b/Source/WebCore/testing/Internals.h
+-@@ -401,6 +401,8 @@ public:
+-     String getImageSourceURL(Element&);
+- 
+- #if ENABLE(VIDEO)
+-+    Vector<String> mediaResponseSources(HTMLMediaElement&);
+-+    Vector<String> mediaResponseContentRanges(HTMLMediaElement&);
+-     void simulateAudioInterruption(HTMLMediaElement&);
+-     ExceptionOr<bool> mediaElementHasCharacteristic(HTMLMediaElement&, const String&);
+- #endif
+-diff --git a/Source/WebCore/testing/Internals.idl b/Source/WebCore/testing/Internals.idl
+-index 155b70b4abf..3fe6885d362 100644
+---- a/Source/WebCore/testing/Internals.idl
+-+++ b/Source/WebCore/testing/Internals.idl
+-@@ -386,6 +386,8 @@ enum EventThrottlingBehavior {
+- 
+-     void enableAutoSizeMode(boolean enabled, long minimumWidth, long minimumHeight, long maximumWidth, long maximumHeight);
+- 
+-+    [Conditional=VIDEO] sequence<DOMString> mediaResponseSources(HTMLMediaElement media);
+-+    [Conditional=VIDEO] sequence<DOMString> mediaResponseContentRanges(HTMLMediaElement media);
+-     [Conditional=VIDEO] void simulateAudioInterruption(HTMLMediaElement element);
+-     [Conditional=VIDEO, MayThrowException] boolean mediaElementHasCharacteristic(HTMLMediaElement element, DOMString characteristic);
+- 
+--- 
+-2.13.3
+-
+diff --git a/package/webkitgtk/0004-GTK-WPE-CFLAGS-from-pkg-config-for-E-GL-are-not-pass.patch b/package/webkitgtk/0004-GTK-WPE-CFLAGS-from-pkg-config-for-E-GL-are-not-pass.patch
+deleted file mode 100644
+index 91c5116a2a..0000000000
+--- a/package/webkitgtk/0004-GTK-WPE-CFLAGS-from-pkg-config-for-E-GL-are-not-pass.patch
++++ /dev/null
+@@ -1,64 +0,0 @@
+-From 6579c307d85a9b447d3b7f13b25fb0a52177ed09 Mon Sep 17 00:00:00 2001
+-From: Carlos Alberto Lopez Perez <clopez@igalia.com>
+-Date: Thu, 3 Aug 2017 13:57:14 +0300
+-Subject: [PATCH] [GTK][WPE] CFLAGS from pkg-config for (E)GL are not passed to
+- WebKit https://bugs.webkit.org/show_bug.cgi?id=175125
+-
+-Patch by Carlos Alberto Lopez Perez <clopez@igalia.com> on 2017-08-03
+-Reviewed by NOBODY (OOPS!).
+-
+-* CMakeLists.txt: Pass GL-related flags to the WebKit component when
+-  appropriate.
+-
+-Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
+-
+----
+- Source/WebKit2/CMakeLists.txt | 31 +++++++++++++++++++++++++++++++
+- Source/WebKit2/ChangeLog      | 10 ++++++++++
+- 2 files changed, 41 insertions(+)
+-
+-diff --git a/Source/WebKit2/CMakeLists.txt b/Source/WebKit2/CMakeLists.txt
+-index 2d8215f6a35..b25e9872de2 100644
+---- a/Source/WebKit2/CMakeLists.txt
+-+++ b/Source/WebKit2/CMakeLists.txt
+-@@ -88,6 +88,37 @@ set(WebKit2_SYSTEM_INCLUDE_DIRECTORIES
+- )
+- 
+- if (ENABLE_GRAPHICS_CONTEXT_3D)
+-+    # For platforms that want to use system-provided OpenGL (ES) / EGL headers,
+-+    # these include directories, libraries or definitions need to be
+-+    # added before the ANGLE directories.
+-+    if (USE_OPENGL)
+-+        list(APPEND WebKit2_SYSTEM_INCLUDE_DIRECTORIES
+-+            ${OPENGL_INCLUDE_DIRS}
+-+        )
+-+        list(APPEND WebKit2_LIBRARIES
+-+            ${OPENGL_LIBRARIES}
+-+        )
+-+        add_definitions(${OPENGL_DEFINITIONS})
+-+    elseif (USE_OPENGL_ES_2)
+-+        list(APPEND WebKit2_SYSTEM_INCLUDE_DIRECTORIES
+-+            ${OPENGLES2_INCLUDE_DIRS}
+-+        )
+-+        list(APPEND WebKit2_LIBRARIES
+-+            ${OPENGLES2_LIBRARIES}
+-+        )
+-+        add_definitions(${OPENGLES2_DEFINITIONS})
+-+    endif ()
+-+
+-+    if (USE_EGL)
+-+        list(APPEND WebKit2_SYSTEM_INCLUDE_DIRECTORIES
+-+            ${EGL_INCLUDE_DIRS}
+-+        )
+-+        list(APPEND WebKit2_LIBRARIES
+-+            ${EGL_LIBRARIES}
+-+        )
+-+        add_definitions(${EGL_DEFINITIONS})
+-+    endif ()
+-+
+-     list(APPEND WebKit2_INCLUDE_DIRECTORIES
+-         "${THIRDPARTY_DIR}/ANGLE"
+-         "${THIRDPARTY_DIR}/ANGLE/include/KHR"
+---
+-2.13.4
+-
+diff --git a/package/webkitgtk/Config.in b/package/webkitgtk/Config.in
+index 7b50a13a04..bfe344419b 100644
+--- a/package/webkitgtk/Config.in
++++ b/package/webkitgtk/Config.in
+@@ -11,17 +11,17 @@ config BR2_PACKAGE_WEBKITGTK_ARCH_SUPPORTS
+ 	depends on BR2_TOOLCHAIN_HAS_SYNC_4
+ 	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS # libgcrypt
+ 
+-comment "webkitgtk needs libgtk3 and a glibc toolchain w/ C++, gcc >= 4.9"
++comment "webkitgtk needs libgtk3 and a glibc toolchain w/ C++, gcc >= 5"
+ 	depends on BR2_PACKAGE_WEBKITGTK_ARCH_SUPPORTS
+ 	depends on !BR2_PACKAGE_LIBGTK3 || !BR2_INSTALL_LIBSTDCPP || \
+ 		!BR2_TOOLCHAIN_USES_GLIBC || \
+-		!BR2_TOOLCHAIN_GCC_AT_LEAST_4_9
++		!BR2_TOOLCHAIN_GCC_AT_LEAST_5
+ 	depends on BR2_USE_MMU
+ 
+ config BR2_PACKAGE_WEBKITGTK
+ 	bool "webkitgtk"
+ 	depends on BR2_INSTALL_LIBSTDCPP
+-	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_4_9
++	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_5
+ 	depends on BR2_TOOLCHAIN_USES_GLIBC
+ 	depends on BR2_PACKAGE_LIBGTK3
+ 	depends on BR2_PACKAGE_WEBKITGTK_ARCH_SUPPORTS
+diff --git a/package/webkitgtk/webkitgtk.hash b/package/webkitgtk/webkitgtk.hash
+index 2c0fc50611..b1161157e7 100644
+--- a/package/webkitgtk/webkitgtk.hash
++++ b/package/webkitgtk/webkitgtk.hash
+@@ -1,4 +1,4 @@
+-# From https://webkitgtk.org/releases/webkitgtk-2.16.6.tar.xz.sums
+-md5  0e2d142a586e4ff79cf0324f4fdbf20c webkitgtk-2.16.6.tar.xz
+-sha1 f7fca3fbac3dc99e39f353a6df250635e684c922 webkitgtk-2.16.6.tar.xz
+-sha256 fc23650df953123c59b9c0edf3855e7bd55bd107820997fc72375811e1ea4b21 webkitgtk-2.16.6.tar.xz
++# From https://webkitgtk.org/releases/webkitgtk-2.18.2.tar.xz.sums
++md5 f63b3897d6fbf660bf72dfaca1fdea16 webkitgtk-2.18.2.tar.xz
++sha1 75571807a1f8c9efdf62f1c37e9fadf52b73d367 webkitgtk-2.18.2.tar.xz
++sha256 b14cb3f1b5321b1dc50abcc0445a97f8e2f8813562bca7ce4d2f8069f6fec8e7 webkitgtk-2.18.2.tar.xz
+diff --git a/package/webkitgtk/webkitgtk.mk b/package/webkitgtk/webkitgtk.mk
+index fc51031582..092c24e028 100644
+--- a/package/webkitgtk/webkitgtk.mk
++++ b/package/webkitgtk/webkitgtk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WEBKITGTK_VERSION = 2.16.6
++WEBKITGTK_VERSION = 2.18.2
+ WEBKITGTK_SITE = http://www.webkitgtk.org/releases
+ WEBKITGTK_SOURCE = webkitgtk-$(WEBKITGTK_VERSION).tar.xz
+ WEBKITGTK_INSTALL_STAGING = YES
+diff --git a/package/wget/0001-Fix-CRLF-injection-in-Wget-host-part.patch b/package/wget/0001-Fix-CRLF-injection-in-Wget-host-part.patch
+deleted file mode 100644
+index 380b075244..0000000000
+--- a/package/wget/0001-Fix-CRLF-injection-in-Wget-host-part.patch
++++ /dev/null
+@@ -1,40 +0,0 @@
+-From 4d729e322fae359a1aefaafec1144764a54e8ad4 Mon Sep 17 00:00:00 2001
+-From: =?UTF-8?q?Tim=20R=C3=BChsen?= <tim.ruehsen@gmx.de>
+-Date: Mon, 6 Mar 2017 10:04:22 +0100
+-Subject: [PATCH] Fix CRLF injection in Wget host part
+-
+-* src/url.c (url_parse): Reject control characters in host part of URL
+-
+-Reported-by: Orange Tsai
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Patch status: upstream commit 4d729e322fae35
+-
+- src/url.c | 11 +++++++++++
+- 1 file changed, 11 insertions(+)
+-
+-diff --git a/src/url.c b/src/url.c
+-index 8f8ff0b881af..7d36b27d7b92 100644
+---- a/src/url.c
+-+++ b/src/url.c
+-@@ -925,6 +925,17 @@ url_parse (const char *url, int *error, struct iri *iri, bool percent_encode)
+-       url_unescape (u->host);
+-       host_modified = true;
+- 
+-+      /* check for invalid control characters in host name */
+-+      for (p = u->host; *p; p++)
+-+        {
+-+          if (c_iscntrl(*p))
+-+            {
+-+              url_free(u);
+-+              error_code = PE_INVALID_HOST_NAME;
+-+              goto error;
+-+            }
+-+        }
+-+
+-       /* Apply IDNA regardless of iri->utf8_encode status */
+-       if (opt.enable_iri && iri)
+-         {
+--- 
+-2.11.0
+-
+diff --git a/package/wget/wget.hash b/package/wget/wget.hash
+index 5f22396b05..0048557946 100644
+--- a/package/wget/wget.hash
++++ b/package/wget/wget.hash
+@@ -1,2 +1,4 @@
+ # Locally calculated after checking pgp signature
+-sha256 0c950b9671881222a4d385b013c9604e98a8025d1988529dfca0e93617744cd2  wget-1.19.1.tar.xz
++sha256 d59a745ad2c522970660bb30d38601f9457b151b322e01fa20a5a0da0f55df07  wget-1.19.2.tar.lz
++# Locally calculated
++sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  COPYING
+diff --git a/package/wget/wget.mk b/package/wget/wget.mk
+index 22e057dbae..719e2dad9d 100644
+--- a/package/wget/wget.mk
++++ b/package/wget/wget.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-WGET_VERSION = 1.19.1
+-WGET_SOURCE = wget-$(WGET_VERSION).tar.xz
++WGET_VERSION = 1.19.2
++WGET_SOURCE = wget-$(WGET_VERSION).tar.lz
+ WGET_SITE = $(BR2_GNU_MIRROR)/wget
+ WGET_DEPENDENCIES = host-pkgconf
+ WGET_LICENSE = GPLv3+
+@@ -30,4 +30,11 @@ ifeq ($(BR2_PACKAGE_UTIL_LINUX_LIBUUID),y)
+ WGET_DEPENDENCIES += util-linux
+ endif
+ 
++ifeq ($(BR2_PACKAGE_ZLIB),y)
++WGET_CONF_OPTS += --with-zlib
++WGET_DEPENDENCIES += zlib
++else
++WGET_CONF_OPTS += --without-zlib
++endif
++
+ $(eval $(autotools-package))
+diff --git a/package/wpa_supplicant/Config.in b/package/wpa_supplicant/Config.in
+index 9250a3b200..1b2baf4e65 100644
+--- a/package/wpa_supplicant/Config.in
++++ b/package/wpa_supplicant/Config.in
+@@ -4,7 +4,7 @@ config BR2_PACKAGE_WPA_SUPPLICANT
+ 	help
+ 	  WPA supplicant for secure wireless networks
+ 
+-	  http://hostap.epitest.fi/wpa_supplicant/
++	  http://w1.fi/wpa_supplicant/
+ 
+ if BR2_PACKAGE_WPA_SUPPLICANT
+ 
+diff --git a/package/wpa_supplicant/wpa_supplicant.hash b/package/wpa_supplicant/wpa_supplicant.hash
+index 22b2e8ddd8..65a6ae246f 100644
+--- a/package/wpa_supplicant/wpa_supplicant.hash
++++ b/package/wpa_supplicant/wpa_supplicant.hash
+@@ -1,2 +1,9 @@
+ # Locally calculated
+ sha256  b4936d34c4e6cdd44954beba74296d964bc2c9668ecaa5255e499636fe2b1450  wpa_supplicant-2.6.tar.gz
++sha256  529113cc81256c6178f3c1cf25dd8d3f33e6d770e4a180bd31c6ab7e4917f40b  rebased-v2.6-0001-hostapd-Avoid-key-reinstallation-in-FT-handshake.patch
++sha256  d86d47ab74170f3648b45b91bce780949ca92b09ab43df065178850ec0c335d7  rebased-v2.6-0002-Prevent-reinstallation-of-an-already-in-use-group-ke.patch
++sha256  d4535e36739a0cc7f3585e6bcba3c0bb8fc67cb3e729844e448c5dc751f47e81  rebased-v2.6-0003-Extend-protection-of-GTK-IGTK-reinstallation-of-WNM-.patch
++sha256  793a54748161b5af430dd9de4a1988d19cb8e85ab29bc2340f886b0297cee20b  rebased-v2.6-0004-Prevent-installation-of-an-all-zero-TK.patch
++sha256  596d4d3b63ea859ed7ea9791b3a21cb11b6173b04c0a14a2afa47edf1666afa6  rebased-v2.6-0006-TDLS-Reject-TPK-TK-reconfiguration.patch
++sha256  c5a17af84aec2d88c56ce0da2d6945be398fe7cab5c0c340deb30973900c2736  rebased-v2.6-0007-WNM-Ignore-WNM-Sleep-Mode-Response-without-pending-r.patch
++sha256  c8840d857b9432f3b488113c85c1ff5d4a4b8d81078b7033388dae1e990843b1  rebased-v2.6-0008-FT-Do-not-allow-multiple-Reassociation-Response-fram.patch
+diff --git a/package/wpa_supplicant/wpa_supplicant.mk b/package/wpa_supplicant/wpa_supplicant.mk
+index 9c8414b568..7ac12ca336 100644
+--- a/package/wpa_supplicant/wpa_supplicant.mk
++++ b/package/wpa_supplicant/wpa_supplicant.mk
+@@ -5,7 +5,15 @@
+ ################################################################################
+ 
+ WPA_SUPPLICANT_VERSION = 2.6
+-WPA_SUPPLICANT_SITE = http://hostap.epitest.fi/releases
++WPA_SUPPLICANT_SITE = http://w1.fi/releases
++WPA_SUPPLICANT_PATCH = \
++	http://w1.fi/security/2017-1/rebased-v2.6-0001-hostapd-Avoid-key-reinstallation-in-FT-handshake.patch \
++	http://w1.fi/security/2017-1/rebased-v2.6-0002-Prevent-reinstallation-of-an-already-in-use-group-ke.patch \
++	http://w1.fi/security/2017-1/rebased-v2.6-0003-Extend-protection-of-GTK-IGTK-reinstallation-of-WNM-.patch \
++	http://w1.fi/security/2017-1/rebased-v2.6-0004-Prevent-installation-of-an-all-zero-TK.patch \
++	http://w1.fi/security/2017-1/rebased-v2.6-0006-TDLS-Reject-TPK-TK-reconfiguration.patch \
++	http://w1.fi/security/2017-1/rebased-v2.6-0007-WNM-Ignore-WNM-Sleep-Mode-Response-without-pending-r.patch \
++	http://w1.fi/security/2017-1/rebased-v2.6-0008-FT-Do-not-allow-multiple-Reassociation-Response-fram.patch
+ WPA_SUPPLICANT_LICENSE = BSD-3c
+ WPA_SUPPLICANT_LICENSE_FILES = README
+ WPA_SUPPLICANT_CONFIG = $(WPA_SUPPLICANT_DIR)/wpa_supplicant/.config
+diff --git a/package/x11r7/xlib_libXfont/0001-Check-for-end-of-string-in-PatternMatch-CVE-2017-137.patch b/package/x11r7/xlib_libXfont/0001-Check-for-end-of-string-in-PatternMatch-CVE-2017-137.patch
+new file mode 100644
+index 0000000000..3795179af1
+--- /dev/null
++++ b/package/x11r7/xlib_libXfont/0001-Check-for-end-of-string-in-PatternMatch-CVE-2017-137.patch
+@@ -0,0 +1,34 @@
++From d1e670a4a8704b8708e493ab6155589bcd570608 Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Thu, 20 Jul 2017 13:38:53 +0200
++Subject: [PATCH] Check for end of string in PatternMatch (CVE-2017-13720)
++
++If a pattern contains '?' character, any character in the string is skipped,
++even if it is '\0'. The rest of the matching then reads invalid memory.
++
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Julien Cristau <jcristau@debian.org>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/fontfile/fontdir.c | 4 +++-
++ 1 file changed, 3 insertions(+), 1 deletion(-)
++
++diff --git a/src/fontfile/fontdir.c b/src/fontfile/fontdir.c
++index 4ce2473..996b7d1 100644
++--- a/src/fontfile/fontdir.c
+++++ b/src/fontfile/fontdir.c
++@@ -400,8 +400,10 @@ PatternMatch(char *pat, int patdashes, char *string, int stringdashes)
++ 		}
++ 	    }
++ 	case '?':
++-	    if (*string++ == XK_minus)
+++	    if ((t = *string++) == XK_minus)
++ 		stringdashes--;
+++	    if (!t)
+++		return 0;
++ 	    break;
++ 	case '\0':
++ 	    return (*string == '\0');
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xlib_libXfont/0002-pcfGetProperties-Check-string-boundaries-CVE-2017-13.patch b/package/x11r7/xlib_libXfont/0002-pcfGetProperties-Check-string-boundaries-CVE-2017-13.patch
+new file mode 100644
+index 0000000000..709e446efe
+--- /dev/null
++++ b/package/x11r7/xlib_libXfont/0002-pcfGetProperties-Check-string-boundaries-CVE-2017-13.patch
+@@ -0,0 +1,52 @@
++From 672bb944311392e2415b39c0d63b1e1902905bcd Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Thu, 20 Jul 2017 17:05:23 +0200
++Subject: [PATCH] pcfGetProperties: Check string boundaries (CVE-2017-13722)
++
++Without the checks a malformed PCF file can cause the library to make
++atom from random heap memory that was behind the `strings` buffer.
++This may crash the process or leak information.
++
++Signed-off-by: Julien Cristau <jcristau@debian.org>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/bitmap/pcfread.c | 13 +++++++++++--
++ 1 file changed, 11 insertions(+), 2 deletions(-)
++
++diff --git a/src/bitmap/pcfread.c b/src/bitmap/pcfread.c
++index dab1c44..ae34c28 100644
++--- a/src/bitmap/pcfread.c
+++++ b/src/bitmap/pcfread.c
++@@ -45,6 +45,7 @@ from The Open Group.
++ 
++ #include <stdarg.h>
++ #include <stdint.h>
+++#include <string.h>
++ 
++ void
++ pcfError(const char* message, ...)
++@@ -311,11 +312,19 @@ pcfGetProperties(FontInfoPtr pFontInfo, FontFilePtr file,
++     if (IS_EOF(file)) goto Bail;
++     position += string_size;
++     for (i = 0; i < nprops; i++) {
+++	if (props[i].name >= string_size) {
+++	    pcfError("pcfGetProperties(): String starts out of bounds (%ld/%d)\n", props[i].name, string_size);
+++	    goto Bail;
+++	}
++ 	props[i].name = MakeAtom(strings + props[i].name,
++-				 strlen(strings + props[i].name), TRUE);
+++				 strnlen(strings + props[i].name, string_size - props[i].name), TRUE);
++ 	if (isStringProp[i]) {
+++	    if (props[i].value >= string_size) {
+++		pcfError("pcfGetProperties(): String starts out of bounds (%ld/%d)\n", props[i].value, string_size);
+++		goto Bail;
+++	    }
++ 	    props[i].value = MakeAtom(strings + props[i].value,
++-				      strlen(strings + props[i].value), TRUE);
+++				      strnlen(strings + props[i].value, string_size - props[i].value), TRUE);
++ 	}
++     }
++     free(strings);
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xlib_libXfont2/0001-Check-for-end-of-string-in-PatternMatch-CVE-2017-137.patch b/package/x11r7/xlib_libXfont2/0001-Check-for-end-of-string-in-PatternMatch-CVE-2017-137.patch
+new file mode 100644
+index 0000000000..3795179af1
+--- /dev/null
++++ b/package/x11r7/xlib_libXfont2/0001-Check-for-end-of-string-in-PatternMatch-CVE-2017-137.patch
+@@ -0,0 +1,34 @@
++From d1e670a4a8704b8708e493ab6155589bcd570608 Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Thu, 20 Jul 2017 13:38:53 +0200
++Subject: [PATCH] Check for end of string in PatternMatch (CVE-2017-13720)
++
++If a pattern contains '?' character, any character in the string is skipped,
++even if it is '\0'. The rest of the matching then reads invalid memory.
++
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Signed-off-by: Julien Cristau <jcristau@debian.org>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/fontfile/fontdir.c | 4 +++-
++ 1 file changed, 3 insertions(+), 1 deletion(-)
++
++diff --git a/src/fontfile/fontdir.c b/src/fontfile/fontdir.c
++index 4ce2473..996b7d1 100644
++--- a/src/fontfile/fontdir.c
+++++ b/src/fontfile/fontdir.c
++@@ -400,8 +400,10 @@ PatternMatch(char *pat, int patdashes, char *string, int stringdashes)
++ 		}
++ 	    }
++ 	case '?':
++-	    if (*string++ == XK_minus)
+++	    if ((t = *string++) == XK_minus)
++ 		stringdashes--;
+++	    if (!t)
+++		return 0;
++ 	    break;
++ 	case '\0':
++ 	    return (*string == '\0');
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xlib_libXfont2/0002-pcfGetProperties-Check-string-boundaries-CVE-2017-13.patch b/package/x11r7/xlib_libXfont2/0002-pcfGetProperties-Check-string-boundaries-CVE-2017-13.patch
+new file mode 100644
+index 0000000000..709e446efe
+--- /dev/null
++++ b/package/x11r7/xlib_libXfont2/0002-pcfGetProperties-Check-string-boundaries-CVE-2017-13.patch
+@@ -0,0 +1,52 @@
++From 672bb944311392e2415b39c0d63b1e1902905bcd Mon Sep 17 00:00:00 2001
++From: Michal Srb <msrb@suse.com>
++Date: Thu, 20 Jul 2017 17:05:23 +0200
++Subject: [PATCH] pcfGetProperties: Check string boundaries (CVE-2017-13722)
++
++Without the checks a malformed PCF file can cause the library to make
++atom from random heap memory that was behind the `strings` buffer.
++This may crash the process or leak information.
++
++Signed-off-by: Julien Cristau <jcristau@debian.org>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/bitmap/pcfread.c | 13 +++++++++++--
++ 1 file changed, 11 insertions(+), 2 deletions(-)
++
++diff --git a/src/bitmap/pcfread.c b/src/bitmap/pcfread.c
++index dab1c44..ae34c28 100644
++--- a/src/bitmap/pcfread.c
+++++ b/src/bitmap/pcfread.c
++@@ -45,6 +45,7 @@ from The Open Group.
++ 
++ #include <stdarg.h>
++ #include <stdint.h>
+++#include <string.h>
++ 
++ void
++ pcfError(const char* message, ...)
++@@ -311,11 +312,19 @@ pcfGetProperties(FontInfoPtr pFontInfo, FontFilePtr file,
++     if (IS_EOF(file)) goto Bail;
++     position += string_size;
++     for (i = 0; i < nprops; i++) {
+++	if (props[i].name >= string_size) {
+++	    pcfError("pcfGetProperties(): String starts out of bounds (%ld/%d)\n", props[i].name, string_size);
+++	    goto Bail;
+++	}
++ 	props[i].name = MakeAtom(strings + props[i].name,
++-				 strlen(strings + props[i].name), TRUE);
+++				 strnlen(strings + props[i].name, string_size - props[i].name), TRUE);
++ 	if (isStringProp[i]) {
+++	    if (props[i].value >= string_size) {
+++		pcfError("pcfGetProperties(): String starts out of bounds (%ld/%d)\n", props[i].value, string_size);
+++		goto Bail;
+++	    }
++ 	    props[i].value = MakeAtom(strings + props[i].value,
++-				      strlen(strings + props[i].value), TRUE);
+++				      strnlen(strings + props[i].value, string_size - props[i].value), TRUE);
++ 	}
++     }
++     free(strings);
++-- 
++2.11.0
++
+diff --git a/package/x11r7/xserver_xorg-server/1.19.1/0004-Xi-Zero-target-buffer-in-SProcXSendExtensionEvent.patch b/package/x11r7/xserver_xorg-server/1.19.1/0004-Xi-Zero-target-buffer-in-SProcXSendExtensionEvent.patch
+deleted file mode 100644
+index c15dc9f50c..0000000000
+--- a/package/x11r7/xserver_xorg-server/1.19.1/0004-Xi-Zero-target-buffer-in-SProcXSendExtensionEvent.patch
++++ /dev/null
+@@ -1,39 +0,0 @@
+-From 05442de962d3dc624f79fc1a00eca3ffc5489ced Mon Sep 17 00:00:00 2001
+-From: Michal Srb <msrb@suse.com>
+-Date: Wed, 24 May 2017 15:54:39 +0300
+-Subject: [PATCH] Xi: Zero target buffer in SProcXSendExtensionEvent.
+-
+-Make sure that the xEvent eventT is initialized with zeros, the same way as
+-in SProcSendEvent.
+-
+-Some event swapping functions do not overwrite all 32 bytes of xEvent
+-structure, for example XSecurityAuthorizationRevoked. Two cooperating
+-clients, one swapped and the other not, can send
+-XSecurityAuthorizationRevoked event to each other to retrieve old stack data
+-from X server. This can be potentialy misused to go around ASLR or
+-stack-protector.
+-
+-Signed-off-by: Michal Srb <msrb@suse.com>
+-Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
+-Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- Xi/sendexev.c | 2 +-
+- 1 file changed, 1 insertion(+), 1 deletion(-)
+-
+-diff --git a/Xi/sendexev.c b/Xi/sendexev.c
+-index 11d82029f..1cf118ab6 100644
+---- a/Xi/sendexev.c
+-+++ b/Xi/sendexev.c
+-@@ -78,7 +78,7 @@ SProcXSendExtensionEvent(ClientPtr client)
+- {
+-     CARD32 *p;
+-     int i;
+--    xEvent eventT;
+-+    xEvent eventT = { .u.u.type = 0 };
+-     xEvent *eventP;
+-     EventSwapPtr proc;
+- 
+--- 
+-2.11.0
+-
+diff --git a/package/x11r7/xserver_xorg-server/1.19.1/0005-dix-Disallow-GenericEvent-in-SendEvent-request.patch b/package/x11r7/xserver_xorg-server/1.19.1/0005-dix-Disallow-GenericEvent-in-SendEvent-request.patch
+deleted file mode 100644
+index 12da5f5cba..0000000000
+--- a/package/x11r7/xserver_xorg-server/1.19.1/0005-dix-Disallow-GenericEvent-in-SendEvent-request.patch
++++ /dev/null
+@@ -1,71 +0,0 @@
+-From 215f894965df5fb0bb45b107d84524e700d2073c Mon Sep 17 00:00:00 2001
+-From: Michal Srb <msrb@suse.com>
+-Date: Wed, 24 May 2017 15:54:40 +0300
+-Subject: [PATCH] dix: Disallow GenericEvent in SendEvent request.
+-
+-The SendEvent request holds xEvent which is exactly 32 bytes long, no more,
+-no less. Both ProcSendEvent and SProcSendEvent verify that the received data
+-exactly match the request size. However nothing stops the client from passing
+-in event with xEvent::type = GenericEvent and any value of
+-xGenericEvent::length.
+-
+-In the case of ProcSendEvent, the event will be eventually passed to
+-WriteEventsToClient which will see that it is Generic event and copy the
+-arbitrary length from the receive buffer (and possibly past it) and send it to
+-the other client. This allows clients to copy unitialized heap memory out of X
+-server or to crash it.
+-
+-In case of SProcSendEvent, it will attempt to swap the incoming event by
+-calling a swapping function from the EventSwapVector array. The swapped event
+-is written to target buffer, which in this case is local xEvent variable. The
+-xEvent variable is 32 bytes long, but the swapping functions for GenericEvents
+-expect that the target buffer has size matching the size of the source
+-GenericEvent. This allows clients to cause stack buffer overflows.
+-
+-Signed-off-by: Michal Srb <msrb@suse.com>
+-Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
+-Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- dix/events.c  | 6 ++++++
+- dix/swapreq.c | 7 +++++++
+- 2 files changed, 13 insertions(+)
+-
+-diff --git a/dix/events.c b/dix/events.c
+-index 3e3a01ef9..d3a33ea3f 100644
+---- a/dix/events.c
+-+++ b/dix/events.c
+-@@ -5366,6 +5366,12 @@ ProcSendEvent(ClientPtr client)
+-         client->errorValue = stuff->event.u.u.type;
+-         return BadValue;
+-     }
+-+    /* Generic events can have variable size, but SendEvent request holds
+-+       exactly 32B of event data. */
+-+    if (stuff->event.u.u.type == GenericEvent) {
+-+        client->errorValue = stuff->event.u.u.type;
+-+        return BadValue;
+-+    }
+-     if (stuff->event.u.u.type == ClientMessage &&
+-         stuff->event.u.u.detail != 8 &&
+-         stuff->event.u.u.detail != 16 && stuff->event.u.u.detail != 32) {
+-diff --git a/dix/swapreq.c b/dix/swapreq.c
+-index 719e9b81c..67850593b 100644
+---- a/dix/swapreq.c
+-+++ b/dix/swapreq.c
+-@@ -292,6 +292,13 @@ SProcSendEvent(ClientPtr client)
+-     swapl(&stuff->destination);
+-     swapl(&stuff->eventMask);
+- 
+-+    /* Generic events can have variable size, but SendEvent request holds
+-+       exactly 32B of event data. */
+-+    if (stuff->event.u.u.type == GenericEvent) {
+-+        client->errorValue = stuff->event.u.u.type;
+-+        return BadValue;
+-+    }
+-+
+-     /* Swap event */
+-     proc = EventSwapVector[stuff->event.u.u.type & 0177];
+-     if (!proc || proc == NotImplemented)        /* no swapping proc; invalid event type? */
+--- 
+-2.11.0
+-
+diff --git a/package/x11r7/xserver_xorg-server/1.19.1/0006-Xi-Verify-all-events-in-ProcXSendExtensionEvent.patch b/package/x11r7/xserver_xorg-server/1.19.1/0006-Xi-Verify-all-events-in-ProcXSendExtensionEvent.patch
+deleted file mode 100644
+index 2e651006ba..0000000000
+--- a/package/x11r7/xserver_xorg-server/1.19.1/0006-Xi-Verify-all-events-in-ProcXSendExtensionEvent.patch
++++ /dev/null
+@@ -1,50 +0,0 @@
+-From 8caed4df36b1f802b4992edcfd282cbeeec35d9d Mon Sep 17 00:00:00 2001
+-From: Michal Srb <msrb@suse.com>
+-Date: Wed, 24 May 2017 15:54:41 +0300
+-Subject: [PATCH] Xi: Verify all events in ProcXSendExtensionEvent.
+-
+-The requirement is that events have type in range
+-EXTENSION_EVENT_BASE..lastEvent, but it was tested
+-only for first event of all.
+-
+-Signed-off-by: Michal Srb <msrb@suse.com>
+-Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
+-Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- Xi/sendexev.c | 12 +++++++-----
+- 1 file changed, 7 insertions(+), 5 deletions(-)
+-
+-diff --git a/Xi/sendexev.c b/Xi/sendexev.c
+-index 1cf118ab6..5e63bfcca 100644
+---- a/Xi/sendexev.c
+-+++ b/Xi/sendexev.c
+-@@ -117,7 +117,7 @@ SProcXSendExtensionEvent(ClientPtr client)
+- int
+- ProcXSendExtensionEvent(ClientPtr client)
+- {
+--    int ret;
+-+    int ret, i;
+-     DeviceIntPtr dev;
+-     xEvent *first;
+-     XEventClass *list;
+-@@ -141,10 +141,12 @@ ProcXSendExtensionEvent(ClientPtr client)
+-     /* The client's event type must be one defined by an extension. */
+- 
+-     first = ((xEvent *) &stuff[1]);
+--    if (!((EXTENSION_EVENT_BASE <= first->u.u.type) &&
+--          (first->u.u.type < lastEvent))) {
+--        client->errorValue = first->u.u.type;
+--        return BadValue;
+-+    for (i = 0; i < stuff->num_events; i++) {
+-+        if (!((EXTENSION_EVENT_BASE <= first[i].u.u.type) &&
+-+            (first[i].u.u.type < lastEvent))) {
+-+            client->errorValue = first[i].u.u.type;
+-+            return BadValue;
+-+        }
+-     }
+- 
+-     list = (XEventClass *) (first + stuff->num_events);
+--- 
+-2.11.0
+-
+diff --git a/package/x11r7/xserver_xorg-server/1.19.1/0007-Xi-Do-not-try-to-swap-GenericEvent.patch b/package/x11r7/xserver_xorg-server/1.19.1/0007-Xi-Do-not-try-to-swap-GenericEvent.patch
+deleted file mode 100644
+index 871e7621ed..0000000000
+--- a/package/x11r7/xserver_xorg-server/1.19.1/0007-Xi-Do-not-try-to-swap-GenericEvent.patch
++++ /dev/null
+@@ -1,45 +0,0 @@
+-From ba336b24052122b136486961c82deac76bbde455 Mon Sep 17 00:00:00 2001
+-From: Michal Srb <msrb@suse.com>
+-Date: Wed, 24 May 2017 15:54:42 +0300
+-Subject: [PATCH] Xi: Do not try to swap GenericEvent.
+-
+-The SProcXSendExtensionEvent must not attempt to swap GenericEvent because
+-it is assuming that the event has fixed size and gives the swapping function
+-xEvent-sized buffer.
+-
+-A GenericEvent would be later rejected by ProcXSendExtensionEvent anyway.
+-
+-Signed-off-by: Michal Srb <msrb@suse.com>
+-Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
+-Signed-off-by: Peter Hutterer <peter.hutterer@who-t.net>
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- Xi/sendexev.c | 10 +++++++++-
+- 1 file changed, 9 insertions(+), 1 deletion(-)
+-
+-diff --git a/Xi/sendexev.c b/Xi/sendexev.c
+-index 5e63bfcca..5c2e0fc56 100644
+---- a/Xi/sendexev.c
+-+++ b/Xi/sendexev.c
+-@@ -95,9 +95,17 @@ SProcXSendExtensionEvent(ClientPtr client)
+- 
+-     eventP = (xEvent *) &stuff[1];
+-     for (i = 0; i < stuff->num_events; i++, eventP++) {
+-+        if (eventP->u.u.type == GenericEvent) {
+-+            client->errorValue = eventP->u.u.type;
+-+            return BadValue;
+-+        }
+-+
+-         proc = EventSwapVector[eventP->u.u.type & 0177];
+--        if (proc == NotImplemented)     /* no swapping proc; invalid event type? */
+-+        /* no swapping proc; invalid event type? */
+-+        if (proc == NotImplemented) {
+-+            client->errorValue = eventP->u.u.type;
+-             return BadValue;
+-+        }
+-         (*proc) (eventP, &eventT);
+-         *eventP = eventT;
+-     }
+--- 
+-2.11.0
+-
+diff --git a/package/x11r7/xserver_xorg-server/1.19.1/0001-modesettings-needs-dri2.patch b/package/x11r7/xserver_xorg-server/1.19.5/0001-modesettings-needs-dri2.patch
+similarity index 100%
+rename from package/x11r7/xserver_xorg-server/1.19.1/0001-modesettings-needs-dri2.patch
+rename to package/x11r7/xserver_xorg-server/1.19.5/0001-modesettings-needs-dri2.patch
+diff --git a/package/x11r7/xserver_xorg-server/1.19.1/0002-configure.ac-Fix-check-for-CLOCK_MONOTONIC.patch b/package/x11r7/xserver_xorg-server/1.19.5/0002-configure.ac-Fix-check-for-CLOCK_MONOTONIC.patch
+similarity index 100%
+rename from package/x11r7/xserver_xorg-server/1.19.1/0002-configure.ac-Fix-check-for-CLOCK_MONOTONIC.patch
+rename to package/x11r7/xserver_xorg-server/1.19.5/0002-configure.ac-Fix-check-for-CLOCK_MONOTONIC.patch
+diff --git a/package/x11r7/xserver_xorg-server/1.19.1/0003-Remove-check-for-useSIGIO-option.patch b/package/x11r7/xserver_xorg-server/1.19.5/0003-Remove-check-for-useSIGIO-option.patch
+similarity index 100%
+rename from package/x11r7/xserver_xorg-server/1.19.1/0003-Remove-check-for-useSIGIO-option.patch
+rename to package/x11r7/xserver_xorg-server/1.19.5/0003-Remove-check-for-useSIGIO-option.patch
+diff --git a/package/x11r7/xserver_xorg-server/Config.in b/package/x11r7/xserver_xorg-server/Config.in
+index 1c8f8cfdbf..787c9d7d80 100644
+--- a/package/x11r7/xserver_xorg-server/Config.in
++++ b/package/x11r7/xserver_xorg-server/Config.in
+@@ -79,7 +79,7 @@ choice
+ 	bool "X Window System server version"
+ 
+ config BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_19
+-	bool "1.19.1"
++	bool "1.19.5"
+ 	select BR2_PACKAGE_XSERVER_XORG_SERVER_VIDEODRV_ABI_23
+ 	select BR2_PACKAGE_XLIB_LIBXFONT2
+ 	select BR2_PACKAGE_XPROTO_PRESENTPROTO
+@@ -99,7 +99,7 @@ endchoice
+ 
+ config BR2_PACKAGE_XSERVER_XORG_SERVER_VERSION
+ 	string
+-	default "1.19.1" if BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_19
++	default "1.19.5" if BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_19
+ 	default "1.17.4" if BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_17
+ 	default "1.14.7" if BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_14
+ 
+diff --git a/package/x11r7/xserver_xorg-server/xserver_xorg-server.hash b/package/x11r7/xserver_xorg-server/xserver_xorg-server.hash
+index 2f13ca6419..c0feb985d2 100644
+--- a/package/x11r7/xserver_xorg-server/xserver_xorg-server.hash
++++ b/package/x11r7/xserver_xorg-server/xserver_xorg-server.hash
+@@ -3,5 +3,8 @@ sha1   7a95765e56b124758fcd7b609589e65b8870880b                                x
+ sha256 fcf66fa6ad86227613d2d3e8ae13ded297e2a1e947e9060a083eaf80d323451f        xorg-server-1.14.7.tar.bz2
+ # From https://lists.x.org/archives/xorg-announce/2015-October/002650.html
+ sha256 0c4b45c116a812a996eb432d8508cf26c2ec8c3916ff2a50781796882f8d6457        xorg-server-1.17.4.tar.bz2
+-# From https://lists.x.org/archives/xorg-announce/2017-January/002754.html
+-sha256 79ae2cf39d3f6c4a91201d8dad549d1d774b3420073c5a70d390040aa965a7fb        xorg-server-1.19.1.tar.bz2
++# From https://lists.x.org/archives/xorg-announce/2017-October/002814.html
++md5 4ac6feeae6790436ce9de879ca9a3bf8  xorg-server-1.19.5.tar.bz2
++sha1 307d3405f709f7e41966c850b37deefe7f83eb9b  xorg-server-1.19.5.tar.bz2
++sha256 18fffa8eb93d06d2800d06321fc0df4d357684d8d714315a66d8dfa7df251447  xorg-server-1.19.5.tar.bz2
++sha512 928dea5850b98cd815004cfa133eca23cfa9521920c934c68a92787f2cae13cca1534eee772a4fb74b8ae8cb92662b5d68b95b834c8aa8ec57cd57cb4e5dd45c  xorg-server-1.19.5.tar.bz2
+diff --git a/package/x11r7/xserver_xorg-server/xserver_xorg-server.mk b/package/x11r7/xserver_xorg-server/xserver_xorg-server.mk
+index 7aebbc1d2d..4404de8363 100644
+--- a/package/x11r7/xserver_xorg-server/xserver_xorg-server.mk
++++ b/package/x11r7/xserver_xorg-server/xserver_xorg-server.mk
+@@ -6,7 +6,7 @@
+ 
+ XSERVER_XORG_SERVER_VERSION = $(call qstrip,$(BR2_PACKAGE_XSERVER_XORG_SERVER_VERSION))
+ XSERVER_XORG_SERVER_SOURCE = xorg-server-$(XSERVER_XORG_SERVER_VERSION).tar.bz2
+-XSERVER_XORG_SERVER_SITE = http://xorg.freedesktop.org/releases/individual/xserver
++XSERVER_XORG_SERVER_SITE = https://xorg.freedesktop.org/archive/individual/xserver
+ XSERVER_XORG_SERVER_LICENSE = MIT
+ XSERVER_XORG_SERVER_LICENSE_FILES = COPYING
+ XSERVER_XORG_SERVER_INSTALL_STAGING = YES
+@@ -223,7 +223,7 @@ endif
+ ifeq ($(BR2_PACKAGE_XPROTO_DRI3PROTO),y)
+ XSERVER_XORG_SERVER_DEPENDENCIES += xlib_libxshmfence xproto_dri3proto
+ XSERVER_XORG_SERVER_CONF_OPTS += --enable-dri3
+-ifeq ($(BR2_PACKAGE_HAS_LIBGL)$(BR2_PACKAGE_LIBEPOXY),yy)
++ifeq ($(BR2_PACKAGE_HAS_LIBEGL)$(BR2_PACKAGE_HAS_LIBGL)$(BR2_PACKAGE_LIBEPOXY),yyy)
+ XSERVER_XORG_SERVER_DEPENDENCIES += libepoxy
+ XSERVER_XORG_SERVER_CONF_OPTS += --enable-glamor
+ else
+diff --git a/package/xen/xen.hash b/package/xen/xen.hash
+index c1aac7624b..8a9f65a4e8 100644
+--- a/package/xen/xen.hash
++++ b/package/xen/xen.hash
+@@ -9,3 +9,5 @@ sha256 5068a78293daa58557c30c95141b775becfb650de6a5eda0d82a4a321ced551c xsa232.p
+ sha256 f721cc49ba692b2f36299b631451f51d7340b8b4732f74c98f01cb7a80d8662b xsa233.patch
+ sha256 169e4e0eaa6b27e58ff0f4ce50e8fcc3f81b1e0a10210decf22d1b4cac7501fb xsa234-4.8.patch
+ sha256 f30848eee71e66687b421b87be1d8e3f454c0eb395422546c62a689153d1e31c xsa235-4.7.patch
++sha256 526f9e1b127fbb316762ce8e8f4563bc9de0c55a1db581456a3017d570d35bdd 0001-xen-page_alloc-Cover-memory-unreserved-after-boot-in.patch
++sha256 7164010112fcccd9cd88e72ace2eeabdb364dd6f4d05c434686267d18067f420 0002-xen-arm-Correctly-report-the-memory-region-in-the-du.patch
+diff --git a/package/xen/xen.mk b/package/xen/xen.mk
+index fe68960cb0..2a87d8f90c 100644
+--- a/package/xen/xen.mk
++++ b/package/xen/xen.mk
+@@ -15,7 +15,9 @@ XEN_PATCH = \
+ 	https://xenbits.xenproject.org/xsa/xsa232.patch \
+ 	https://xenbits.xenproject.org/xsa/xsa233.patch \
+ 	https://xenbits.xenproject.org/xsa/xsa234-4.8.patch \
+-	https://xenbits.xenproject.org/xsa/xsa235-4.7.patch
++	https://xenbits.xenproject.org/xsa/xsa235-4.7.patch \
++	https://xenbits.xenproject.org/xsa/xsa245/0001-xen-page_alloc-Cover-memory-unreserved-after-boot-in.patch \
++	https://xenbits.xenproject.org/xsa/xsa245/0002-xen-arm-Correctly-report-the-memory-region-in-the-du.patch
+ XEN_LICENSE = GPLv2
+ XEN_LICENSE_FILES = COPYING
+ XEN_DEPENDENCIES = host-python
+diff --git a/support/dependencies/dependencies.mk b/support/dependencies/dependencies.mk
+index d4b0409cda..ef2ae9b7e1 100644
+--- a/support/dependencies/dependencies.mk
++++ b/support/dependencies/dependencies.mk
+@@ -23,8 +23,8 @@ core-dependencies:
+ 		DL_TOOLS="$(sort $(DL_TOOLS_DEPENDENCIES))" \
+ 		$(TOPDIR)/support/dependencies/dependencies.sh
+ 
+-dependencies: HOSTCC=$(HOSTCC_NOCCACHE)
+-dependencies: HOSTCXX=$(HOSTCXX_NOCCACHE)
++core-dependencies $(DEPENDENCIES_HOST_PREREQ): HOSTCC=$(HOSTCC_NOCCACHE)
++core-dependencies $(DEPENDENCIES_HOST_PREREQ): HOSTCXX=$(HOSTCXX_NOCCACHE)
+ dependencies: core-dependencies $(DEPENDENCIES_HOST_PREREQ)
+ 
+ ################################################################################
+diff --git a/support/kconfig/mconf.c b/support/kconfig/mconf.c
+index 7d6cf80703..91c4df78f3 100644
+--- a/support/kconfig/mconf.c
++++ b/support/kconfig/mconf.c
+@@ -176,7 +176,7 @@ menu_instructions[] = N_(
+ 	"Arrow keys navigate the menu.  "
+ 	"<Enter> selects submenus ---> (or empty submenus ----).  "
+ 	"Highlighted letters are hotkeys.  "
+-	"Pressing <Y> selectes a feature, while <N> will exclude a feature.  "
++	"Pressing <Y> selects a feature, while <N> excludes a feature.  "
+ 	"Press <Esc><Esc> to exit, <?> for Help, </> for Search.  "
+ 	"Legend: [*] feature is selected  [ ] feature is excluded"),
+ radiolist_instructions[] = N_(
+diff --git a/support/kconfig/patches/01-kconfig-kernel-to-buildroot.patch b/support/kconfig/patches/01-kconfig-kernel-to-buildroot.patch
+index ecfe76b6e2..e76198a36b 100644
+--- a/support/kconfig/patches/01-kconfig-kernel-to-buildroot.patch
++++ b/support/kconfig/patches/01-kconfig-kernel-to-buildroot.patch
+@@ -28,7 +28,7 @@ Index: kconfig/mconf.c
+  	"<Enter> selects submenus ---> (or empty submenus ----).  "
+  	"Highlighted letters are hotkeys.  "
+ -	"Pressing <Y> includes, <N> excludes, <M> modularizes features.  "
+-+	"Pressing <Y> selectes a feature, while <N> will exclude a feature.  "
+++	"Pressing <Y> selects a feature, while <N> excludes a feature.  "
+  	"Press <Esc><Esc> to exit, <?> for Help, </> for Search.  "
+ -	"Legend: [*] built-in  [ ] excluded  <M> module  < > module capable"),
+ +	"Legend: [*] feature is selected  [ ] feature is excluded"),
+diff --git a/toolchain/toolchain-external/toolchain-external-linaro-aarch64/Config.in b/toolchain/toolchain-external/toolchain-external-linaro-aarch64/Config.in
+index 4dc8dacbe4..5f66f56662 100644
+--- a/toolchain/toolchain-external/toolchain-external-linaro-aarch64/Config.in
++++ b/toolchain/toolchain-external/toolchain-external-linaro-aarch64/Config.in
+@@ -1,5 +1,5 @@
+ config BR2_TOOLCHAIN_EXTERNAL_LINARO_AARCH64
+-	bool "Linaro AArch64 2016.11"
++	bool "Linaro AArch64 2017.08"
+ 	depends on BR2_aarch64
+ 	depends on BR2_HOSTARCH = "x86_64" || BR2_HOSTARCH = "x86"
+ 	depends on !BR2_STATIC_LIBS
+diff --git a/toolchain/toolchain-external/toolchain-external-linaro-aarch64/toolchain-external-linaro-aarch64.hash b/toolchain/toolchain-external/toolchain-external-linaro-aarch64/toolchain-external-linaro-aarch64.hash
+index f7f4209060..2360280e95 100644
+--- a/toolchain/toolchain-external/toolchain-external-linaro-aarch64/toolchain-external-linaro-aarch64.hash
++++ b/toolchain/toolchain-external/toolchain-external-linaro-aarch64/toolchain-external-linaro-aarch64.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256 057156a47b9cd68cdc0b48adcbe96c8249e3653b082f6c051dd75cb644f64b3a  gcc-linaro-6.2.1-2016.11-i686_aarch64-linux-gnu.tar.xz
+-sha256 539cc29320bd84178cd093aae0b06b1ee5476511cecaba989faf9c6a1d4cdf81  gcc-linaro-6.2.1-2016.11-x86_64_aarch64-linux-gnu.tar.xz
++sha256 6365480ab93e30185ffd33070b9332e0caa2c3c0813dd71bfbc83d300b76b4c9  gcc-linaro-6.4.1-2017.08-i686_aarch64-linux-gnu.tar.xz
++sha256 f507d071c6969665e26c595d6d952d7b18eb11609a71cb6debbafb55d700522a  gcc-linaro-6.4.1-2017.08-x86_64_aarch64-linux-gnu.tar.xz
+diff --git a/toolchain/toolchain-external/toolchain-external-linaro-aarch64/toolchain-external-linaro-aarch64.mk b/toolchain/toolchain-external/toolchain-external-linaro-aarch64/toolchain-external-linaro-aarch64.mk
+index fb498fe273..6053ea78a6 100644
+--- a/toolchain/toolchain-external/toolchain-external-linaro-aarch64/toolchain-external-linaro-aarch64.mk
++++ b/toolchain/toolchain-external/toolchain-external-linaro-aarch64/toolchain-external-linaro-aarch64.mk
+@@ -4,13 +4,13 @@
+ #
+ ################################################################################
+ 
+-TOOLCHAIN_EXTERNAL_LINARO_AARCH64_VERSION = 2016.11
+-TOOLCHAIN_EXTERNAL_LINARO_AARCH64_SITE = https://releases.linaro.org/components/toolchain/binaries/6.2-$(TOOLCHAIN_EXTERNAL_LINARO_AARCH64_VERSION)/aarch64-linux-gnu
++TOOLCHAIN_EXTERNAL_LINARO_AARCH64_VERSION = 2017.08
++TOOLCHAIN_EXTERNAL_LINARO_AARCH64_SITE = https://releases.linaro.org/components/toolchain/binaries/6.4-$(TOOLCHAIN_EXTERNAL_LINARO_AARCH64_VERSION)/aarch64-linux-gnu
+ 
+ ifeq ($(HOSTARCH),x86)
+-TOOLCHAIN_EXTERNAL_LINARO_AARCH64_SOURCE = gcc-linaro-6.2.1-$(TOOLCHAIN_EXTERNAL_LINARO_AARCH64_VERSION)-i686_aarch64-linux-gnu.tar.xz
++TOOLCHAIN_EXTERNAL_LINARO_AARCH64_SOURCE = gcc-linaro-6.4.1-$(TOOLCHAIN_EXTERNAL_LINARO_AARCH64_VERSION)-i686_aarch64-linux-gnu.tar.xz
+ else
+-TOOLCHAIN_EXTERNAL_LINARO_AARCH64_SOURCE = gcc-linaro-6.2.1-$(TOOLCHAIN_EXTERNAL_LINARO_AARCH64_VERSION)-x86_64_aarch64-linux-gnu.tar.xz
++TOOLCHAIN_EXTERNAL_LINARO_AARCH64_SOURCE = gcc-linaro-6.4.1-$(TOOLCHAIN_EXTERNAL_LINARO_AARCH64_VERSION)-x86_64_aarch64-linux-gnu.tar.xz
+ endif
+ 
+ $(eval $(toolchain-external-package))
+diff --git a/toolchain/toolchain-external/toolchain-external-linaro-arm/Config.in b/toolchain/toolchain-external/toolchain-external-linaro-arm/Config.in
+index 78aeb8ea41..fd4e03b2bc 100644
+--- a/toolchain/toolchain-external/toolchain-external-linaro-arm/Config.in
++++ b/toolchain/toolchain-external/toolchain-external-linaro-arm/Config.in
+@@ -4,7 +4,7 @@ comment "Linaro toolchains available for Cortex-A + EABIhf"
+ 	depends on !BR2_STATIC_LIBS
+ 
+ config BR2_TOOLCHAIN_EXTERNAL_LINARO_ARM
+-	bool "Linaro ARM 2016.11"
++	bool "Linaro ARM 2017.08"
+ 	depends on BR2_arm
+ 	depends on BR2_ARM_CPU_ARMV7A || BR2_ARM_CPU_ARMV8
+ 	depends on BR2_HOSTARCH = "x86_64" || BR2_HOSTARCH = "x86"
+@@ -19,8 +19,8 @@ config BR2_TOOLCHAIN_EXTERNAL_LINARO_ARM
+ 	select BR2_TOOLCHAIN_HAS_FORTRAN
+ 	help
+ 	  Linaro toolchain for the ARM architecture. It uses Linaro
+-	  GCC 2016.11 (based on gcc 6.2.1), Linaro GDB 2016.11 (based on
+-	  GDB 7.12), glibc 2.23, Binutils 2016.11 (based on 2.27). It
++	  GCC 2017.08 (based on gcc 6.4.1), Linaro GDB 2017.08 (based on
++	  GDB 8.0), glibc 2.23, Binutils 2017.08 (based on 2.27). It
+ 	  generates code that runs on all Cortex-A profile devices,
+ 	  but tuned for the Cortex-A9. The code generated is Thumb 2,
+ 	  with the hard floating point calling convention, and uses
+diff --git a/toolchain/toolchain-external/toolchain-external-linaro-arm/toolchain-external-linaro-arm.hash b/toolchain/toolchain-external/toolchain-external-linaro-arm/toolchain-external-linaro-arm.hash
+index d4452c3786..664663df05 100644
+--- a/toolchain/toolchain-external/toolchain-external-linaro-arm/toolchain-external-linaro-arm.hash
++++ b/toolchain/toolchain-external/toolchain-external-linaro-arm/toolchain-external-linaro-arm.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256 a2a4968bfb8537c1b3280b4f475d90d53a1a0f05f7afc7b43efed266cc4de446  gcc-linaro-6.2.1-2016.11-i686_arm-linux-gnueabihf.tar.xz
+-sha256 5eb7ab2f8a0b4b960900321505cd6923a072cb3e2412102f5f72a6e74c2f0a55  gcc-linaro-6.2.1-2016.11-x86_64_arm-linux-gnueabihf.tar.xz
++sha256 a99029dff3d17d28c89831f2cd2aa37752c2f85fe89fe38fdd17971c36a9f1dc  gcc-linaro-6.4.1-2017.08-i686_arm-linux-gnueabihf.tar.xz
++sha256 1c975a1936cc966099b3fcaff8f387d748caff27f43593214ae6d4601241ae40  gcc-linaro-6.4.1-2017.08-x86_64_arm-linux-gnueabihf.tar.xz
+diff --git a/toolchain/toolchain-external/toolchain-external-linaro-arm/toolchain-external-linaro-arm.mk b/toolchain/toolchain-external/toolchain-external-linaro-arm/toolchain-external-linaro-arm.mk
+index e098f47757..a165184b5b 100644
+--- a/toolchain/toolchain-external/toolchain-external-linaro-arm/toolchain-external-linaro-arm.mk
++++ b/toolchain/toolchain-external/toolchain-external-linaro-arm/toolchain-external-linaro-arm.mk
+@@ -4,13 +4,13 @@
+ #
+ ################################################################################
+ 
+-TOOLCHAIN_EXTERNAL_LINARO_ARM_VERSION = 2016.11
+-TOOLCHAIN_EXTERNAL_LINARO_ARM_SITE = https://releases.linaro.org/components/toolchain/binaries/6.2-$(TOOLCHAIN_EXTERNAL_LINARO_ARM_VERSION)/arm-linux-gnueabihf
++TOOLCHAIN_EXTERNAL_LINARO_ARM_VERSION = 2017.08
++TOOLCHAIN_EXTERNAL_LINARO_ARM_SITE = https://releases.linaro.org/components/toolchain/binaries/6.4-$(TOOLCHAIN_EXTERNAL_LINARO_ARM_VERSION)/arm-linux-gnueabihf
+ 
+ ifeq ($(HOSTARCH),x86)
+-TOOLCHAIN_EXTERNAL_LINARO_ARM_SOURCE = gcc-linaro-6.2.1-$(TOOLCHAIN_EXTERNAL_LINARO_ARM_VERSION)-i686_arm-linux-gnueabihf.tar.xz
++TOOLCHAIN_EXTERNAL_LINARO_ARM_SOURCE = gcc-linaro-6.4.1-$(TOOLCHAIN_EXTERNAL_LINARO_ARM_VERSION)-i686_arm-linux-gnueabihf.tar.xz
+ else
+-TOOLCHAIN_EXTERNAL_LINARO_ARM_SOURCE = gcc-linaro-6.2.1-$(TOOLCHAIN_EXTERNAL_LINARO_ARM_VERSION)-x86_64_arm-linux-gnueabihf.tar.xz
++TOOLCHAIN_EXTERNAL_LINARO_ARM_SOURCE = gcc-linaro-6.4.1-$(TOOLCHAIN_EXTERNAL_LINARO_ARM_VERSION)-x86_64_arm-linux-gnueabihf.tar.xz
+ endif
+ 
+ $(eval $(toolchain-external-package))
+diff --git a/toolchain/toolchain-external/toolchain-external-linaro-armeb/Config.in b/toolchain/toolchain-external/toolchain-external-linaro-armeb/Config.in
+index c7f2f5f60c..5fb7eb5c1d 100644
+--- a/toolchain/toolchain-external/toolchain-external-linaro-armeb/Config.in
++++ b/toolchain/toolchain-external/toolchain-external-linaro-armeb/Config.in
+@@ -4,7 +4,7 @@ comment "Linaro toolchains available for Cortex-A + EABIhf"
+ 	depends on !BR2_STATIC_LIBS
+ 
+ config BR2_TOOLCHAIN_EXTERNAL_LINARO_ARMEB
+-	bool "Linaro armeb 2016.11"
++	bool "Linaro armeb 2017.08"
+ 	depends on BR2_armeb
+ 	depends on BR2_ARM_CPU_ARMV7A || BR2_ARM_CPU_ARMV8
+ 	depends on BR2_HOSTARCH = "x86_64" || BR2_HOSTARCH = "x86"
+@@ -18,8 +18,8 @@ config BR2_TOOLCHAIN_EXTERNAL_LINARO_ARMEB
+ 	select BR2_TOOLCHAIN_GCC_AT_LEAST_6
+ 	help
+ 	  Linaro toolchain for the ARM big endian architecture. It
+-	  uses Linaro GCC 2016.11 (based on gcc 6.2.1), Linaro GDB
+-	  2016.11 (based on GDB 7.12), glibc 2.23, Binutils 2016.11
++	  uses Linaro GCC 2017.08 (based on gcc 6.4.1), Linaro GDB
++	  2017.08 (based on GDB 8.0), glibc 2.23, Binutils 2017.08
+ 	  (based on 2.27). It generates code that runs on all Cortex-A
+ 	  profile devices, but tuned for the Cortex-A9. The code
+ 	  generated is Thumb 2, with the hard floating point calling
+diff --git a/toolchain/toolchain-external/toolchain-external-linaro-armeb/toolchain-external-linaro-armeb.hash b/toolchain/toolchain-external/toolchain-external-linaro-armeb/toolchain-external-linaro-armeb.hash
+index a041539ba6..c70d64047f 100644
+--- a/toolchain/toolchain-external/toolchain-external-linaro-armeb/toolchain-external-linaro-armeb.hash
++++ b/toolchain/toolchain-external/toolchain-external-linaro-armeb/toolchain-external-linaro-armeb.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256 05a34c56da56b9b1e1a61ad1217dc4e751e1d277932dbeaa82b6c242cf0f2ec9  gcc-linaro-6.2.1-2016.11-i686_armeb-linux-gnueabihf.tar.xz
+-sha256 319cb7c6363a3116357b163d0b4f9e0c27cfcb6153f3c26a34edf892819f12e5  gcc-linaro-6.2.1-2016.11-x86_64_armeb-linux-gnueabihf.tar.xz
++sha256 7472ed65dd73945d4574e30fd2d26ef15d65b309dee83aaaf5a97df8fe3a94c7  gcc-linaro-6.4.1-2017.08-i686_armeb-linux-gnueabihf.tar.xz
++sha256 97a0de6ce7a77a2df7398e907621242752e6e5f1787772d7b308c82a3a039fab  gcc-linaro-6.4.1-2017.08-x86_64_armeb-linux-gnueabihf.tar.xz
+diff --git a/toolchain/toolchain-external/toolchain-external-linaro-armeb/toolchain-external-linaro-armeb.mk b/toolchain/toolchain-external/toolchain-external-linaro-armeb/toolchain-external-linaro-armeb.mk
+index ba138e1b50..ff2c5d6078 100644
+--- a/toolchain/toolchain-external/toolchain-external-linaro-armeb/toolchain-external-linaro-armeb.mk
++++ b/toolchain/toolchain-external/toolchain-external-linaro-armeb/toolchain-external-linaro-armeb.mk
+@@ -4,13 +4,13 @@
+ #
+ ################################################################################
+ 
+-TOOLCHAIN_EXTERNAL_LINARO_ARMEB_VERSION = 2016.11
+-TOOLCHAIN_EXTERNAL_LINARO_ARMEB_SITE = https://releases.linaro.org/components/toolchain/binaries/6.2-$(TOOLCHAIN_EXTERNAL_LINARO_ARMEB_VERSION)/armeb-linux-gnueabihf
++TOOLCHAIN_EXTERNAL_LINARO_ARMEB_VERSION = 2017.08
++TOOLCHAIN_EXTERNAL_LINARO_ARMEB_SITE = https://releases.linaro.org/components/toolchain/binaries/6.4-$(TOOLCHAIN_EXTERNAL_LINARO_ARMEB_VERSION)/armeb-linux-gnueabihf
+ 
+ ifeq ($(HOSTARCH),x86)
+-TOOLCHAIN_EXTERNAL_LINARO_ARMEB_SOURCE = gcc-linaro-6.2.1-$(TOOLCHAIN_EXTERNAL_LINARO_ARMEB_VERSION)-i686_armeb-linux-gnueabihf.tar.xz
++TOOLCHAIN_EXTERNAL_LINARO_ARMEB_SOURCE = gcc-linaro-6.4.1-$(TOOLCHAIN_EXTERNAL_LINARO_ARMEB_VERSION)-i686_armeb-linux-gnueabihf.tar.xz
+ else
+-TOOLCHAIN_EXTERNAL_LINARO_ARMEB_SOURCE = gcc-linaro-6.2.1-$(TOOLCHAIN_EXTERNAL_LINARO_ARMEB_VERSION)-x86_64_armeb-linux-gnueabihf.tar.xz
++TOOLCHAIN_EXTERNAL_LINARO_ARMEB_SOURCE = gcc-linaro-6.4.1-$(TOOLCHAIN_EXTERNAL_LINARO_ARMEB_VERSION)-x86_64_armeb-linux-gnueabihf.tar.xz
+ endif
+ 
+ $(eval $(toolchain-external-package))

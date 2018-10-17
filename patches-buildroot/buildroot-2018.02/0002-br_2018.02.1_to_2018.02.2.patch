@@ -1,0 +1,1410 @@
+diff --git a/CHANGES b/CHANGES
+index 09cf7c3f85..c11118efd3 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,34 @@
++2018.02.2, Released May 4th, 2018
++
++	Important / security related fixes.
++
++	Tweak package size/file instrumentation to better handle
++	package rebuilds.
++
++	Revert /etc/shells creation when bash is enabled.
++
++	Exclude /lib/firmware from the rpath fixup logic, as it may
++	contain non-native ELF files.
++
++	Scanpypi: Support the new PyPi infrastructure.
++
++	Handle GCC 8.x on the host.
++
++	Ensure timestamp of /usr is updated to support the systemd
++	ConditionNeedsUpdate option.
++
++	Updated/fixed packages: bluez5_utils, flann, gdb, gnupg2,
++	grub2, libcec, libcgi, libglib2, libgpg-error, libgpgme,
++	libtomcrypt, mbedtls, mkpasswd, php, python, python-requests,
++	python-watchdog, qt53d, qt5websockets, sdl2, sdl2_image,
++	syslog-ng, systemd, tcl, tcllib, uclibc, usb_modeswitch,
++	wireguard, wmctrl
++
++	Issues resolved (http://bugs.uclibc.org):
++
++	#10896: /bin/sh not in /etc/shells
++	#10961: Grub2 fails to build for x86_64 when BR2_SSP_ALL is enabled
++
+ 2018.02.1, Released April 9th, 2018
+ 
+ 	Important / security related fixes.
+diff --git a/Config.in b/Config.in
+index 25f24b9d20..52fb53bc6a 100644
+--- a/Config.in
++++ b/Config.in
+@@ -62,6 +62,11 @@ config BR2_HOST_GCC_AT_LEAST_7
+ 	default y if BR2_HOST_GCC_VERSION = "7"
+ 	select BR2_HOST_GCC_AT_LEAST_6
+ 
++config BR2_HOST_GCC_AT_LEAST_8
++	bool
++	default y if BR2_HOST_GCC_VERSION = "8"
++	select BR2_HOST_GCC_AT_LEAST_7
++
+ # Hidden boolean selected by packages in need of Java in order to build
+ # (example: kodi)
+ config BR2_NEEDS_HOST_JAVA
+diff --git a/Makefile b/Makefile
+index 8004cc2925..864a15ba0a 100644
+--- a/Makefile
++++ b/Makefile
+@@ -87,9 +87,9 @@ all:
+ .PHONY: all
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2018.02.1
++export BR2_VERSION := 2018.02.2
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1523310000
++BR2_VERSION_EPOCH = 1525450000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+@@ -761,6 +761,8 @@ endif
+ 		$(call MESSAGE,"Executing post-build script $(s)"); \
+ 		$(EXTRA_ENV) $(s) $(TARGET_DIR) $(call qstrip,$(BR2_ROOTFS_POST_SCRIPT_ARGS))$(sep))
+ 
++	touch $(TARGET_DIR)/usr
++
+ .PHONY: target-post-image
+ target-post-image: $(TARGETS_ROOTFS) target-finalize
+ 	@$(foreach s, $(call qstrip,$(BR2_ROOTFS_POST_IMAGE_SCRIPT)), \
+diff --git a/boot/grub2/grub2.mk b/boot/grub2/grub2.mk
+index 492cddf1a5..35aea41287 100644
+--- a/boot/grub2/grub2.mk
++++ b/boot/grub2/grub2.mk
+@@ -53,8 +53,8 @@ GRUB2_CONF_ENV = \
+ 	$(HOST_CONFIGURE_OPTS) \
+ 	CPP="$(HOSTCC) -E" \
+ 	TARGET_CC="$(TARGET_CC)" \
+-	TARGET_CFLAGS="$(TARGET_CFLAGS) -fno-stack-protector" \
+-	TARGET_CPPFLAGS="$(TARGET_CPPFLAGS)" \
++	TARGET_CFLAGS="$(TARGET_CFLAGS)" \
++	TARGET_CPPFLAGS="$(TARGET_CPPFLAGS) -fno-stack-protector" \
+ 	TARGET_LDFLAGS="$(TARGET_LDFLAGS)" \
+ 	NM="$(TARGET_NM)" \
+ 	OBJCOPY="$(TARGET_OBJCOPY)" \
+diff --git a/configs/solidrun_macchiatobin_mainline_defconfig b/configs/solidrun_macchiatobin_mainline_defconfig
+index dd797d709c..17fb9d02a2 100644
+--- a/configs/solidrun_macchiatobin_mainline_defconfig
++++ b/configs/solidrun_macchiatobin_mainline_defconfig
+@@ -7,7 +7,7 @@ BR2_TARGET_GENERIC_ISSUE="Welcome to Buildroot for Marvell MacchiatoBin"
+ BR2_TARGET_ARM_TRUSTED_FIRMWARE=y
+ BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_GIT=y
+ BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_REPO_URL="https://github.com/MarvellEmbeddedProcessors/atf-marvell.git"
+-BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_REPO_VERSION="atf-v1.3-armada-17.10"
++BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_REPO_VERSION="43965481990fd92e9666cf9371a8cf478055ec7c"
+ BR2_TARGET_ARM_TRUSTED_FIRMWARE_PLATFORM="a80x0_mcbin"
+ BR2_TARGET_ARM_TRUSTED_FIRMWARE_FIP=y
+ BR2_TARGET_ARM_TRUSTED_FIRMWARE_UBOOT_AS_BL33=y
+diff --git a/configs/solidrun_macchiatobin_marvell_defconfig b/configs/solidrun_macchiatobin_marvell_defconfig
+index 5489136e1c..201562b9f9 100644
+--- a/configs/solidrun_macchiatobin_marvell_defconfig
++++ b/configs/solidrun_macchiatobin_marvell_defconfig
+@@ -7,7 +7,7 @@ BR2_TARGET_GENERIC_ISSUE="Welcome to Buildroot for Marvell MacchiatoBin"
+ BR2_TARGET_ARM_TRUSTED_FIRMWARE=y
+ BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_GIT=y
+ BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_REPO_URL="https://github.com/MarvellEmbeddedProcessors/atf-marvell.git"
+-BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_REPO_VERSION="atf-v1.3-armada-17.10"
++BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_REPO_VERSION="43965481990fd92e9666cf9371a8cf478055ec7c"
+ BR2_TARGET_ARM_TRUSTED_FIRMWARE_PLATFORM="a80x0_mcbin"
+ BR2_TARGET_ARM_TRUSTED_FIRMWARE_FIP=y
+ BR2_TARGET_ARM_TRUSTED_FIRMWARE_UBOOT_AS_BL33=y
+diff --git a/package/bash/bash.mk b/package/bash/bash.mk
+index e9384911a0..6e58f0fd64 100644
+--- a/package/bash/bash.mk
++++ b/package/bash/bash.mk
+@@ -39,14 +39,10 @@ BASH_CONF_ENV += bash_cv_getenv_redef=yes
+ endif
+ endif
+ 
+-# Add /bin/bash to /etc/shells otherwise some login tools like dropbear
+-# can reject the user connexion. See man shells.
+ define BASH_INSTALL_TARGET_CMDS
+ 	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) \
+ 		DESTDIR=$(TARGET_DIR) exec_prefix=/ install
+ 	rm -f $(TARGET_DIR)/bin/bashbug
+-	grep -qsE '^/bin/bash' $(TARGET_DIR)/etc/shells \
+-		|| echo "/bin/bash" >> $(TARGET_DIR)/etc/shells
+ endef
+ 
+ $(eval $(autotools-package))
+diff --git a/package/bluez5_utils/0002-bt_shell-APIs-shall-only-be-build-if-readline-is-pre.patch b/package/bluez5_utils/0002-bt_shell-APIs-shall-only-be-build-if-readline-is-pre.patch
+new file mode 100644
+index 0000000000..394742b680
+--- /dev/null
++++ b/package/bluez5_utils/0002-bt_shell-APIs-shall-only-be-build-if-readline-is-pre.patch
+@@ -0,0 +1,32 @@
++From 654444dd8faf02b46f41d81f3d9c623d57bdd399 Mon Sep 17 00:00:00 2001
++From: Luiz Augusto von Dentz <luiz.von.dentz@intel.com>
++Date: Fri, 20 Apr 2018 16:04:17 +0200
++Subject: [PATCH] bt_shell APIs shall only be build if readline is present on
++ the system since it currently depend on it.
++
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++Upstream-status: https://marc.info/?l=linux-bluetooth&m=152422938306592&w=2
++---
++ Makefile.am | 6 +++++-
++ 1 file changed, 5 insertions(+), 1 deletion(-)
++
++diff --git a/Makefile.am b/Makefile.am
++index daf34b6ca..9c3c17139 100644
++--- a/Makefile.am
+++++ b/Makefile.am
++@@ -119,7 +119,11 @@ shared_sources = src/shared/io.h src/shared/timeout.h \
++ 			src/shared/gatt-server.h src/shared/gatt-server.c \
++ 			src/shared/gatt-db.h src/shared/gatt-db.c \
++ 			src/shared/gap.h src/shared/gap.c \
++-			src/shared/tty.h src/shared/shell.c src/shared/shell.h
+++			src/shared/tty.h
+++
+++if READLINE
+++shared_sources += src/shared/shell.c src/shared/shell.h
+++endif
++ 
++ src_libshared_glib_la_SOURCES = $(shared_sources) \
++ 				src/shared/io-glib.c \
++-- 
++2.14.3
++
+diff --git a/package/bluez5_utils/bluez5_utils.mk b/package/bluez5_utils/bluez5_utils.mk
+index 395340a3e6..c608637687 100644
+--- a/package/bluez5_utils/bluez5_utils.mk
++++ b/package/bluez5_utils/bluez5_utils.mk
+@@ -11,6 +11,8 @@ BLUEZ5_UTILS_INSTALL_STAGING = YES
+ BLUEZ5_UTILS_DEPENDENCIES = dbus libglib2
+ BLUEZ5_UTILS_LICENSE = GPL-2.0+, LGPL-2.1+
+ BLUEZ5_UTILS_LICENSE_FILES = COPYING COPYING.LIB
++# 0001-bt_shell-APIs-shall-only-be-build-if-readline-is-pre.patch
++BLUEZ5_UTILS_AUTORECONF = YES
+ 
+ BLUEZ5_UTILS_CONF_OPTS = \
+ 	--enable-tools \
+diff --git a/package/flann/0001-src-cpp-fix-cmake-3.11-build.patch b/package/flann/0001-src-cpp-fix-cmake-3.11-build.patch
+new file mode 100644
+index 0000000000..b37bedcf6d
+--- /dev/null
++++ b/package/flann/0001-src-cpp-fix-cmake-3.11-build.patch
+@@ -0,0 +1,80 @@
++From fa5ec96a94646492a3f908e12905b3e48a8e800b Mon Sep 17 00:00:00 2001
++From: Romain Naour <romain.naour@gmail.com>
++Date: Wed, 18 Apr 2018 20:24:13 +0200
++Subject: [PATCH] src/cpp: fix cmake >= 3.11 build
++
++CMake < 3.11 doesn't support add_library() without any source file
++(i.e add_library(foo SHARED)). But flann CMake use a trick that use
++an empty string "" as source list (i.e add_library(foo SHARED "")).
++This look like a bug in CMake < 3.11.
++
++With CMake >= 3.11, the new behaviour of add_library() break the
++existing flann CMake code.
++
++From CMake Changelog [1]:
++"add_library() and add_executable() commands can now be called without
++ any sources and will not complain as long as sources are added later
++ via the target_sources() command."
++
++Note: flann CMake code doesn't use target_sources() since no source file
++are provided intentionally since the flann shared library is created by
++linking with the flann_cpp_s static library with this line:
++
++target_link_libraries(flann_cpp -Wl,-whole-archive flann_cpp_s -Wl,-no-whole-archive)
++
++If you try to use "add_library(flann_cpp SHARED ${CPP_SOURCES})" (as it should
++be normally done), the link fail due to already defined symbol.
++
++They are building the shared version using the static library "to speedup the
++build time" [3]
++
++This issue is already reported upstream [2] with a proposed solution.
++
++Upstream status: Pending
++
++Fixes:
++http://autobuild.buildroot.net/results/b2f/b2febfaf8c44ce477b3e4a5b9b976fd25e8d7454
++
++[1] https://cmake.org/cmake/help/v3.11/release/3.11.html
++[2] https://github.com/mariusmuja/flann/issues/369
++[3] https://github.com/mariusmuja/flann/commit/0fd62b43be2fbb0b8d791ee36290791224dc030c
++
++Signed-off-by: Romain Naour <romain.naour@gmail.com>
++---
++ src/cpp/CMakeLists.txt | 4 ++--
++ src/cpp/empty.cpp      | 1 +
++ 2 files changed, 3 insertions(+), 2 deletions(-)
++ create mode 100644 src/cpp/empty.cpp
++
++diff --git a/src/cpp/CMakeLists.txt b/src/cpp/CMakeLists.txt
++index b44a735..a816863 100644
++--- a/src/cpp/CMakeLists.txt
+++++ b/src/cpp/CMakeLists.txt
++@@ -29,7 +29,7 @@ if (BUILD_CUDA_LIB)
++ endif()
++ 
++ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_COMPILER_IS_GNUCC)
++-    add_library(flann_cpp SHARED "")
+++    add_library(flann_cpp SHARED "empty.cpp")
++     set_target_properties(flann_cpp PROPERTIES LINKER_LANGUAGE CXX)
++     target_link_libraries(flann_cpp -Wl,-whole-archive flann_cpp_s -Wl,-no-whole-archive)
++ 
++@@ -85,7 +85,7 @@ if (BUILD_C_BINDINGS)
++     set_property(TARGET flann_s PROPERTY COMPILE_DEFINITIONS FLANN_STATIC)
++ 
++     if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_COMPILER_IS_GNUCC)
++-        add_library(flann SHARED "")
+++        add_library(flann SHARED "empty.cpp")
++         set_target_properties(flann PROPERTIES LINKER_LANGUAGE CXX)
++         target_link_libraries(flann -Wl,-whole-archive flann_s -Wl,-no-whole-archive)
++     else()
++diff --git a/src/cpp/empty.cpp b/src/cpp/empty.cpp
++new file mode 100644
++index 0000000..40a8c17
++--- /dev/null
+++++ b/src/cpp/empty.cpp
++@@ -0,0 +1 @@
+++/* empty */
++-- 
++2.14.3
++
+diff --git a/package/gdb/gdb.mk b/package/gdb/gdb.mk
+index 5ca464ad46..ad81818a35 100644
+--- a/package/gdb/gdb.mk
++++ b/package/gdb/gdb.mk
+@@ -164,6 +164,7 @@ else
+ GDB_CONF_OPTS += --without-zlib
+ endif
+ 
++ifeq ($(BR2_PACKAGE_GDB_PYTHON),)
+ # This removes some unneeded Python scripts and XML target description
+ # files that are not useful for a normal usage of the debugger.
+ define GDB_REMOVE_UNNEEDED_FILES
+@@ -171,6 +172,7 @@ define GDB_REMOVE_UNNEEDED_FILES
+ endef
+ 
+ GDB_POST_INSTALL_TARGET_HOOKS += GDB_REMOVE_UNNEEDED_FILES
++endif
+ 
+ # This installs the gdbserver somewhere into the $(HOST_DIR) so that
+ # it becomes an integral part of the SDK, if the toolchain generated
+diff --git a/package/gnupg2/gnupg2.hash b/package/gnupg2/gnupg2.hash
+index a003da668b..155295244e 100644
+--- a/package/gnupg2/gnupg2.hash
++++ b/package/gnupg2/gnupg2.hash
+@@ -1,6 +1,6 @@
+-# From https://lists.gnupg.org/pipermail/gnupg-announce/2017q4/000419.html
+-sha1 732266e8888c6f41c084d043c7a0058332ff3580  gnupg-2.2.4.tar.bz2
++# From https://lists.gnupg.org/pipermail/gnupg-announce/2018q2/000421.html
++sha1 295298debcc2c12f02a2f2fdf04aecb6d6aae396  gnupg-2.2.6.tar.bz2
+ # Calculated based on the hash above and signature
+-# https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.2.4.tar.bz2.sig
+-sha256 401a3e64780fdfa6d7670de0880aa5c9d589b3db7a7098979d7606cec546f2ec  gnupg-2.2.4.tar.bz2
++# https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.2.6.tar.bz2.sig
++sha256 e64d8c5fa2d05938a5080cb784a98ac21be0812f2a26f844b18f0d6a0e711984  gnupg-2.2.6.tar.bz2
+ sha256 bc2d6664f6276fa0a72d57633b3ae68dc7dcb677b71018bf08c8e93e509f1357  COPYING
+diff --git a/package/gnupg2/gnupg2.mk b/package/gnupg2/gnupg2.mk
+index 980fae342b..4d84bfbb9e 100644
+--- a/package/gnupg2/gnupg2.mk
++++ b/package/gnupg2/gnupg2.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-GNUPG2_VERSION = 2.2.4
++GNUPG2_VERSION = 2.2.6
+ GNUPG2_SOURCE = gnupg-$(GNUPG2_VERSION).tar.bz2
+ GNUPG2_SITE = https://gnupg.org/ftp/gcrypt/gnupg
+ GNUPG2_LICENSE = GPL-3.0+
+@@ -13,7 +13,7 @@ GNUPG2_DEPENDENCIES = zlib libgpg-error libgcrypt libassuan libksba libnpth \
+ 	$(if $(BR2_PACKAGE_LIBICONV),libiconv) host-pkgconf
+ 
+ GNUPG2_CONF_OPTS = \
+-	--disable-rpath --disable-regex --disable-doc \
++	--disable-rpath --disable-regex \
+ 	--with-libgpg-error-prefix=$(STAGING_DIR)/usr \
+ 	--with-libgcrypt-prefix=$(STAGING_DIR)/usr \
+ 	--with-libassuan-prefix=$(STAGING_DIR)/usr \
+diff --git a/package/libcec/libcec.mk b/package/libcec/libcec.mk
+index 6d14447958..99d1c8b2ba 100644
+--- a/package/libcec/libcec.mk
++++ b/package/libcec/libcec.mk
+@@ -37,4 +37,11 @@ ifeq ($(BR2_PACKAGE_XLIB_LIBXRANDR),y)
+ LIBCEC_DEPENDENCIES += xlib_libXrandr
+ endif
+ 
++# Disable information about how libCEC is compiled.
++LIBCEC_CONF_OPTS += -DHAVE_GIT_BIN="" \
++	-DHAVE_DATE_BIN="" \
++	-DHAVE_WHOAMI_BIN="" \
++	-DHAVE_HOSTNAME_BIN="" \
++	-DHAVE_UNAME_BIN=""
++
+ $(eval $(cmake-package))
+diff --git a/package/libcgi/libcgi.hash b/package/libcgi/libcgi.hash
+index 3d9f791ed2..f071cc0aea 100644
+--- a/package/libcgi/libcgi.hash
++++ b/package/libcgi/libcgi.hash
+@@ -1,2 +1,5 @@
+ # From https://github.com/rafaelsteil/libcgi/releases/download/v1.1/libcgi-1.1.tar.gz.sha256sum
+ sha256  128445f2f828e84905d51bd53d11e2e08c489df3a07225ff9f198c1318092fe6  libcgi-1.1.tar.gz
++
++# Hash for license file:
++sha256  dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551  COPYING
+diff --git a/package/libcgi/libcgi.mk b/package/libcgi/libcgi.mk
+index 0d51de7542..d1e403fdf1 100644
+--- a/package/libcgi/libcgi.mk
++++ b/package/libcgi/libcgi.mk
+@@ -9,5 +9,6 @@ LIBCGI_SITE = https://github.com/rafaelsteil/libcgi/releases/download/v$(LIBCGI_
+ 
+ LIBCGI_INSTALL_STAGING = YES
+ LIBCGI_LICENSE = LGPL-2.1+
++LIBCGI_LICENSE_FILES = COPYING
+ 
+ $(eval $(cmake-package))
+diff --git a/package/libglib2/libglib2.mk b/package/libglib2/libglib2.mk
+index 097c980393..ff28ca611a 100644
+--- a/package/libglib2/libglib2.mk
++++ b/package/libglib2/libglib2.mk
+@@ -8,7 +8,7 @@ LIBGLIB2_VERSION_MAJOR = 2.54
+ LIBGLIB2_VERSION = $(LIBGLIB2_VERSION_MAJOR).2
+ LIBGLIB2_SOURCE = glib-$(LIBGLIB2_VERSION).tar.xz
+ LIBGLIB2_SITE = http://ftp.gnome.org/pub/gnome/sources/glib/$(LIBGLIB2_VERSION_MAJOR)
+-LIBGLIB2_LICENSE = LGPL-2.0+
++LIBGLIB2_LICENSE = LGPL-2.1+
+ LIBGLIB2_LICENSE_FILES = COPYING
+ # 0002-disable-tests.patch
+ LIBGLIB2_AUTORECONF = YES
+diff --git a/package/libgpg-error/libgpg-error.hash b/package/libgpg-error/libgpg-error.hash
+index 0541d2311a..0e6304de66 100644
+--- a/package/libgpg-error/libgpg-error.hash
++++ b/package/libgpg-error/libgpg-error.hash
+@@ -1,2 +1,6 @@
+ # Locally calculated after checking pgp signature
+-sha256 04bdc7fd12001c797cc689b007fe24909f55aa0ee1d6d6aef967d9eebf5b2461  libgpg-error-1.27.tar.gz
++# https://www.gnupg.org/ftp/gcrypt/libgpg-error/libgpg-error-1.29.tar.bz2.sig
++sha256 ece926fa5719d17a7ad8da618712cfa2f8a796ab2f2af9d544c5bb093383b1ea  libgpg-error-1.29.tar.bz2
++# Locally calculated
++sha256 231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c  COPYING
++sha256 a9bdde5616ecdd1e980b44f360600ee8783b1f99b8cc83a2beb163a0a390e861  COPYING.LIB
+diff --git a/package/libgpg-error/libgpg-error.mk b/package/libgpg-error/libgpg-error.mk
+index 2140258c6e..862cb44eef 100644
+--- a/package/libgpg-error/libgpg-error.mk
++++ b/package/libgpg-error/libgpg-error.mk
+@@ -4,8 +4,9 @@
+ #
+ ################################################################################
+ 
+-LIBGPG_ERROR_VERSION = 1.27
+-LIBGPG_ERROR_SITE = ftp://ftp.gnupg.org/gcrypt/libgpg-error
++LIBGPG_ERROR_VERSION = 1.29
++LIBGPG_ERROR_SITE = https://www.gnupg.org/ftp/gcrypt/libgpg-error
++LIBGPG_ERROR_SOURCE = libgpg-error-$(LIBGPG_ERROR_VERSION).tar.bz2
+ LIBGPG_ERROR_LICENSE = GPL-2.0+, LGPL-2.1+
+ LIBGPG_ERROR_LICENSE_FILES = COPYING COPYING.LIB
+ LIBGPG_ERROR_INSTALL_STAGING = YES
+diff --git a/package/libgpgme/0001-core-Tweak-STATUS_FAILURE-handling.patch b/package/libgpgme/0001-core-Tweak-STATUS_FAILURE-handling.patch
+new file mode 100644
+index 0000000000..ae0e9c5498
+--- /dev/null
++++ b/package/libgpgme/0001-core-Tweak-STATUS_FAILURE-handling.patch
+@@ -0,0 +1,51 @@
++From b99502274ae5efdf6df0d967900ec3d1e64373d7 Mon Sep 17 00:00:00 2001
++From: Werner Koch <wk@gnupg.org>
++Date: Thu, 12 Apr 2018 20:36:30 +0200
++Subject: [PATCH] core: Tweak STATUS_FAILURE handling.
++
++* src/op-support.c (_gpgme_parse_failure): Ignore failures with
++location "gpg-exit".
++* tests/gpg/t-verify.c (main): Adjust for the now working checking of
++the second key.
++
++Signed-off-by: Werner Koch <wk@gnupg.org>
++[baruch: drop test]
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit b99502274ae
++
++ src/op-support.c     | 10 +++++++++-
++ tests/gpg/t-verify.c |  8 +++++---
++ 2 files changed, 14 insertions(+), 4 deletions(-)
++
++diff --git a/src/op-support.c b/src/op-support.c
++index 43cb1c760e0d..e55875f904d0 100644
++--- a/src/op-support.c
+++++ b/src/op-support.c
++@@ -400,7 +400,13 @@ _gpgme_parse_plaintext (char *args, char **filenamep)
++ 
++ 
++ /* Parse a FAILURE status line and return the error code.  ARGS is
++-   modified to contain the location part.  */
+++ * modified to contain the location part.  Note that for now we ignore
+++ * failure codes with a location of gpg-exit; they are too trouble
+++ * some.  Instead we should eventually record that error in the
+++ * context and provide a function to return a fuller error
+++ * description; this could then also show the location of the error
+++ * (e.g. "option- parser") to make it easier for the user to detect
+++ * the actual error. */
++ gpgme_error_t
++ _gpgme_parse_failure (char *args)
++ {
++@@ -418,6 +424,8 @@ _gpgme_parse_failure (char *args)
++     *where = '\0';
++ 
++   where = args;
+++  if (!strcmp (where, "gpg-exit"))
+++    return 0;
++ 
++   return atoi (which);
++ }
++-- 
++2.17.0
++
+diff --git a/package/libtomcrypt/libtomcrypt.mk b/package/libtomcrypt/libtomcrypt.mk
+index 974ef3f2f2..ff6222cc91 100644
+--- a/package/libtomcrypt/libtomcrypt.mk
++++ b/package/libtomcrypt/libtomcrypt.mk
+@@ -20,7 +20,9 @@ define LIBTOMCRYPT_BUILD_CMDS
+ endef
+ 
+ define LIBTOMCRYPT_INSTALL_STAGING_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) DESTDIR="$(STAGING_DIR)" NODOCS=1 INSTALL_USER=$(shell id -u) INSTALL_GROUP=$(shell id -g) install
++	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) DESTDIR="$(STAGING_DIR)" \
++		PREFIX=/usr NODOCS=1 INSTALL_USER=$(shell id -u) \
++		INSTALL_GROUP=$(shell id -g) install
+ endef
+ 
+ $(eval $(generic-package))
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index 3bd3e779b0..7d579325aa 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -242,12 +242,12 @@ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+ 	default "3.2.101"	if BR2_KERNEL_HEADERS_3_2
+ 	default "4.1.51"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.127"	if BR2_KERNEL_HEADERS_4_4
+-	default "4.9.93"	if BR2_KERNEL_HEADERS_4_9
++	default "4.4.131"	if BR2_KERNEL_HEADERS_4_4
++	default "4.9.98"	if BR2_KERNEL_HEADERS_4_9
+ 	default "4.10.17"	if BR2_KERNEL_HEADERS_4_10
+ 	default "4.11.12"	if BR2_KERNEL_HEADERS_4_11
+ 	default "4.12.14"	if BR2_KERNEL_HEADERS_4_12
+ 	default "4.13.16"	if BR2_KERNEL_HEADERS_4_13
+-	default "4.14.33"	if BR2_KERNEL_HEADERS_4_14
+-	default "4.15.16"	if BR2_KERNEL_HEADERS_4_15
++	default "4.14.39"	if BR2_KERNEL_HEADERS_4_14
++	default "4.15.18"	if BR2_KERNEL_HEADERS_4_15
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/mbedtls/0001-dhm-Fix-typo-in-RFC-5114-constants.patch b/package/mbedtls/0001-dhm-Fix-typo-in-RFC-5114-constants.patch
+deleted file mode 100644
+index effaf3d931..0000000000
+--- a/package/mbedtls/0001-dhm-Fix-typo-in-RFC-5114-constants.patch
++++ /dev/null
+@@ -1,33 +0,0 @@
+-From 129f50838bf14f4e1319f06f41c827fae9cc4b73 Mon Sep 17 00:00:00 2001
+-From: Jaeden Amero <jaeden.amero@arm.com>
+-Date: Thu, 8 Feb 2018 14:25:36 +0000
+-Subject: [PATCH] dhm: Fix typo in RFC 5114 constants
+-
+-We accidentally named the constant MBEDTLS_DHM_RFC5114_MODP_P instead of
+-MBEDTLS_DHM_RFC5114_MODP_2048_P.
+-
+-Fixes #1358
+-
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Patch status: upstream commit 129f50838bf
+-
+- include/mbedtls/dhm.h | 2 +-
+- 1 file changed, 1 insertion(+), 1 deletion(-)
+-
+-diff --git a/include/mbedtls/dhm.h b/include/mbedtls/dhm.h
+-index da2e66b111b6..00fafd8d16f4 100644
+---- a/include/mbedtls/dhm.h
+-+++ b/include/mbedtls/dhm.h
+-@@ -372,7 +372,7 @@ MBEDTLS_DEPRECATED typedef char const * mbedtls_deprecated_constant_t;
+-  * in <em>RFC-5114: Additional Diffie-Hellman Groups for Use with
+-  * IETF Standards</em>.
+-  */
+--#define MBEDTLS_DHM_RFC5114_MODP_P                              \
+-+#define MBEDTLS_DHM_RFC5114_MODP_2048_P                         \
+-     MBEDTLS_DEPRECATED_STRING_CONSTANT(                         \
+-         "AD107E1E9123A9D0D660FAA79559C51FA20D64E5683B9FD1"      \
+-         "B54B1597B61D0A75E6FA141DF95A56DBAF9A3C407BA1DF15"      \
+--- 
+-2.16.1
+-
+diff --git a/package/mbedtls/mbedtls.hash b/package/mbedtls/mbedtls.hash
+index a62c0f58de..f5331bed15 100644
+--- a/package/mbedtls/mbedtls.hash
++++ b/package/mbedtls/mbedtls.hash
+@@ -1,5 +1,5 @@
+-# From https://tls.mbed.org/tech-updates/releases/mbedtls-2.7.0-2.1.10-and-1.3.22-released
+-sha1	01ffebf679c8696cc941c41224fa73d8944d2c85	mbedtls-2.7.0-apache.tgz
+-sha256	aeb66d6cd43aa1c79c145d15845c655627a7fc30d624148aaafbb6c36d7f55ef	mbedtls-2.7.0-apache.tgz
++# From https://tls.mbed.org/tech-updates/releases/mbedtls-2.8.0-2.7.2-and-2.1.11-released
++sha1	e36d7cbdc2ed0a5d5659385840e8fbb4d351234e	mbedtls-2.7.2-apache.tgz
++sha256	fd38c2bb5fbe1ffd3e7fdcdd71130986f2010f25b3a5575eb8ded0dd3bc573d7	mbedtls-2.7.2-apache.tgz
+ # Locally calculated
+ sha256	cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30	apache-2.0.txt
+diff --git a/package/mbedtls/mbedtls.mk b/package/mbedtls/mbedtls.mk
+index 7c26ea95ee..ca44ee3713 100644
+--- a/package/mbedtls/mbedtls.mk
++++ b/package/mbedtls/mbedtls.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ MBEDTLS_SITE = https://tls.mbed.org/code/releases
+-MBEDTLS_VERSION = 2.7.0
++MBEDTLS_VERSION = 2.7.2
+ MBEDTLS_SOURCE = mbedtls-$(MBEDTLS_VERSION)-apache.tgz
+ MBEDTLS_CONF_OPTS = \
+ 	-DENABLE_PROGRAMS=$(if $(BR2_PACKAGE_MBEDTLS_PROGRAMS),ON,OFF) \
+diff --git a/package/mkpasswd/mkpasswd.c b/package/mkpasswd/mkpasswd.c
+index 5820f32501..fd16230468 100644
+--- a/package/mkpasswd/mkpasswd.c
++++ b/package/mkpasswd/mkpasswd.c
+@@ -44,6 +44,11 @@
+ #include <sys/time.h>
+ #endif
+ 
++/* glibc without crypt() */
++#ifndef _XOPEN_CRYPT
++#include <crypt.h>
++#endif
++
+ /* Application-specific */
+ #include "utils.h"
+ 
+diff --git a/package/php/0009-ext-xml-expat_compat.h-add-missing-php.h-include.patch b/package/php/0008-ext-xml-expat_compat.h-add-missing-php.h-include.patch
+similarity index 100%
+rename from package/php/0009-ext-xml-expat_compat.h-add-missing-php.h-include.patch
+rename to package/php/0008-ext-xml-expat_compat.h-add-missing-php.h-include.patch
+diff --git a/package/php/0008-main-php_ini.c-build-empty-php_load_zend_extension_c.patch b/package/php/0008-main-php_ini.c-build-empty-php_load_zend_extension_c.patch
+deleted file mode 100644
+index bc5149d1d6..0000000000
+--- a/package/php/0008-main-php_ini.c-build-empty-php_load_zend_extension_c.patch
++++ /dev/null
+@@ -1,62 +0,0 @@
+-From b7bbdfbcb0869b5c068143d4e27bab9eac4ae72b Mon Sep 17 00:00:00 2001
+-From: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
+-Date: Mon, 26 Feb 2018 19:30:55 +0100
+-Subject: [PATCH] main/php_ini.c: build empty php_load_zend_extension_cb() when
+- !HAVE_LIBDL
+-
+-Commit 0782a7fc6314c8bd3cbfd57f12d0479bf9cc8dc7 ("Fixed bug #74866
+-extension_dir = "./ext" now use current directory for base") modified
+-the php_load_zend_extension_cb() function to use php_load_shlib(), and
+-pass a handle to the newly introduced zend_load_extension_handle()
+-function instead of passing the extension path to
+-zend_load_extension().
+-
+-While doing so, it introduced a call to php_load_shlib() from code
+-that is built even when HAVE_LIBDL is not defined. However,
+-php_load_shlib() is not implemented when HAVE_LIBDL is not defined,
+-for obvious reasons.
+-
+-It turns out that zend_load_extension_handle() anyway doesn't do
+-anything when ZEND_EXTENSIONS_SUPPORT is defined to 0, and
+-ZEND_EXTENSIONS_SUPPORT is not defined when HAVE_LIBDL is not defined
+-(Zend/zend_portability.h).
+-
+-Fixes the following build failure when building on a system that
+-doesn't have libdl:
+-
+-main/php_ini.o: In function `php_load_zend_extension_cb':
+-php_ini.c:(.text+0x478): undefined reference to `php_load_shlib'
+-php_ini.c:(.text+0x4b0): undefined reference to `php_load_shlib'
+-collect2: error: ld returned 1 exit status
+-
+-Signed-off-by: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
+-Upstream-status: https://github.com/php/php-src/pull/3161
+----
+- main/php_ini.c | 4 ++++
+- 1 file changed, 4 insertions(+)
+-
+-diff --git a/main/php_ini.c b/main/php_ini.c
+-index ba58eb1180..fca263e5f0 100644
+---- a/main/php_ini.c
+-+++ b/main/php_ini.c
+-@@ -350,6 +350,7 @@ static void php_load_php_extension_cb(void *arg)
+- 
+- /* {{{ php_load_zend_extension_cb
+-  */
+-+#ifdef HAVE_LIBDL
+- static void php_load_zend_extension_cb(void *arg)
+- {
+- 	char *filename = *((char **) arg);
+-@@ -409,6 +410,9 @@ static void php_load_zend_extension_cb(void *arg)
+- 		efree(libpath);
+- 	}
+- }
+-+#else
+-+static void php_load_zend_extension_cb(void *arg) { }
+-+#endif
+- /* }}} */
+- 
+- /* {{{ php_init_config
+--- 
+-2.14.3
+-
+diff --git a/package/php/php.hash b/package/php/php.hash
+index 4cd5acaef9..4ddef44274 100644
+--- a/package/php/php.hash
++++ b/package/php/php.hash
+@@ -1,5 +1,5 @@
+ # From http://php.net/downloads.php
+-sha256 7916b1bd148ddfd46d7f8f9a517d4b09cd8a8ad9248734e7c8dd91ef17057a88  php-7.2.4.tar.xz
++sha256 af70a33b3f7a51510467199b39af151333fbbe4cc21923bad9c7cf64268cddb2  php-7.2.5.tar.xz
+ 
+ # License file
+ sha256 00e567a8d50359d93ee1f9afdd9511277660c1e70a0cbf3229f84403aa9aebb1  LICENSE
+diff --git a/package/php/php.mk b/package/php/php.mk
+index 91756794ee..4c3a87118e 100644
+--- a/package/php/php.mk
++++ b/package/php/php.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-PHP_VERSION = 7.2.4
++PHP_VERSION = 7.2.5
+ PHP_SITE = http://www.php.net/distributions
+ PHP_SOURCE = php-$(PHP_VERSION).tar.xz
+ PHP_INSTALL_STAGING = YES
+diff --git a/package/pkg-generic.mk b/package/pkg-generic.mk
+index 3706834a5e..d635516734 100644
+--- a/package/pkg-generic.mk
++++ b/package/pkg-generic.mk
+@@ -63,6 +63,8 @@ GLOBAL_INSTRUMENTATION_HOOKS += step_time
+ # $(2): base directory to search in
+ # $(3): suffix of file  (optional)
+ define step_pkg_size_inner
++	@touch $(BUILD_DIR)/packages-file-list$(3).txt
++	$(SED) '/^$(1),/d' $(BUILD_DIR)/packages-file-list$(3).txt
+ 	cd $(2); \
+ 	find . \( -type f -o -type l \) \
+ 		-newer $($(PKG)_DIR)/.stamp_built \
+diff --git a/package/python-requests/Config.in b/package/python-requests/Config.in
+index d2726fb26a..30158b8d25 100644
+--- a/package/python-requests/Config.in
++++ b/package/python-requests/Config.in
+@@ -4,6 +4,7 @@ config BR2_PACKAGE_PYTHON_REQUESTS
+ 	select BR2_PACKAGE_PYTHON_CHARDET # runtime
+ 	select BR2_PACKAGE_PYTHON_IDNA # runtime
+ 	select BR2_PACKAGE_PYTHON_URLLIB3 # runtime
++	select BR2_PACKAGE_PYTHON_HASHLIB if BR2_PACKAGE_PYTHON # runtime
+ 	select BR2_PACKAGE_PYTHON_SSL if BR2_PACKAGE_PYTHON # runtime
+ 	select BR2_PACKAGE_PYTHON3_SSL if BR2_PACKAGE_PYTHON3 # runtime
+ 	select BR2_PACKAGE_PYTHON_ZLIB if BR2_PACKAGE_PYTHON # runtime
+diff --git a/package/python-watchdog/0001-Add-a-workaround-to-support-uClibc-library.patch b/package/python-watchdog/0001-Add-a-workaround-to-support-uClibc-library.patch
+new file mode 100644
+index 0000000000..c21e6cd089
+--- /dev/null
++++ b/package/python-watchdog/0001-Add-a-workaround-to-support-uClibc-library.patch
+@@ -0,0 +1,43 @@
++From c3b3c4581b25d7e62f5c2ce1484133229d5e657a Mon Sep 17 00:00:00 2001
++From: Yegor Yefremov <yegorslists@googlemail.com>
++Date: Fri, 16 Feb 2018 13:26:23 +0100
++Subject: [PATCH] Add a workaround to support uClibc library
++
++uClibc based systems provide only libc.so.0 and libc.so.1
++symlinks.
++
++So try to find libc.so.0 if neither libc.so nor libc.so.6
++could be found.
++
++Signed-off-by: Yegor Yefremov <yegorslists@googlemail.com>
++---
++ src/watchdog/observers/inotify_c.py | 12 ++++++++++++
++ 1 file changed, 12 insertions(+)
++
++diff --git a/src/watchdog/observers/inotify_c.py b/src/watchdog/observers/inotify_c.py
++index 5f208b6..0dc7b50 100644
++--- a/src/watchdog/observers/inotify_c.py
+++++ b/src/watchdog/observers/inotify_c.py
++@@ -45,7 +45,19 @@ def _load_libc():
++     try:
++         return ctypes.CDLL('libc.so')
++     except (OSError, IOError):
+++        pass
+++
+++    try:
++         return ctypes.CDLL('libc.so.6')
+++    except (OSError, IOError):
+++        pass
+++
+++    # uClibc
+++    try:
+++        return ctypes.CDLL('libc.so.0')
+++    except (OSError, IOError) as err:
+++        raise err
+++
++ 
++ libc = _load_libc()
++ 
++-- 
++2.1.4
++
+diff --git a/package/python-watchdog/Config.in b/package/python-watchdog/Config.in
+index e5290897e8..18f569ee44 100644
+--- a/package/python-watchdog/Config.in
++++ b/package/python-watchdog/Config.in
+@@ -1,8 +1,9 @@
+ config BR2_PACKAGE_PYTHON_WATCHDOG
+ 	bool "python-watchdog"
+-	select BR2_PACKAGE_PYTHON_PYYAML
+-	select BR2_PACKAGE_PYTHON_ARGH
+-	select BR2_PACKAGE_PYTHON_PATHTOOLS
++	select BR2_PACKAGE_PYTHON_ARGH # runtime
++	select BR2_PACKAGE_PYTHON_PATHTOOLS # runtime
++	select BR2_PACKAGE_PYTHON_PYYAML # runtime
++	select BR2_PACKAGE_PYTHON_SETUPTOOLS # runtime
+ 	help
+ 	  Python API and shell utilities to monitor file system events.
+ 
+diff --git a/package/python/0035-GCC8-alignment-fix.patch b/package/python/0035-GCC8-alignment-fix.patch
+new file mode 100644
+index 0000000000..b742aa09de
+--- /dev/null
++++ b/package/python/0035-GCC8-alignment-fix.patch
+@@ -0,0 +1,65 @@
++From 0b91f8a668201fc58fa732b8acc496caedfdbae0 Mon Sep 17 00:00:00 2001
++From: Florian Weimer <fw@deneb.enyo.de>
++Date: Sun, 29 Apr 2018 12:18:33 -0700
++Subject: [PATCH] Indicate that _PyGC_Head is only 8-byte aligned. (closes
++ bpo-33374)
++
++By spec, the "long double" in _PyGC_Head requires the union to always be 16-byte
++aligned. However, obmalloc only yields 8-byte alignment. Compilers including GCC
++8 are starting to use alignment information to do store-merging. So, the "long
++double" needs to be changed to a simple "double" as was long ago done in Python
++3 by e348c8d154cf6342c79d627ebfe89dfe9de23817. For 2.7, we need to add some
++dummy padding to make sure _PyGC_Head stays the same size.
++
++Upstream: https://bugs.python.org/issue33374
++Signed-off-by: Stefan Becker <chemobejk@gmail.com>
++---
++ Include/objimpl.h                                       | 17 ++++++++++++++++-
++ .../2018-04-29-12-07-00.bpo-33374.-xegL6.rst            |  3 +++
++ 2 files changed, 19 insertions(+), 1 deletion(-)
++ create mode 100644 Misc/NEWS.d/next/Core and Builtins/2018-04-29-12-07-00.bpo-33374.-xegL6.rst
++
++diff --git a/Include/objimpl.h b/Include/objimpl.h
++index 5f2868332955..cbf6bc3f8763 100644
++--- a/Include/objimpl.h
+++++ b/Include/objimpl.h
++@@ -248,6 +248,20 @@ PyAPI_FUNC(PyVarObject *) _PyObject_GC_Resize(PyVarObject *, Py_ssize_t);
++ /* for source compatibility with 2.2 */
++ #define _PyObject_GC_Del PyObject_GC_Del
++ 
+++/*
+++ * Former over-aligned definition of PyGC_Head, used to compute the size of the
+++ * padding for the new version below.
+++ */
+++union _gc_head;
+++union _gc_head_old {
+++    struct {
+++        union _gc_head_old *gc_next;
+++        union _gc_head_old *gc_prev;
+++        Py_ssize_t gc_refs;
+++    } gc;
+++    long double dummy;
+++};
+++
++ /* GC information is stored BEFORE the object structure. */
++ typedef union _gc_head {
++     struct {
++@@ -255,7 +269,8 @@ typedef union _gc_head {
++         union _gc_head *gc_prev;
++         Py_ssize_t gc_refs;
++     } gc;
++-    long double dummy;  /* force worst-case alignment */
+++    double dummy; /* Force at least 8-byte alignment. */
+++    char dummy_padding[sizeof(union _gc_head_old)];
++ } PyGC_Head;
++ 
++ extern PyGC_Head *_PyGC_generation0;
++diff --git a/Misc/NEWS.d/next/Core and Builtins/2018-04-29-12-07-00.bpo-33374.-xegL6.rst b/Misc/NEWS.d/next/Core and Builtins/2018-04-29-12-07-00.bpo-33374.-xegL6.rst
++new file mode 100644
++index 000000000000..9ec1a605c8f2
++--- /dev/null
+++++ b/Misc/NEWS.d/next/Core and Builtins/2018-04-29-12-07-00.bpo-33374.-xegL6.rst	
++@@ -0,0 +1,3 @@
+++Tweak the definition of PyGC_Head, so compilers do not believe it is always
+++16-byte aligned on x86. This prevents crashes with more aggressive
+++optimizations present in GCC 8.
+diff --git a/package/qt5/qt53d/qt53d.mk b/package/qt5/qt53d/qt53d.mk
+index fcb743db21..bdcc665b94 100644
+--- a/package/qt5/qt53d/qt53d.mk
++++ b/package/qt5/qt53d/qt53d.mk
+@@ -30,11 +30,21 @@ define QT53D_INSTALL_STAGING_CMDS
+ 	$(QT5_LA_PRL_FILES_FIXUP)
+ endef
+ 
++ifeq ($(BR2_PACKAGE_QT5BASE_EXAMPLES),y)
++define QT53D_INSTALL_TARGET_EXAMPLES
++	cp -dpfr $(STAGING_DIR)/usr/lib/qt/examples/qt3d $(TARGET_DIR)/usr/lib/qt/examples/
++endef
++endif
++
+ ifeq ($(BR2_STATIC_LIBS),)
+ define QT53D_INSTALL_TARGET_CMDS
+ 	cp -dpf $(STAGING_DIR)/usr/lib/libQt53D*.so.* $(TARGET_DIR)/usr/lib
++	cp -dpfr $(STAGING_DIR)/usr/lib/qt/plugins/geometryloaders $(TARGET_DIR)/usr/lib/qt/plugins
++	cp -dpfr $(STAGING_DIR)/usr/lib/qt/plugins/renderplugins $(TARGET_DIR)/usr/lib/qt/plugins
+ 	cp -dpfr $(STAGING_DIR)/usr/lib/qt/plugins/sceneparsers $(TARGET_DIR)/usr/lib/qt/plugins
+ 	cp -dpfr $(STAGING_DIR)/usr/qml/Qt3D $(TARGET_DIR)/usr/qml
++	cp -dpfr $(STAGING_DIR)/usr/qml/QtQuick $(TARGET_DIR)/usr/qml
++	$(QT53D_INSTALL_TARGET_EXAMPLES)
+ endef
+ endif
+ 
+diff --git a/package/qt5/qt5websockets/qt5websockets.mk b/package/qt5/qt5websockets/qt5websockets.mk
+index 4cb2aed1db..661bc83e52 100644
+--- a/package/qt5/qt5websockets/qt5websockets.mk
++++ b/package/qt5/qt5websockets/qt5websockets.mk
+@@ -41,6 +41,7 @@ endef
+ ifeq ($(BR2_PACKAGE_QT5DECLARATIVE_QUICK),y)
+ define QT5WEBSOCKETS_INSTALL_TARGET_QMLS
+ 	cp -dpfr $(STAGING_DIR)/usr/qml/Qt/WebSockets $(TARGET_DIR)/usr/qml/Qt/
++	cp -dpfr $(STAGING_DIR)/usr/qml/QtWebSockets $(TARGET_DIR)/usr/qml/
+ endef
+ endif
+ 
+diff --git a/package/sdl2/0001-make-cross-compiler-friendly.patch b/package/sdl2/0001-make-cross-compiler-friendly.patch
+deleted file mode 100644
+index 10dcf74656..0000000000
+--- a/package/sdl2/0001-make-cross-compiler-friendly.patch
++++ /dev/null
+@@ -1,167 +0,0 @@
+-From 4cbd2fbfcbfe94b5826907f59ee963c69860e522 Mon Sep 17 00:00:00 2001
+-From: "Guillermo A. Amaral" <g@maral.me>
+-Date: Thu, 18 Jan 2018 09:23:58 -0800
+-Subject: [PATCH] Make rpi video cross-compiler friendly.
+-
+-* Stops using fixed path to find GLES/EGL libs.
+-* Tries pkg-config to locate bcm_host.
+-
+-Signed-off-by: Guillermo A. Amaral <g@maral.me>
+----
+- cmake/sdlchecks.cmake | 15 ++++++++++-----
+- configure             | 48 ++++++++++++++++++++++++++++++++++++++++++++++--
+- configure.in          |  8 ++++++--
+- src/video/SDL_egl.c   | 12 ++++++------
+- 4 files changed, 68 insertions(+), 15 deletions(-)
+-
+-diff --git a/cmake/sdlchecks.cmake b/cmake/sdlchecks.cmake
+-index e2e89a2..fc715f1 100644
+---- a/cmake/sdlchecks.cmake
+-+++ b/cmake/sdlchecks.cmake
+-@@ -1127,15 +1127,19 @@ endmacro()
+- # - n/a
+- macro(CheckRPI)
+-   if(VIDEO_RPI)
+--    set(VIDEO_RPI_INCLUDE_DIRS "/opt/vc/include" "/opt/vc/include/interface/vcos/pthreads" "/opt/vc/include/interface/vmcs_host/linux/" )
+--    set(VIDEO_RPI_LIBRARY_DIRS "/opt/vc/lib" )
+--    set(VIDEO_RPI_LIBS bcm_host )
+-+    pkg_check_modules(VIDEO_RPI bcm_host brcmegl)
+-+    if (NOT VIDEO_RPI_FOUND)
+-+      set(VIDEO_RPI_INCLUDE_DIRS "/opt/vc/include" "/opt/vc/include/interface/vcos/pthreads" "/opt/vc/include/interface/vmcs_host/linux/" )
+-+      set(VIDEO_RPI_LIBRARY_DIRS "/opt/vc/lib" )
+-+      set(VIDEO_RPI_LIBRARIES bcm_host )
+-+      set(VIDEO_RPI_LDFLAGS "-Wl,-rpath,/opt/vc/lib")
+-+    endif()
+-     listtostr(VIDEO_RPI_INCLUDE_DIRS VIDEO_RPI_INCLUDE_FLAGS "-I")
+-     listtostr(VIDEO_RPI_LIBRARY_DIRS VIDEO_RPI_LIBRARY_FLAGS "-L")
+- 
+-     set(ORIG_CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS}")
+-     set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} ${VIDEO_RPI_INCLUDE_FLAGS} ${VIDEO_RPI_LIBRARY_FLAGS}")
+--    set(CMAKE_REQUIRED_LIBRARIES "${VIDEO_RPI_LIBS}")
+-+    set(CMAKE_REQUIRED_LIBRARIES "${VIDEO_RPI_LIBRARIES}")
+-     check_c_source_compiles("
+-         #include <bcm_host.h>
+-         int main(int argc, char **argv) {}" HAVE_VIDEO_RPI)
+-@@ -1147,8 +1151,9 @@ macro(CheckRPI)
+-       set(SDL_VIDEO_DRIVER_RPI 1)
+-       file(GLOB VIDEO_RPI_SOURCES ${SDL2_SOURCE_DIR}/src/video/raspberry/*.c)
+-       set(SOURCE_FILES ${SOURCE_FILES} ${VIDEO_RPI_SOURCES})
+--      list(APPEND EXTRA_LIBS ${VIDEO_RPI_LIBS})
+-+      list(APPEND EXTRA_LIBS ${VIDEO_RPI_LIBRARIES})
+-       set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${VIDEO_RPI_INCLUDE_FLAGS} ${VIDEO_RPI_LIBRARY_FLAGS}")
+-+      list(APPEND EXTRA_LDFLAGS ${VIDEO_RPI_LDFLAGS})
+-     endif(SDL_VIDEO AND HAVE_VIDEO_RPI)
+-   endif(VIDEO_RPI)
+- endmacro(CheckRPI)
+-diff --git a/configure b/configure
+-index b622085..d42a22a 100755
+---- a/configure
+-+++ b/configure
+-@@ -19485,12 +19485,56 @@ else
+- fi
+- 
+-     if test x$enable_video = xyes -a x$enable_video_rpi = xyes; then
+--        if test x$ARCH = xnetbsd; then
+-+        # Extract the first word of "pkg-config", so it can be a program name with args.
+-+set dummy pkg-config; ac_word=$2
+-+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
+-+$as_echo_n "checking for $ac_word... " >&6; }
+-+if ${ac_cv_path_PKG_CONFIG+:} false; then :
+-+  $as_echo_n "(cached) " >&6
+-+else
+-+  case $PKG_CONFIG in
+-+  [\\/]* | ?:[\\/]*)
+-+  ac_cv_path_PKG_CONFIG="$PKG_CONFIG" # Let the user override the test with a path.
+-+  ;;
+-+  *)
+-+  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+-+for as_dir in $PATH
+-+do
+-+  IFS=$as_save_IFS
+-+  test -z "$as_dir" && as_dir=.
+-+    for ac_exec_ext in '' $ac_executable_extensions; do
+-+  if as_fn_executable_p "$as_dir/$ac_word$ac_exec_ext"; then
+-+    ac_cv_path_PKG_CONFIG="$as_dir/$ac_word$ac_exec_ext"
+-+    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
+-+    break 2
+-+  fi
+-+done
+-+  done
+-+IFS=$as_save_IFS
+-+
+-+  test -z "$ac_cv_path_PKG_CONFIG" && ac_cv_path_PKG_CONFIG="no"
+-+  ;;
+-+esac
+-+fi
+-+PKG_CONFIG=$ac_cv_path_PKG_CONFIG
+-+if test -n "$PKG_CONFIG"; then
+-+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $PKG_CONFIG" >&5
+-+$as_echo "$PKG_CONFIG" >&6; }
+-+else
+-+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+-+$as_echo "no" >&6; }
+-+fi
+-+
+-+
+-+        if test x$PKG_CONFIG != xno && $PKG_CONFIG --exists bcm_host; then
+-+            RPI_CFLAGS=`$PKG_CONFIG --cflags bcm_host brcmegl`
+-+            RPI_LDFLAGS=`$PKG_CONFIG --libs bcm_host brcmegl`
+-+        elif test x$ARCH = xnetbsd; then
+-             RPI_CFLAGS="-I/usr/pkg/include -I/usr/pkg/include/interface/vcos/pthreads -I/usr/pkg/include/interface/vmcs_host/linux"
+-             RPI_LDFLAGS="-Wl,-R/usr/pkg/lib -L/usr/pkg/lib -lbcm_host"
+-         else
+-             RPI_CFLAGS="-I/opt/vc/include -I/opt/vc/include/interface/vcos/pthreads -I/opt/vc/include/interface/vmcs_host/linux"
+--            RPI_LDFLAGS="-L/opt/vc/lib -lbcm_host"
+-+            RPI_LDFLAGS="-Wl,-rpath,/opt/vc/lib -L/opt/vc/lib -lbcm_host"
+-         fi
+- 
+-         # Save the original compiler flags and libraries
+-diff --git a/configure.in b/configure.in
+-index 5ac2130..450bf62 100644
+---- a/configure.in
+-+++ b/configure.in
+-@@ -1563,12 +1563,16 @@ CheckRPI()
+- AC_HELP_STRING([--enable-video-rpi], [use Raspberry Pi video driver [[default=yes]]]),
+-                   , enable_video_rpi=yes)
+-     if test x$enable_video = xyes -a x$enable_video_rpi = xyes; then
+--        if test x$ARCH = xnetbsd; then
+-+        AC_PATH_PROG(PKG_CONFIG, pkg-config, no)
+-+        if test x$PKG_CONFIG != xno && $PKG_CONFIG --exists bcm_host; then
+-+            RPI_CFLAGS=`$PKG_CONFIG --cflags bcm_host brcmegl`
+-+            RPI_LDFLAGS=`$PKG_CONFIG --libs bcm_host brcmegl`
+-+        elif test x$ARCH = xnetbsd; then
+-             RPI_CFLAGS="-I/usr/pkg/include -I/usr/pkg/include/interface/vcos/pthreads -I/usr/pkg/include/interface/vmcs_host/linux"
+-             RPI_LDFLAGS="-Wl,-R/usr/pkg/lib -L/usr/pkg/lib -lbcm_host"
+-         else
+-             RPI_CFLAGS="-I/opt/vc/include -I/opt/vc/include/interface/vcos/pthreads -I/opt/vc/include/interface/vmcs_host/linux"
+--            RPI_LDFLAGS="-L/opt/vc/lib -lbcm_host"
+-+            RPI_LDFLAGS="-Wl,-rpath,/opt/vc/lib -L/opt/vc/lib -lbcm_host"
+-         fi
+- 
+-         # Save the original compiler flags and libraries
+-diff --git a/src/video/SDL_egl.c b/src/video/SDL_egl.c
+-index 9ccc2c3..23a7f2d 100644
+---- a/src/video/SDL_egl.c
+-+++ b/src/video/SDL_egl.c
+-@@ -44,12 +44,12 @@
+- 
+- #if SDL_VIDEO_DRIVER_RPI
+- /* Raspbian places the OpenGL ES/EGL binaries in a non standard path */
+--#define DEFAULT_EGL "/opt/vc/lib/libbrcmEGL.so"
+--#define DEFAULT_OGL_ES2 "/opt/vc/lib/libbrcmGLESv2.so"
+--#define ALT_EGL "/opt/vc/lib/libEGL.so"
+--#define ALT_OGL_ES2 "/opt/vc/lib/libGLESv2.so"
+--#define DEFAULT_OGL_ES_PVR "/opt/vc/lib/libGLES_CM.so"
+--#define DEFAULT_OGL_ES "/opt/vc/lib/libGLESv1_CM.so"
+-+#define DEFAULT_EGL "libbrcmEGL.so"
+-+#define DEFAULT_OGL_ES2 "libbrcmGLESv2.so"
+-+#define ALT_EGL "libEGL.so"
+-+#define ALT_OGL_ES2 "libGLESv2.so"
+-+#define DEFAULT_OGL_ES_PVR "libGLES_CM.so"
+-+#define DEFAULT_OGL_ES "libGLESv1_CM.so"
+- 
+- #elif SDL_VIDEO_DRIVER_ANDROID || SDL_VIDEO_DRIVER_VIVANTE
+- /* Android */
+--- 
+-2.13.6
+-
+diff --git a/package/sdl2/sdl2.hash b/package/sdl2/sdl2.hash
+index 588f8f49ef..997b4a5d4f 100644
+--- a/package/sdl2/sdl2.hash
++++ b/package/sdl2/sdl2.hash
+@@ -1,4 +1,4 @@
+-# Locally calculated after checking http://www.libsdl.org/release/SDL2-2.0.7.tar.gz.sig
+-sha256 ee35c74c4313e2eda104b14b1b86f7db84a04eeab9430d56e001cea268bf4d5e  SDL2-2.0.7.tar.gz
++# Locally calculated after checking http://www.libsdl.org/release/SDL2-2.0.8.tar.gz.sig
++sha256 edc77c57308661d576e843344d8638e025a7818bff73f8fbfab09c3c5fd092ec  SDL2-2.0.8.tar.gz
+ # Locally calculated
+-sha256 bbd2edb1789c33de29bb9f8d1dbe2774584a9ce8c4e3162944b7a3a447f5e85d  COPYING.txt
++sha256 61e627031e1160bf8b9bdbc9cda27656d422ea8eaab199b64b4a4a4168437154  COPYING.txt
+diff --git a/package/sdl2/sdl2.mk b/package/sdl2/sdl2.mk
+index 6508e6b962..bd71485f18 100644
+--- a/package/sdl2/sdl2.mk
++++ b/package/sdl2/sdl2.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SDL2_VERSION = 2.0.7
++SDL2_VERSION = 2.0.8
+ SDL2_SOURCE = SDL2-$(SDL2_VERSION).tar.gz
+ SDL2_SITE = http://www.libsdl.org/release
+ SDL2_LICENSE = Zlib
+diff --git a/package/sdl2_image/sdl2_image.hash b/package/sdl2_image/sdl2_image.hash
+index 26d0a88cb5..cf3253526c 100644
+--- a/package/sdl2_image/sdl2_image.hash
++++ b/package/sdl2_image/sdl2_image.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+-sha256 3a3eafbceea5125c04be585373bfd8b3a18f259bd7eae3efc4e6d8e60e0d7f64  SDL2_image-2.0.1.tar.gz
++sha256 3510c25da735ffcd8ce3b65073150ff4f7f9493b866e85b83738083b556d2368  SDL2_image-2.0.3.tar.gz
++sha256 13240ed78c8726c510b9634976430d3d3a9ea2d1ced3214119766e9e71568a35  COPYING.txt
+diff --git a/package/sdl2_image/sdl2_image.mk b/package/sdl2_image/sdl2_image.mk
+index 71a9634023..8c1c5f6e1a 100644
+--- a/package/sdl2_image/sdl2_image.mk
++++ b/package/sdl2_image/sdl2_image.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SDL2_IMAGE_VERSION = 2.0.1
++SDL2_IMAGE_VERSION = 2.0.3
+ SDL2_IMAGE_SOURCE = SDL2_image-$(SDL2_IMAGE_VERSION).tar.gz
+ SDL2_IMAGE_SITE = http://www.libsdl.org/projects/SDL_image/release
+ SDL2_IMAGE_INSTALL_STAGING = YES
+diff --git a/package/syslog-ng/syslog-ng.conf b/package/syslog-ng/syslog-ng.conf
+index a3384eebc3..e767255d71 100644
+--- a/package/syslog-ng/syslog-ng.conf
++++ b/package/syslog-ng/syslog-ng.conf
+@@ -1,4 +1,4 @@
+-@version: 3.9
++@version: 3.10
+ 
+ source s_sys {
+ 	file("/proc/kmsg" program_override("kernel"));
+diff --git a/package/syslog-ng/syslog-ng.mk b/package/syslog-ng/syslog-ng.mk
+index 325fac5842..2b6f2c09e9 100644
+--- a/package/syslog-ng/syslog-ng.mk
++++ b/package/syslog-ng/syslog-ng.mk
+@@ -4,6 +4,8 @@
+ #
+ ################################################################################
+ 
++# When updating the version, please check at runtime if the version in
++# syslog-ng.conf header needs to be updated
+ SYSLOG_NG_VERSION = 3.10.1
+ SYSLOG_NG_SITE = https://github.com/balabit/syslog-ng/releases/download/syslog-ng-$(SYSLOG_NG_VERSION)
+ SYSLOG_NG_LICENSE = LGPL-2.1+ (syslog-ng core), GPL-2.0+ (modules)
+diff --git a/package/systemd/systemd.mk b/package/systemd/systemd.mk
+index 3bc322cd51..9600fe9eb0 100644
+--- a/package/systemd/systemd.mk
++++ b/package/systemd/systemd.mk
+@@ -329,6 +329,7 @@ define SYSTEMD_INSTALL_INIT_HOOK
+ 	ln -fs ../bin/systemctl $(TARGET_DIR)/sbin/halt
+ 	ln -fs ../bin/systemctl $(TARGET_DIR)/sbin/poweroff
+ 	ln -fs ../bin/systemctl $(TARGET_DIR)/sbin/reboot
++	ln -fs ../bin/systemctl $(TARGET_DIR)/sbin/shutdown
+ 	ln -fs ../../../lib/systemd/system/multi-user.target \
+ 		$(TARGET_DIR)/etc/systemd/system/default.target
+ endef
+diff --git a/package/tcl/tcl.hash b/package/tcl/tcl.hash
+index b344d26589..359b5433c2 100644
+--- a/package/tcl/tcl.hash
++++ b/package/tcl/tcl.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+ sha256 a265409781e4b3edcc4ef822533071b34c3dc6790b893963809b9fe221befe07  tcl8.6.6-src.tar.gz
++sha256 c0a69a2bfd757361ec7e6143973b103c90409316b49e9c88db26ad6388e79f16  license.terms
+diff --git a/package/tcl/tcl.mk b/package/tcl/tcl.mk
+index ffef9cf8bd..b9fb7afbc6 100644
+--- a/package/tcl/tcl.mk
++++ b/package/tcl/tcl.mk
+@@ -8,7 +8,7 @@ TCL_VERSION_MAJOR = 8.6
+ TCL_VERSION = $(TCL_VERSION_MAJOR).6
+ TCL_SOURCE = tcl$(TCL_VERSION)-src.tar.gz
+ TCL_SITE = http://downloads.sourceforge.net/project/tcl/Tcl/$(TCL_VERSION)
+-TCL_LICENSE = tcl license
++TCL_LICENSE = TCL
+ TCL_LICENSE_FILES = license.terms
+ TCL_SUBDIR = unix
+ TCL_INSTALL_STAGING = YES
+diff --git a/package/tcllib/tcllib.hash b/package/tcllib/tcllib.hash
+index eb990a2aba..d08b5a172a 100644
+--- a/package/tcllib/tcllib.hash
++++ b/package/tcllib/tcllib.hash
+@@ -1,2 +1,3 @@
+ # Locally computed:
+ sha256  0db9e17d6c0f44d3ca2df2ea5023e35c0f3767e7008c3cb26d201446eb68add1  tcllib-1.13.tar.bz2
++sha256  530ec70eb11a455bd582d86b6d74c2dd7cc367d90b8bbdd59fcb43ae02f95a4b  license.terms
+diff --git a/package/tcllib/tcllib.mk b/package/tcllib/tcllib.mk
+index bd98dd641e..dfa35c8941 100644
+--- a/package/tcllib/tcllib.mk
++++ b/package/tcllib/tcllib.mk
+@@ -7,7 +7,7 @@
+ TCLLIB_VERSION = 1.13
+ TCLLIB_SOURCE = tcllib-$(TCLLIB_VERSION).tar.bz2
+ TCLLIB_SITE = http://downloads.sourceforge.net/project/tcllib/tcllib/$(TCLLIB_VERSION)
+-TCLLIB_LICENSE = tcl license
++TCLLIB_LICENSE = TCL
+ TCLLIB_LICENSE_FILES = license.terms
+ TCLLIB_DEPENDENCIES = host-tcl
+ TCLLIB_CONF_ENV = ac_cv_path_tclsh="$(HOST_DIR)/bin/tclsh$(TCL_VERSION_MAJOR)"
+diff --git a/package/uclibc/0001-aarch64-sys-ucontext.h-include-bits-sigcontext.h.patch b/package/uclibc/0001-aarch64-sys-ucontext.h-include-bits-sigcontext.h.patch
+new file mode 100644
+index 0000000000..0a1fdf6cb8
+--- /dev/null
++++ b/package/uclibc/0001-aarch64-sys-ucontext.h-include-bits-sigcontext.h.patch
+@@ -0,0 +1,49 @@
++From 1c27982bb8a007bb1a6a29db8e6efb1f40975879 Mon Sep 17 00:00:00 2001
++From: Bernd Kuhls <bernd.kuhls@t-online.de>
++Date: Sun, 28 Jan 2018 13:59:30 +0100
++Subject: [PATCH 1/1] aarch64/sys/ucontext.h: include bits/sigcontext.h
++
++Fixes a buildroot build error with ffmpeg
++
++In file included from /home/bernd/buildroot/output/host/aarch64-buildroot-linux-uclibc/sysroot/usr/include/signal.h:329:0,
++                 from fftools/ffmpeg.h:26,
++                 from fftools/ffmpeg_opt.c:23:
++/home/bernd/buildroot/output/host/aarch64-buildroot-linux-uclibc/sysroot/usr/include/sys/ucontext.h:52:16:
++ error: field 'uc_mcontext' has incomplete type
++     mcontext_t uc_mcontext;
++                ^~~~~~~~~~~
++
++using this defconfig:
++
++BR2_aarch64=y
++BR2_PACKAGE_FFMPEG=y
++
++sys/ucontext.h for other archs already include bits/sigcontext.h,
++on aarch64 this is needed as well.
++
++Patch sent upstream:
++https://mailman.uclibc-ng.org/pipermail/devel/2018-January/001622.html
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++---
++ libc/sysdeps/linux/aarch64/sys/ucontext.h | 4 ++++
++ 1 file changed, 4 insertions(+)
++
++diff --git a/libc/sysdeps/linux/aarch64/sys/ucontext.h b/libc/sysdeps/linux/aarch64/sys/ucontext.h
++index d17458896..dc7303b54 100644
++--- a/libc/sysdeps/linux/aarch64/sys/ucontext.h
+++++ b/libc/sysdeps/linux/aarch64/sys/ucontext.h
++@@ -26,6 +26,10 @@
++ 
++ #include <sys/procfs.h>
++ 
+++/* We need the signal context definitions even if they are not used
+++   included in <signal.h>.  */
+++#include <bits/sigcontext.h>
+++
++ typedef elf_greg_t greg_t;
++ 
++ /* Container for all general registers.  */
++-- 
++2.11.0
++
+diff --git a/package/usb_modeswitch/usb_modeswitch.mk b/package/usb_modeswitch/usb_modeswitch.mk
+index c67d4cd583..8dd712f264 100644
+--- a/package/usb_modeswitch/usb_modeswitch.mk
++++ b/package/usb_modeswitch/usb_modeswitch.mk
+@@ -28,6 +28,7 @@ USB_MODESWITCH_POST_PATCH_HOOKS += UPDATE_CONFIG_HOOK
+ 
+ define USB_MODESWITCH_BUILD_CMDS
+ 	$(TARGET_MAKE_ENV) $(MAKE) $(TARGET_CONFIGURE_OPTS) \
++		$(if $(BR2_INSTALL_LIBSTDCPP),,CXX=false) \
+ 		CFLAGS="$(TARGET_CFLAGS) -D_GNU_SOURCE -Wall -I." \
+ 		JIM_CONFIGURE_OPTS="--host=$(GNU_TARGET_NAME) --build=$(GNU_HOST_NAME)" \
+ 		-C $(@D) $(USB_MODESWITCH_BUILD_TARGETS)
+diff --git a/package/wireguard/wireguard.hash b/package/wireguard/wireguard.hash
+index 4961d4fd14..6cfc7bb9f0 100644
+--- a/package/wireguard/wireguard.hash
++++ b/package/wireguard/wireguard.hash
+@@ -1,4 +1,4 @@
+-# From https://lists.zx2c4.com/pipermail/wireguard/2018-February/002406.html
+-sha256 4ac4c4e4ad4dc2cf9dcb831b0cf347567ccea675ca524528cf5a4d9dccb2fe52  WireGuard-0.0.20180218.tar.xz
++# From https://lists.zx2c4.com/pipermail/wireguard/2018-April/002697.html
++sha256 b58cd2acf9e8d3fe9044c06c0056bd74da1f5673a456f011d36eee3f6fb1da16  WireGuard-0.0.20180420.tar.xz
+ # Locally calculated
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  COPYING
+diff --git a/package/wireguard/wireguard.mk b/package/wireguard/wireguard.mk
+index aa86b5782b..20162e1d0f 100644
+--- a/package/wireguard/wireguard.mk
++++ b/package/wireguard/wireguard.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WIREGUARD_VERSION = 0.0.20180218
++WIREGUARD_VERSION = 0.0.20180420
+ WIREGUARD_SITE = https://git.zx2c4.com/WireGuard/snapshot
+ WIREGUARD_SOURCE = WireGuard-$(WIREGUARD_VERSION).tar.xz
+ WIREGUARD_LICENSE = GPL-2.0
+diff --git a/package/wmctrl/wmctrl.mk b/package/wmctrl/wmctrl.mk
+index 0d4aeebc1d..36ad3513ff 100644
+--- a/package/wmctrl/wmctrl.mk
++++ b/package/wmctrl/wmctrl.mk
+@@ -11,4 +11,8 @@ WMCTRL_LICENSE_FILES = COPYING
+ 
+ WMCTRL_DEPENDENCIES = libglib2 xlib_libX11 xlib_libXmu
+ 
++WMCTRL_CONF_OPTS = \
++	--x-includes=$(STAGING_DIR)/usr/include \
++	--x-libraries=$(STAGING_DIR)/usr/lib
++
+ $(eval $(autotools-package))
+diff --git a/support/scripts/fix-rpath b/support/scripts/fix-rpath
+index 15705a3b0d..fa138ca15a 100755
+--- a/support/scripts/fix-rpath
++++ b/support/scripts/fix-rpath
+@@ -56,6 +56,7 @@ EOF
+ # ELF files should not be in these sub-directories
+ HOST_EXCLUDEPATHS="/share/terminfo"
+ STAGING_EXCLUDEPATHS="/usr/include /usr/share/terminfo"
++TARGET_EXCLUDEPATHS="/lib/firmware"
+ 
+ main() {
+     local rootdir
+@@ -106,6 +107,11 @@ main() {
+ 
+         target)
+             rootdir="${TARGET_DIR}"
++
++            for excludepath in ${TARGET_EXCLUDEPATHS}; do
++                find_args+=( "-path" "${TARGET_DIR}""${excludepath}" "-prune" "-o" )
++            done
++
+             # we don't want $ORIGIN-based rpaths but absolute paths without rootdir.
+             # we also want to remove rpaths pointing to /lib or /usr/lib.
+             sanitize_extra_args+=( "--no-standard-lib-dirs" )
+diff --git a/support/testing/tests/boot/test_atf.py b/support/testing/tests/boot/test_atf.py
+index 8288116471..75cea01fc8 100644
+--- a/support/testing/tests/boot/test_atf.py
++++ b/support/testing/tests/boot/test_atf.py
+@@ -10,7 +10,7 @@ class TestATFVexpress(infra.basetest.BRTest):
+         BR2_TARGET_ARM_TRUSTED_FIRMWARE=y
+         BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_GIT=y
+         BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_REPO_URL="https://github.com/ARM-software/arm-trusted-firmware.git"
+-        BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_REPO_VERSION="v1.2"
++        BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_REPO_VERSION="v1.5"
+         BR2_TARGET_ARM_TRUSTED_FIRMWARE_PLATFORM="juno"
+         BR2_TARGET_ARM_TRUSTED_FIRMWARE_FIP=y
+         BR2_TARGET_ARM_TRUSTED_FIRMWARE_UBOOT_AS_BL33=y
+@@ -63,7 +63,7 @@ class TestATFMarvell(infra.basetest.BRTest):
+         BR2_TARGET_ARM_TRUSTED_FIRMWARE=y
+         BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_GIT=y
+         BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_REPO_URL="https://github.com/MarvellEmbeddedProcessors/atf-marvell.git"
+-        BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_REPO_VERSION="atf-v1.3-armada-17.10"
++        BR2_TARGET_ARM_TRUSTED_FIRMWARE_CUSTOM_REPO_VERSION="43965481990fd92e9666cf9371a8cf478055ec7c"
+         BR2_TARGET_ARM_TRUSTED_FIRMWARE_PLATFORM="a80x0_mcbin"
+         BR2_TARGET_ARM_TRUSTED_FIRMWARE_FIP=y
+         BR2_TARGET_ARM_TRUSTED_FIRMWARE_UBOOT_AS_BL33=y
+diff --git a/support/testing/tests/package/test_rust.py b/support/testing/tests/package/test_rust.py
+index e6c0de2214..2dc814f99d 100644
+--- a/support/testing/tests/package/test_rust.py
++++ b/support/testing/tests/package/test_rust.py
+@@ -21,6 +21,7 @@ class TestRustBase(infra.basetest.BRTest):
+     def build_test_prog(self):
+         hostdir = os.path.join(self.builddir, 'host')
+         env = os.environ.copy()
++        env["USER"] = "br-user"
+         env["PATH"] = "{}:".format(os.path.join(hostdir, 'bin')) + env["PATH"]
+         env["CARGO_HOME"] = os.path.join(hostdir, 'usr', 'share', 'cargo')
+         env["RUST_TARGET_PATH"] = os.path.join(hostdir, 'etc', 'rustc')
+diff --git a/utils/scanpypi b/utils/scanpypi
+index c96f1bc892..bc593e0e89 100755
+--- a/utils/scanpypi
++++ b/utils/scanpypi
+@@ -144,7 +144,7 @@ class BuildrootPackage():
+         """
+         Fetch a package's metadata from the python package index
+         """
+-        self.metadata_url = 'https://pypi.python.org/pypi/{pkg}/json'.format(
++        self.metadata_url = 'https://pypi.org/pypi/{pkg}/json'.format(
+             pkg=self.real_name)
+         try:
+             pkg_json = urllib2.urlopen(self.metadata_url).read().decode()
+@@ -178,7 +178,7 @@ class BuildrootPackage():
+             self.metadata['urls'] = [{
+                 'packagetype': 'sdist',
+                 'url': self.metadata['info']['download_url'],
+-                'md5_digest': None}]
++                'digests': None}]
+             # In this case, we can't get the name of the downloaded file
+             # from the pypi api, so we need to find it, this should work
+             urlpath = urllib2.urlparse.urlparse(
+@@ -199,10 +199,10 @@ class BuildrootPackage():
+             else:
+                 self.used_url = download_url
+                 self.as_string = download.read()
+-                if not download_url['md5_digest']:
++                if not download_url['digests']['md5']:
+                     break
+                 self.md5_sum = hashlib.md5(self.as_string).hexdigest()
+-                if self.md5_sum == download_url['md5_digest']:
++                if self.md5_sum == download_url['digests']['md5']:
+                     break
+         else:
+             if download.__class__ == urllib2.HTTPError:
+@@ -518,22 +518,23 @@ class BuildrootPackage():
+         path_to_hash = os.path.join(self.pkg_dir, pkg_hash)
+         print('Creating {filename}...'.format(filename=path_to_hash))
+         lines = []
+-        if self.used_url['md5_digest']:
+-            md5_comment = '# md5 from {url}, sha256 locally computed\n'.format(
++        if self.used_url['digests']['md5'] and self.used_url['digests']['sha256']:
++            hash_header = '# md5, sha256 from {url}\n'.format(
+                 url=self.metadata_url)
+-            lines.append(md5_comment)
++            lines.append(hash_header)
+             hash_line = '{method}\t{digest}  {filename}\n'.format(
+                 method='md5',
+-                digest=self.used_url['md5_digest'],
++                digest=self.used_url['digests']['md5'],
++                filename=self.filename)
++            lines.append(hash_line)
++            hash_line = '{method}\t{digest}  {filename}\n'.format(
++                method='sha256',
++                digest=self.used_url['digests']['sha256'],
+                 filename=self.filename)
+             lines.append(hash_line)
+-        digest = hashlib.sha256(self.as_string).hexdigest()
+-        hash_line = '{method}\t{digest}  {filename}\n'.format(
+-            method='sha256',
+-            digest=digest,
+-            filename=self.filename)
+-        lines.append(hash_line)
+ 
++        if self.license_files:
++            lines.append('# Locally computed sha256 checksums\n')
+         for license_file in self.license_files:
+             sha256 = hashlib.sha256()
+             with open(license_file, 'rb') as lic_f:

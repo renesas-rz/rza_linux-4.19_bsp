@@ -1,0 +1,6 @@
+$ watchdog -F -T 10 -t 1 /dev/watchdog
+
+ (then Ctrl+z)
+
+Because you stop the app from kicking the watchdog, it will reset the system.
+
