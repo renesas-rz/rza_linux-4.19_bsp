@@ -45,11 +45,12 @@ function banner_green {
 
 ##### Check for required Host packages #####
 MISSING_A_PACKAGE=0
-PACAKGE_LIST=(git make gcc g++ python)
+PACAKGE_LIST=(git make gcc g++ python bison flex)
 
-for i in 0 1 2 3 4; do
+for i in 0 1 2 3 4 5 6; do
   CHECK=$(which ${PACAKGE_LIST[$i]})
   if [ "$CHECK" == "" ] ; then
+    echo "ERROR: Missing host package: ${PACAKGE_LIST[$i]}"
     MISSING_A_PACKAGE=1
   fi
 done
@@ -68,10 +69,12 @@ if [ "$MISSING_A_PACKAGE" != "0" ] ; then
   echo "    g++"
   echo "    libncurses5-dev libncursesw5-dev"
   echo "    python"
+  echo "    bison"
+  echo "    flex"
   echo ""
   echo "The following command line will ensure all packages are installed."
   echo ""
-  echo "   sudo apt-get install git make gcc g++ libncurses5-dev libncursesw5-dev python"
+  echo "   sudo apt-get install git make gcc g++ libncurses5-dev libncursesw5-dev python bison flex"
   echo ""
   exit 1
 fi
