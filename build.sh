@@ -106,6 +106,48 @@ function save_config {
   echo "QSPI=$QSPI" >> output/config.txt
 }
 
+# Set environment to a different board configuration
+# Set NEW_BOARD before calling
+function change_config {
+  BOARD=${NEW_BOARD}
+
+  BRD_SOC_xxxx=BRD_SOC_${NEW_BOARD}
+  eval SOC=$(eval echo \${$BRD_SOC_xxxx})
+
+  BRD_DLRAM_xxxx=BRD_DLRAM_${NEW_BOARD}
+  eval DLRAM_ADDR=$(eval echo \${$BRD_DLRAM_xxxx})
+
+  BRD_DLRAMSZ_xxxx=BRD_DLRAMSZ_${NEW_BOARD}
+  eval DLRAM_SZ=$(eval echo \${$BRD_DLRAMSZ_xxxx})
+
+  BRD_UBOOT_xxxx=BRD_UBOOT_${NEW_BOARD}
+  eval UBOOT_ADDR=$(eval echo \${$BRD_UBOOT_xxxx})
+
+  BRD_DTB_xxxx=BRD_DTB_${NEW_BOARD}
+  eval DTB_ADDR=$(eval echo \${$BRD_DTB_xxxx})
+
+  BRD_KERNEL_xxxx=BRD_KERNEL_${NEW_BOARD}
+  eval KERNEL_ADDR=$(eval echo \${$BRD_KERNEL_xxxx})
+
+  BRD_ROOTFS_xxxx=BRD_ROOTFS_${NEW_BOARD}
+  eval ROOTFS_ADDR=$(eval echo \${$BRD_ROOTFS_xxxx})
+
+  BRD_QSPI_xxxx=BRD_QSPI_${NEW_BOARD}
+  eval QSPI=$(eval echo \${$BRD_QSPI_xxxx})
+
+  # for debugging only
+  #echo "BOARD = $BOARD"
+  #echo "SOC = $SOC"
+  #echo "DLRAM_ADDR = $DLRAM_ADDR"
+  #echo "DLRAM_SZ = $DLRAM_SZ"
+  #echo "UBOOT_ADDR = $UBOOT_ADDR"
+  #echo "DTB_ADDR = $DTB_ADDR"
+  #echo "KERNEL_ADDR = $KERNEL_ADDR"
+  #echo "ROOTFS_ADDR = $ROOTFS_ADDR"
+  #echo "QSPI = $QSPI"
+
+}
+
 ###############################################################################
 # script start
 ###############################################################################
@@ -171,6 +213,43 @@ if [ "$1" == "config" ] ; then
   # save the current board so can know the user selected a new one
   ORIGINAL_BOARD=$BOARD
 
+  # Check if a board name was passed on the command line
+  if [ "$2" != "" ] ; then
+    # If a board name was passed, make sure it is in the list
+    FOUND=0
+    for i in `echo $ALL_BOARDS` ; do
+      if [ "$2" == "$i" ] ; then
+        FOUND=1
+        break
+      fi
+    done
+    if [ "$FOUND" == "0" ] ; then
+      banner_red "ERROR: Board name not found"
+      echo -e "Please select one of the following boards: $ALL_BOARDS\n"
+      exit -1
+    fi
+
+    NEW_BOARD=$2
+    change_config
+
+    save_config
+
+    # If our board selection has changed, then delete the .config files
+    # for u-boot and kernel which will force a new defconfig
+    if [ "$ORIGINAL_BOARD" != "$BOARD" ] ; then
+      if [ -e $OUTDIR/u-boot-2017.05/.config ] ; then
+        rm $OUTDIR/u-boot-2017.05/.config
+      fi
+      if [ -e $OUTDIR/linux-4.19/.config ] ; then
+        rm $OUTDIR/linux-4.19/.config
+      fi
+    fi
+
+    banner_green "BSP configured for $BOARD"
+
+    exit 0
+  fi
+
   while [ "1" == "1" ]
   do
 
@@ -185,6 +264,7 @@ if [ "$1" == "config" ] ; then
       fi
     done
 
+    # show the main selection menu
     whiptail --title "Build Environment Setup"  --noitem --menu "Make changes the items below as needed.\nYou may use ESC+ESC to cancel." 0 0 0 \
 	" Target Board: $BOARD [$CURRENT_DESC]" "" \
 	"       Device: $SOC" "" \
@@ -212,153 +292,46 @@ WT_TEXT="whiptail --title \"Build Environment Setup\" --menu \
 \"in this menu.\n\"\
  0 0 40 "
 
-    # add boards to menu
-    for i in `echo $ALL_BOARDS` ; do
-      BRD_DESC_xxxx=BRD_DESC_${i}
-      CURRENT_DESC=$(eval echo \${$BRD_DESC_xxxx})
-      WT_TEXT="$WT_TEXT \"$i\" \"$CURRENT_DESC\" "
-    done
+      # add boards to menu
+      for i in `echo $ALL_BOARDS` ; do
+        BRD_DESC_xxxx=BRD_DESC_${i}
+        CURRENT_DESC=$(eval echo \${$BRD_DESC_xxxx})
+        WT_TEXT="$WT_TEXT \"$i\" \"$CURRENT_DESC\" "
+      done
 
-  eval $WT_TEXT 2> /tmp/answer.txt
-  ans=$(cat /tmp/answer.txt)
+      # Display menu
+      eval $WT_TEXT 2> /tmp/answer.txt
+      ans=$(cat /tmp/answer.txt)
 
-    # No selection (cancel)
-    if [ "$ans" == "" ] ; then
-      continue
-    fi
-
-    BOARD=${ans}
-    #echo "BOARD = $BOARD"
-
-    BRD_SOC_xxxx=BRD_SOC_${ans}
-    eval SOC=$(eval echo \${$BRD_SOC_xxxx})
-    #echo "SOC = $SOC"
-
-    BRD_DLRAM_xxxx=BRD_DLRAM_${ans}
-    eval DLRAM_ADDR=$(eval echo \${$BRD_DLRAM_xxxx})
-    #echo "DLRAM_ADDR = $DLRAM_ADDR"
-
-    BRD_DLRAMSZ_xxxx=BRD_DLRAMSZ_${ans}
-    eval DLRAM_SZ=$(eval echo \${$BRD_DLRAMSZ_xxxx})
-    #echo "DLRAM_SZ = $DLRAM_SZ"
-
-    BRD_UBOOT_xxxx=BRD_UBOOT_${ans}
-    eval UBOOT_ADDR=$(eval echo \${$BRD_UBOOT_xxxx})
-    #echo "UBOOT_ADDR = $UBOOT_ADDR"
-
-    BRD_DTB_xxxx=BRD_DTB_${ans}
-    eval DTB_ADDR=$(eval echo \${$BRD_DTB_xxxx})
-    #echo "DTB_ADDR = $DTB_ADDR"
-
-    BRD_KERNEL_xxxx=BRD_KERNEL_${ans}
-    eval KERNEL_ADDR=$(eval echo \${$BRD_KERNEL_xxxx})
-    #echo "KERNEL_ADDR = $KERNEL_ADDR"
-
-    BRD_ROOTFS_xxxx=BRD_ROOTFS_${ans}
-    eval ROOTFS_ADDR=$(eval echo \${$BRD_ROOTFS_xxxx})
-    #echo "ROOTFS_ADDR = $ROOTFS_ADDR"
-
-    BRD_QSPI_xxxx=BRD_QSPI_${ans}
-    eval QSPI=$(eval echo \${$BRD_QSPI_xxxx})
-    #echo "QSPI = $QSPI"
-
-    continue
-  fi
-
-  if [ "$(grep 'RAM addr' /tmp/answer.txt)" != "" ] ; then
-    whiptail --title "Address selection" --inputbox \
-"Enter the address of the RAM that you can download images to\n"\
-"using J-Link.\n"\
-"This is only needed for the './build.sh jlink' command.\n"\
-"If you only have internal RAM (no SDRAM), then you would\n"\
-"enter 0x20000000.\n"\
-"If you have external SDRAM on CS2, then you would enter 0x08000000.\n"\
-"If you have external SDRAM on CS3, then you would enter 0x0C000000.\n"\
- 0 0 0x0C000000 \
-    2> /tmp/answer.txt
-    ans=$(cat /tmp/answer.txt)
-    # No selection (cancel)
-    if [ "$ans" == "" ] ; then
-      continue
-    fi
-    DLRAM_ADDR=$ans
-  fi
-
-  if [ "$(grep 'u-boot addr' /tmp/answer.txt)" != "" ] ; then
-    whiptail --title "Address selection" --inputbox "Enter the address of u-boot:" 0 0 0x18000000 \
-    2> /tmp/answer.txt
-    ans=$(cat /tmp/answer.txt)
-    # No selection (cancel)
-    if [ "$ans" == "" ] ; then
-      continue
-    fi
-    UBOOT_ADDR=$(cat /tmp/answer.txt)
-  fi
-
-  if [ "$(grep 'DTB addr' /tmp/answer.txt)" != "" ] ; then
-    whiptail --title "Address selection" --inputbox "Enter the address of the Device Tree Blob:" 0 0 0x180C0000 \
-    2> /tmp/answer.txt
-    ans=$(cat /tmp/answer.txt)
-    # No selection (cancel)
-    if [ "$ans" == "" ] ; then
-      continue
-    fi
-    DTB_ADDR=$ans
-  fi
-
-  if [ "$(grep 'kernel addr' /tmp/answer.txt)" != "" ] ; then
-    whiptail --title "Address selection" --inputbox "Enter the address of the Linux kernel:" 0 0 0x18200000 \
-    2> /tmp/answer.txt
-    ans=$(cat /tmp/answer.txt)
-    # No selection (cancel)
-    if [ "$ans" == "" ] ; then
-      continue
-    fi
-    KERNEL_ADDR=$ans
-  fi
-
-  if [ "$(grep 'rootfs addr' /tmp/answer.txt)" != "" ] ; then
-    whiptail --title "Address selection" --inputbox "Enter the address of the Root File System:" 0 0 0x18800000 \
-    2> /tmp/answer.txt
-    ans=$(cat /tmp/answer.txt)
-    # No selection (cancel)
-    if [ "$ans" == "" ] ; then
-      continue
-    fi
-    ROOTFS_ADDR=$ans
-  fi
-
-  if [ "$(grep QSPI /tmp/answer.txt)" != "" ] ; then
-    whiptail --title "QSPI Selection" --noitem --menu "Is your system single or dual QSPI?" 0 0 40 \
-	"SINGLE" "" \
-	"DUAL" "" \
-	2> /tmp/answer.txt
-    ans=$(cat /tmp/answer.txt)
-    # No selection (cancel)
-    if [ "$ans" == "" ] ; then
-      continue
-    fi
-    QSPI=$ans
-  fi
-
-  if [ "$(grep "Save" /tmp/answer.txt)" != "" ] ; then
-    save_config
-
-    # If our board selection has changed, then delete the .config files
-    # for u-boot and kernel which will force a new defconfig
-    if [ "$ORIGINAL_BOARD" != "$BOARD" ] ; then
-      if [ -e $OUTDIR/u-boot-2017.05/.config ] ; then
-        rm $OUTDIR/u-boot-2017.05/.config
+      # No selection (cancel)
+      if [ "$ans" == "" ] ; then
+        continue
       fi
-      if [ -e $OUTDIR/linux-4.19/.config ] ; then
-        rm $OUTDIR/linux-4.19/.config
+
+      NEW_BOARD=${ans}
+      change_config
+
+      continue
+    fi # (answer = Target Board)
+
+    if [ "$(grep "Save" /tmp/answer.txt)" != "" ] ; then
+      save_config
+
+      # If our board selection has changed, then delete the .config files
+      # for u-boot and kernel which will force a new defconfig
+      if [ "$ORIGINAL_BOARD" != "$BOARD" ] ; then
+        if [ -e $OUTDIR/u-boot-2017.05/.config ] ; then
+          rm $OUTDIR/u-boot-2017.05/.config
+        fi
+        if [ -e $OUTDIR/linux-4.19/.config ] ; then
+          rm $OUTDIR/linux-4.19/.config
+        fi
       fi
-    fi
 
-    break;
-  fi
+      break;
+    fi # (answer = Save)
 
-  done
+  done # (while loop)
 
   exit 0
 fi
