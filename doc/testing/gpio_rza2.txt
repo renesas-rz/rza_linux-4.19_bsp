@@ -1,0 +1,86 @@
+Since linux 4.8 the GPIO sysfs interface is deprecated. User space should use
+the character device instead. The libgpiod library encapsulates the ioctl calls and
+data structures behind a straightforward API.
+
+
+Enable "libgpiod" in Buildroot
+
+BR2_PACKAGE_LIBGPIOD=y
+BR2_PACKAGE_LIBGPIOD_TOOLS=y
+
+
+
+== GPIO INPUT EXAMPLE ==
+On the RZ/A2M Evaluation Board:
+  SW2 = NMI  (do not press)
+  SW3 = PJ_1 (IRQ0)
+  SW4 = P5_6
+  SW5 = P5_6
+
+For our example, we'll use P5_6 which is SW4
+
+First you need to convert a port name (P5_6) as listed in the hardware manual
+into its global pin ID (index).
+We can use gpiofind for that.
+
+	$ gpiofind P5_6
+	gpiochip0 46
+
+
+Now we know P5_6 is "46"  (which make sense becsaue 5 x 8 + 6 = 46)
+Since we only have one GPIO controller, everything will belong to "gpiochip0".
+
+Read the value of P5_6 while pressing/not-press the P5_6 button.
+
+	$ gpioget gpiochip0 46
+	1
+	$ gpioget gpiochip0 46
+	0
+	$ gpioget gpiochip0 46
+	1
+	$ gpioget gpiochip0 46
+	0
+
+
+== GPIO OUTPUT EXAMPLE ==
+On the RZ/A2M Evaluation Board:
+  P6_0 = RED LED
+  PC_1 = GREEN LED
+
+NOTE 1: P6_0 is defined as a GPIO LED in the RZA2MEVB's Device Tree. So you need to either remove that from the Device Tree and reprogram the board, or disconnect that device/driver first so we can manualy use it as a GPIO. Below is the command line to simply disconenct (unbind) the LED device from the device driver.
+	$ echo leds > /sys/bus/platform/drivers/leds-gpio/unbind
+
+NOTE 2: PC_1 is being used as a system heart beat LED on the RZA2MEVB. To disable the heartbeat kernel thread from starting, add "no-heartbeat;" to the Device Tree and reprogram the board. See below for example:
+/ {
+	model = "RZA2MEVB";
+	compatible = "renesas,rza2mevb", "renesas,r7s9210";
+
+	no-heartbeat;
+
+
+First you need to convert a port name (P6_0) as listed in the hardware manual
+into its global pin ID (index).
+We can use gpiofind for that.
+
+	$ gpiofind P6_0
+	gpiochip0 48
+
+
+Now set P6_0 to output and drive it high and low to change the LED.
+
+	$ gpioset gpiochip0 48=1
+	$ gpioset gpiochip0 48=0
+	$ gpioset gpiochip0 48=1
+	$ gpioset gpiochip0 48=0
+
+
+We can do the same for PC_1
+
+	$ gpiofind PC_1
+	gpiochip0 97
+	$ gpioset gpiochip0 97=1
+	$ gpioset gpiochip0 97=0
+	$ gpioset gpiochip0 97=1
+	$ gpioset gpiochip0 97=0
+
+
