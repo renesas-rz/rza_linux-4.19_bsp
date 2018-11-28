@@ -414,7 +414,7 @@ Examples: (file number)
     fi
     if [ -e $FILE7 ] ; then  echo "    7 = $FILE7"
     fi
-    if [ -e $FILE8 ] ; then  echo "    7 = $FILE8"
+    if [ -e $FILE8 ] ; then  echo "    8 = $FILE8"
     fi
 
   echo "
