@@ -1,0 +1,58 @@
+
+
+
+=== Modifying Graphic Layers at run-time ===
+It is possible to modify the graphic layers after boot.
+At run-time, you will find the follow sysfs file:
+
+	RZA1: ch0 = /sys/devices/platform/fcff7400.display/
+	      ch1 = /sys/devices/platform/fcff9400.display/
+
+	RZA2: ch0 = /sys/devices/platform/fcff7400.display/
+
+They will show the current settings for the graphic layers.
+
+You can see that by doing:
+$ cat /sys/devices/platform/fcff7400.display/layer2
+
+For example:
+
+$ cat /sys/devices/platform/fcff7400.display/layer2
+xres = 800
+yres = 480
+x_offset = 0
+y_offset = 0
+base = 0x80000000
+bpp = 16
+format = RGB565
+blend = 0
+
+
+
+To modify any or all of these values, simply pass them back to that same file with new values.
+The values must be either separated by a newline, or by a comma.
+
+For example:
+  $ echo "x_offset = 100 , y_offset = 100" > /sys/devices/platform/fcff7400.display/layer2
+  $ echo -e "x_offset = 100 \n y_offset = 100" > /sys/devices/platform/fcff7400.display/layer2
+
+Example:
+$ cat /sys/devices/platform/fcff7400.display/layer2 > /tmp/layer2.txt
+$ vi /tmp/layer2.txt
+$ cat /tmp/layer2.txt > /sys/devices/platform/fcff7400.display/layer2
+
+
+When choosing a format, below are the valid strings you can pass:
+	RGB565
+	RGB888
+	ARGB1555
+	ARGB4444
+	ARGB8888
+	CLUT8
+	CLUT4
+	CLUT1
+	YCbCr422
+	YCbCr444
+	RGBA5551
+
+
