@@ -39,6 +39,8 @@ int x_offset;			/* offset from top left of screen */
 int y_offset;			/* offset from top left of screen */
 float custom_fps;		/* override the framerate in the file */
 
+int rza_soc;			/* 1 = RZ/A1, 2 = RZ/A2 */
+
 /* Location of JCU registers */
 #define JPEG_REG_PHYS	0xE8017000
 
@@ -118,11 +120,19 @@ int detect_video(void)
 			{
 				/* extract the address (after 'phys=') */
 				sscanf(index+5,"%x\n",&address);
-				/* The address will be either 0x2??????? or 0x6??????? */
+				/* The address will be either 0x2??????? or 0x6??????? for RZ/A1 */
 				if (((address & 0xF0000000) == 0x20000000) ||
 				    ((address & 0xF0000000) == 0x60000000))
 				{
 					lcd_fb_phys = address;
+					rza_soc = 1;
+					break;
+				}
+				/* The address will be either 0x8??????? for RZ/A2 */
+				if ((address & 0xF0000000) == 0x80000000)
+				{
+					lcd_fb_phys = address;
+					rza_soc = 2;
 					break;
 				}
 			}
@@ -141,6 +151,8 @@ int detect_video(void)
 	/* Print Screen Statistics */
 	printf("Screen Resolution: %dx%d (%d bpp)\n",lcd_width,lcd_height, lcd_bytes_per_pixel*8);
 	printf("Frame Buffer Physical Address: %p\n",lcd_fb_phys);
+
+	return 0;
 }
 
 int module_clock_enable(int mstp)
@@ -242,8 +254,12 @@ int main(int argc, char *argv[])
 	}
 
 	/* Manually Enable the JCU HW Engine (cancel module stop mode) */
-	if (module_clock_enable(61))	/* Clears bit MSTP61 in STBCR5 */
-		exit(1);
+	if (rza_soc == 1)
+		if (module_clock_enable(61))	/* Clears bit MSTP61 in STBCR6 */
+			exit(1);
+	if (rza_soc == 2)
+		if (module_clock_enable(51))	/* Clears bit MSTP51 in STBCR5 */
+			exit(1);
 
 	/* Determine screen resolution and frame buffer physical address */
 	if (detect_video())
