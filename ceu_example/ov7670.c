@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -228,33 +229,54 @@ static struct regval_list ov7670_fmt_raw[] = {
 
 static int ov7670_read(unsigned char reg, unsigned char *value)
 {
-	int ret;
+	ssize_t ret;
 
-	if( write(ov7670_fd, &reg, 1) != 1) {
+	ret = write(ov7670_fd, &reg, 1);
+	if (ret != 1) {
 #ifdef DEBUG
-		printf("ov7670_read error (setting reg=0x%X)\n",reg);
+		printf("ov7670_read error: write reg=0x%02X, ret=%d(%s)\n", reg, ret, strerror(errno));
 #endif
 		return -1;
 	}
-	if( read(ov7670_fd, value, 1) != 1) {
+	ret = read(ov7670_fd, value, 1);
+	if (ret != 1) {
 #ifdef DEBUG
-		printf("ov7670_read error (read reg=0x%X)\n",reg);
+		printf("ov7670_read error: read reg=0x%02X, ret=%d(%s)\n", reg, ret, strerror(errno));
 		return -1;
 #endif
 	}
+
+#ifdef DEBUG
+	printf("ov7670_read: 0x%02X=0x%02X\n", reg, *value);
+#endif
 	return 0;	
 }
 
 static int ov7670_write(unsigned char reg, unsigned char value)
 {
 	uint8_t data[2];
+	ssize_t ret = -1;
+	int retry = 10;
 
 	data[0] = reg;
 	data[1] = value;
 
-	if( write(ov7670_fd, data, 2) != 2) {
+	/* Sometimes the i2c is busy, so you need to retry */
+	while ( retry-- ) {
+		ret = write(ov7670_fd, data, 2);
+		if (ret < 0)
+			usleep(1000);
+		else
+			break;
+	}
 #ifdef DEBUG
-		printf("ov7670_write (reg=0x%X)\n",reg);
+	if( retry != 5)
+		printf("\t\ti2c write took %d tries\n",9-retry);
+#endif
+
+	if (ret != 2) {
+#ifdef DEBUG
+		printf("ov7670_write error: reg=0x%02X, ret=%d(%s)\n", reg, ret, strerror(errno));
 #endif
 		return -1;
 	}
@@ -269,7 +291,13 @@ static int ov7670_write(unsigned char reg, unsigned char value)
 static int ov7670_write_array(struct regval_list *vals)
 {
 	int ret;
+#ifdef DEBUG
+	printf("Setting OV7670 registers:\n");
+#endif
 	while (vals->reg_num != 0xff || vals->value != 0xff) {
+#ifdef DEBUG
+		printf("\t0x%02X=0x%02X\n", vals->reg_num, vals->value);
+#endif
 		ret = ov7670_write(vals->reg_num, vals->value);
 		if (ret < 0)
 			return ret;
@@ -808,7 +836,6 @@ int ov7670_open(char *i2c_dev_path)
 
 	ov7670_fd = open(i2c_dev_path, O_RDWR);
 	if (ov7670_fd < 0) {
-		printf("ov7670_open");
 		return -1;
 	}
 
@@ -821,10 +848,14 @@ int ov7670_open(char *i2c_dev_path)
 	ret = ov7670_detect();
 	if (ret) {
 #ifdef DEBUG
-		printf("chip found, but is not an ov7670 chip.\n");
+		printf("OV7670 not found on bus %s\n",i2c_dev_path);
 #endif
 		return ret;
 	}
+
+#ifdef DEBUG
+		printf("OV7670 found on bus %s\n",i2c_dev_path);
+#endif
 
 	ret = ov7670_write_array(ov7670_default_regs);
 	if (ret < 0) {
@@ -839,7 +870,7 @@ int ov7670_open(char *i2c_dev_path)
 	ov7670_s_vflip(0);	/* 0 to 1 (0) */
 
 	ov7670_s_sat_hue(128, 0);
-	
+
 	ov7670_s_autoexp(0);
 	ov7670_s_autoexp(1);
 

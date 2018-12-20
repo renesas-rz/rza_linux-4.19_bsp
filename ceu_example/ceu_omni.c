@@ -20,17 +20,30 @@
 #include "ov7670.h"
 #include "ov7740.h"
 
+#define RZA_SOC 2  /* 1 = RZ/A1, 2 = RZ/A2 */
+
 //#define DEBUG
 
 /* For displaying directly to /dev/fb0 */
 /* Only a RGB-565 is supported */
+#if (RZA_SOC == 1)
 static unsigned int cap_buf_addr = 0x60900000;	/* 9MB offset in internal RAM */
+#else
+static unsigned int cap_buf_addr = 0x80200000;	/* 2MB offset in internal RAM */
+#endif
 static unsigned int cap_buf_size = (1*1024*1024); 	/* Capture buffer size */
 
 /* I2C bus settings */
+#if (RZA_SOC == 1)
 #define I2C_BUS_SCAN_START 0
 #define I2C_BUS_SCAN_END 1
+#endif
+#if (RZA_SOC == 2)
+#define I2C_BUS_SCAN_START 3
+#define I2C_BUS_SCAN_END 3
+#endif
 static char i2c_dev_path[] = "/dev/i2c-0";
+
 
 /* Options */
 #define LCD_X_OFFSET 80	/* center a QVGA image on WQVGA screen */

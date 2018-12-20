@@ -121,7 +121,6 @@ int ov7740_open(char *i2c_dev_path)
 
 	ov7740_fd = open(i2c_dev_path, O_RDWR);
 	if (ov7740_fd < 0) {
-		printf("ov7774_open failed");
 		return -1;
 	}
 
@@ -134,7 +133,7 @@ int ov7740_open(char *i2c_dev_path)
 	ret = ov7740_detect();
 	if (ret) {
 #ifdef DEBUG
-		printf("chip found, but is not an ov7740 chip.\n");
+		printf("OV7740 not found on bus %s\n",i2c_dev_path);
 #endif
 		return ret;
 	}

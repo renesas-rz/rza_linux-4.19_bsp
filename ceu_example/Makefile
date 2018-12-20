@@ -9,10 +9,12 @@ endif
 # Application Specific setup
 #
 # (Change as needed)
+# NOTE: You can also pass in things like CFLAGS on the command line.
+# For eaxmple "CFLAGS -DDEBUG  make"
 #######################################################################
 app_name	:= ceu_omni
 LIBS		:=
-CFLAGS		:= -O2
+CFLAGS		+= -O2
 SRC_FILES	:= ceu_omni.c ceu.c ov7670.c ov7740.c
 
 # For adding in external libraries, you have 2 choices:
