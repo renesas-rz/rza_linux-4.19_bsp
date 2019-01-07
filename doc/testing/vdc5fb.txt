@@ -25,6 +25,7 @@ y_offset = 0
 base = 0x80000000
 bpp = 16
 format = RGB565
+read_swap = swap_32_16
 blend = 0
 
 
@@ -54,5 +55,25 @@ When choosing a format, below are the valid strings you can pass:
 	YCbCr422
 	YCbCr444
 	RGBA5551
+	YCbCr422_0		(Cb/Y0/Cr/Y1)
+	YCbCr422_1		(Y0/Cb/Y1/Cr)
+	YCbCr422_2		(Cr/Y0/Cb/Y1)
+	YCbCr422_3		(Y0/Cr/Y1/Cb)
+	YCbCr422_4		(Y1/Cr/Y0/Cb)
+	YCbCr422_5		(Cr/Y1/Cb/Y0)
+	YCbCr422_6		(Y1/Cb/Y0/Cr)
+	YCbCr422_7		(Cb/Y1/Cr/Y0)
 
+
+When choosing a 'read_swap', below are the valid strings you can pass.
+See register bits GRx_FLM:GRx_RDSWA in the hardware manual for more details.
+	no_swap
+	swap_8
+	swap_16
+	swap_16_8
+	swap_32
+	swap_32_8
+	swap_32_16
+	swap_32_16_8
+NOTE: Make sure 'read_swap =' is specificed after 'format =' (since 'format' always set GRx_RDSWA to 0 (no_swap))
 
