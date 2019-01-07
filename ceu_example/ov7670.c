@@ -44,10 +44,11 @@ static struct regval_list ov7670_default_regs[] = {
 	{ REG_CLKRC, 0x1 },	/* OV: clock scale (30 fps) */
 	{ REG_TSLB,  0x00 },	/* Set YUV orders (in combination with REG_COM13) */
 
-	{REG_COM13, COM13_GAMMA | COM13_UVSAT}, /* Gamma enable, UV sat enable, UYVY or VYUY (see TSLB_REG) */
+// Set by ov7670_formats
+//	{REG_COM13, COM13_GAMMA | COM13_UVSAT}, /* Gamma enable, UV sat enable, UYVY or VYUY (see TSLB_REG) */
 
-	{ REG_COM7, 0 },	/* VGA */
-
+// Set by ov7670_formats
+//	{ REG_COM7, 0 },	/* VGA */
 
 	/*
 	 * Set the hardware window.  These values from OV don't entirely
@@ -270,8 +271,8 @@ static int ov7670_write(unsigned char reg, unsigned char value)
 			break;
 	}
 #ifdef DEBUG
-	if( retry != 5)
-		printf("\t\ti2c write took %d tries\n",9-retry);
+	if( retry != 9)
+		printf("\t\ti2c write took %d retries\n",9-retry);
 #endif
 
 	if (ret != 2) {
@@ -513,7 +514,7 @@ static int ov7670_set_hw(int hstart, int hstop,	int vstart, int vstop)
 	ret += ov7670_write(REG_HSTOP, (hstop >> 3) & 0xff);
 	ret += ov7670_read(REG_HREF, &v);
 	v = (v & 0xc0) | ((hstop & 0x7) << 3) | (hstart & 0x7);
-	usleep(1000);
+	usleep(10000);
 	ret += ov7670_write(REG_HREF, v);
 /*
  * Vertical: similar arrangement, but only 10 bits.
@@ -522,7 +523,7 @@ static int ov7670_set_hw(int hstart, int hstop,	int vstart, int vstop)
 	ret += ov7670_write(REG_VSTOP, (vstop >> 2) & 0xff);
 	ret += ov7670_read(REG_VREF, &v);
 	v = (v & 0xf0) | ((vstop & 0x3) << 2) | (vstart & 0x3);
-	usleep(1000);
+	usleep(10000);
 	ret += ov7670_write(REG_VREF, v);
 	return ret;
 }
@@ -617,8 +618,7 @@ int ov7670_set_format( int image_format, int resolution, int out_format)
 	 * to write it unconditionally, and that will make the frame
 	 * rate persistent too.
 	 */
-	if (ret == 0)
-		//ret = ov7670_write(REG_CLKRC, info->clkrc);
+	if (image_format == 2)
 		ret = ov7670_write(REG_CLKRC, 1);
 
 	return 0;
@@ -856,6 +856,8 @@ int ov7670_open(char *i2c_dev_path)
 #ifdef DEBUG
 		printf("OV7670 found on bus %s\n",i2c_dev_path);
 #endif
+
+	ov7670_reset(0);
 
 	ret = ov7670_write_array(ov7670_default_regs);
 	if (ret < 0) {

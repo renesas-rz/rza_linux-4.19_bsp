@@ -20,34 +20,9 @@
 #include "ov7670.h"
 #include "ov7740.h"
 
-#define RZA_SOC 2  /* 1 = RZ/A1, 2 = RZ/A2 */
-
 //#define DEBUG
 
-/* For displaying directly to /dev/fb0 */
-/* Only a RGB-565 is supported */
-#if (RZA_SOC == 1)
-static unsigned int cap_buf_addr = 0x60900000;	/* 9MB offset in internal RAM */
-#else
-static unsigned int cap_buf_addr = 0x80200000;	/* 2MB offset in internal RAM */
-#endif
-static unsigned int cap_buf_size = (1*1024*1024); 	/* Capture buffer size */
-
-/* I2C bus settings */
-#if (RZA_SOC == 1)
-#define I2C_BUS_SCAN_START 0
-#define I2C_BUS_SCAN_END 1
-#endif
-#if (RZA_SOC == 2)
-#define I2C_BUS_SCAN_START 3
-#define I2C_BUS_SCAN_END 3
-#endif
-static char i2c_dev_path[] = "/dev/i2c-0";
-
-
 /* Options */
-#define LCD_X_OFFSET 80	/* center a QVGA image on WQVGA screen */
-#define LCD_Y_OFFSET 16	/* center a QVGA image on WQVGA screen */
 
 /* Throw away this number frames at the begining of capturing */
 /* The reason is that it takes a couple captures until the auto gain
@@ -69,26 +44,38 @@ struct mem_map {
 };
 struct mem_map map_ceu, map_ram;
 
+/* For JPEG Compression */
 struct jpeg_compress_struct cinfo;
 struct jpeg_error_mgr jerr;
-int mem_fd;
-int fb0_fd;
-void *fb0_base;
 
-#define CAP_CNT 10	/* the default number of times to capture */
-int vga_capture = 1;	/* 1=VGA, 0=QVGA */
+int mem_fd;	/* file descriptor for /dev/mem */
+int fb0_fd;	/* file descriptor for /dev/fb0 */
+void *fb0_base;	/* mmap pointer for /dev/fb0 */
+
+int vga_capture = 1;		/* 1=VGA, 0=QVGA */
 int continuous_stream = 0;
 int displayfb0 = 0;
 int savejpg = 1;
 int displayjpg = 0;
+int displayyuv = 0;
 int quiet = 0;
-char * ycbcr_fb;	/* A separate frame buffer for LCD LVDS display */
+char * ycbcr_fb;		/* A separate frame buffer for LCD LVDS display */
+static char i2c_dev_path[] = "/dev/i2c-#";
+unsigned int cap_buf_addr;			/* Location to capture image to */
+unsigned int cap_buf_size = 640*480*2;		/* Capture buffer size */
 
 int cap_width = 640;
 int cap_height = 480;
 
 int lcd_width;
 int lcd_height;
+
+/* Supported Boards */
+#define RZA1_RSKRZA1 0
+#define RZA1_STREAMIT 1
+#define RZA2_RZA2MEVB 2
+int board;
+
 
 /*
  * kbhit()
@@ -160,20 +147,16 @@ void display_on_fb0(char *image_buff, int mode)
 {
 	int i;
 	int row, col;
-	char *fb = fb0_base;
+	char *fb;
 	uint16_t pixel;
 	char y,cb,cr;
 
 	/* For converting 8-bit B&W to 16-bit RGB565 */
 	#define BW_TO_RGB565(a) ((a & 0xF8) << 8) | ((a & 0xFC) << 3) | (a >> 3);
 
-	/* B&W */
 	for(row=0; row < cap_height; row++)
 	{
-		fb = fb0_base + ((LCD_Y_OFFSET + row) * lcd_width * 2) + (LCD_X_OFFSET * 2);
-		*fb = 0xFF;
-		*(fb+1) = 0xFF;
-
+		fb = fb0_base + row * lcd_width * 2;
 		for(col=0; col < cap_width; col++)
 		{
 			if (mode == 0 | mode == 1)
@@ -288,7 +271,7 @@ static char *planar_to_interleave(char *pBuf)
 
   OV7670 output (YCbCr422) = Cb0,Y0,Cr0,Y1,Cb2,Y3,Cr2, etc...
 
-  cam_fmt: What the current 422 formate i9s
+  cam_fmt: What the current 422 format is
 	0 = YUYV (Y/Cb/Y/Cr) Y0,Cb0,Y1,Cr0,Y3,Cb2, etc...
 	1 = YVYU (Y/Cr/Y/Cb) Y0,Cr0,Y1,Cb0,Y3,Cr2, etc...
 	2 = UYVY (Cb/Y/Cr/Y) Cb0,Y0,Cr0,Y1,Cb2,Y3,Cr2, etc...
@@ -369,7 +352,7 @@ int close_resources(void)
 		free(jpegbuf);
 
 	if( fb0_base )
-		munmap(fb0_base, lcd_width * lcd_height * 2);
+		munmap(fb0_base, lcd_width * 2 * lcd_height);	/* RGB565 */
 	if( fb0_fd )
 		close(fb0_fd);
 }
@@ -386,7 +369,7 @@ int open_resources(void)
 	struct fb_fix_screeninfo fix;
 	struct fb_var_screeninfo var;
 
-	if( displayfb0 )
+	if (displayfb0 || displayyuv)
 	{
 		fb0_fd = open("/dev/fb0", O_RDWR);
 		if (fb0_fd < 0) {
@@ -407,22 +390,27 @@ int open_resources(void)
 			return -1;
 		}
 
+#ifdef DEBUG
+		printf("Display LCD: %dx%d,%dbpp\n",var.xres, var.yres,var.bits_per_pixel);
+#endif
 		lcd_width = var.xres;
 		lcd_height = var.yres;
 
-		if ( cap_width > lcd_width )
+		if ( (cap_width > lcd_width) && displayfb0 )
 		{
-			printf("ERROR: You can only display the image if the LCD is bigger than the camera image that is being captured\n");
+			printf("ERROR: You can only display the image on the LCD directly (by writting RGB565 directly to the frame buffer) if your camera image size is smaller than your LCD display. Try using the -q option to capture in QVGA.\n");
 			return -1;
 		}
+	}
 
+	if (displayfb0)
+	{
 		if (var.bits_per_pixel != 16)
 		{
 			printf("ERROR: Can only display to a /deb/fb0 of RGB-565\n");
 			return -1;
 		}
-
-		fb0_base = mmap(NULL, lcd_width*lcd_height*2,
+		fb0_base = mmap(NULL, lcd_width * 2 * lcd_height, /* RGB565 */
 				  PROT_READ | PROT_WRITE,
 				  MAP_SHARED, fb0_fd, 
 				  0 );
@@ -433,7 +421,6 @@ int open_resources(void)
 			fb0_fd = 0;
 		}
 	}
-
 
 	map_ceu.addr = 0xE8210000;
 	map_ceu.size = 0x100;
@@ -619,10 +606,9 @@ static int stream(char *buf, int nFrames)
 				system("fbv --noclear --noinfo --delay -1 capture0000.jpg");
 		}
 
-		/* Return the buffer */
+		/* Stop capturing? */
 		if (continuous_stream)
 		{
-			system("if [ -e capture0000.jpg ] ; then cp capture0000.jpg image.jpg ; fi");
 			if ( kbhit() )
 				break;
 		}
@@ -635,9 +621,8 @@ static int stream(char *buf, int nFrames)
 
 int main(int argc, char *argv[])
 {
-	int cap_cnt = CAP_CNT;
+	int cap_cnt = 10;	/* default number of times to capture */
 	int i;
-	int found;
 	int resolution;
 	int ret;
 
@@ -648,9 +633,10 @@ int main(int argc, char *argv[])
 		"Usage: ceu_omni [-c] [-d] [-n] [-q] [count]  \n"\
 		"  -v: Capture VGA (640x480) images (default).\n"\
 		"  -q: Capture QVGA (320x240) images.\n"\
-		"  -c: Continouse mode. Output file will always be capture0000.jpg and image.jpg\n"\
+		"  -c: Continuous mode. Output file will always be capture0000.jpg\n"\
 		"  -f: Display saved jpeg image on the LCD using fbv (will scale the image to fit the screen).\n"\
 		"  -b: Display captured YCbCr422 on the LCD (/dev/fb0) by converting to RGB565 \n"\
+		"  -y: Display captured YCbCr422 on the LCD directly (disables /dev/fb0, creates layers 0 as YCbCr)\n"\
 		"  -n: Don't save JPEG images.\n"\
 		"  -t: Quiet mode.\n"\
 		" count: the number of images to caputre and save.\n"\
@@ -681,6 +667,10 @@ int main(int argc, char *argv[])
 		{
 			displayfb0 = 1;
 		}
+		else if( !strcmp(argv[i],"-y") )
+		{
+			displayyuv = 1;
+		}
 		else if( !strcmp(argv[i],"-n") )
 		{
 			savejpg = 0;
@@ -707,12 +697,28 @@ int main(int argc, char *argv[])
 	
 	}
 
-	/* Determine if runnign on a Streamit by looking at the model name in the device tree */
-	if ( system("grep STREAMIT /sys/firmware/devicetree/base/model") == 0)
+	/* Determine the board we are running on by looking at the model name in the device tree */
+	if ( system("grep RSKRZA1 /sys/firmware/devicetree/base/model") == 0)
 	{
-		/* It is a stream it board */
+		board = RZA1_RSKRZA1;
+		cap_buf_addr = 0x60900000;	/* 9MB offset in internal RAM */
+		i2c_dev_path[9] = '0';		/* "/dev/i2c-0" on CN40 */
+	}
+	else if ( system("grep STREAMIT /sys/firmware/devicetree/base/model") == 0)
+	{
+		board = RZA1_STREAMIT;
 		cap_buf_addr = 0x60040000;	/* Directly after LCD frame buffer */
-		cap_buf_size = (1*1024*1024); 	/* Capture buffer size */
+		i2c_dev_path[9] = '1';		/* "/dev/i2c-1 on CN12 */
+	}
+	else if ( system("grep RZA2MEVB /sys/firmware/devicetree/base/model") == 0)
+	{
+		board = RZA2_RZA2MEVB;
+		cap_buf_addr = 0x80200000;	/* 2MB offset in internal RAM */
+		i2c_dev_path[9] = '3';		/* "/dev/i2c-3 on CN17 */
+	}
+	else {
+		printf("ERROR: Cannot detect what board we are running on.\n");
+		goto app_error;
 	}
 
 	if (open_resources())
@@ -726,32 +732,20 @@ int main(int argc, char *argv[])
 		printf("resolution not supported\n");
 
 
-	found = 0;
-	for (i = I2C_BUS_SCAN_START; i <= I2C_BUS_SCAN_END; i++)
+	/* Look for OV7670 */
+	if( ov7670_open(i2c_dev_path) == 0 )
 	{
-		/* switch out bus to scan */
-		i2c_dev_path[9] = i + '0';	/* "/dev/i2c-#" */
-
-		/* look for OV7670 */
-		if( ov7670_open(i2c_dev_path) == 0 )
-		{
-			found = 1;
-			if( ov7670_set_format(CAM_FMT_YUV422, resolution, CAM_OUT_YVYU) )
-				goto app_error;
-			break;
-		}
-
-		/* look for OV7740 */
-		if ( ov7740_open(i2c_dev_path) == 0)
-		{
-			found = 1;
-			if( ov7740_set_format(CAM_FMT_YUV422, resolution, CAM_OUT_YUYV) )
-				goto app_error;
-			break;
-		}
+		/* NOTE: 'CAM_OUT_YUYV' and 'CAM_OUT_YVYU' output the exact format. I have no idea why. */
+		if( ov7670_set_format(CAM_FMT_YUV422, resolution, CAM_OUT_YUYV) )
+			goto app_error;
 	}
-
-	if (!found)
+	/* Look for OV7740 */
+	else if ( ov7740_open(i2c_dev_path) == 0)
+	{
+		if( ov7740_set_format(CAM_FMT_YUV422, resolution, CAM_OUT_YUYV) )
+			goto app_error;
+	}
+	else
 	{
 		printf("no cammera found\n");
 		goto app_error;
@@ -767,6 +761,48 @@ int main(int argc, char *argv[])
 #ifdef DEBUG
 	ceu_print_register();
 #endif
+
+	if (displayyuv)
+	{
+		FILE *layer0_fd, *layer2_fd, *restore_fd;
+
+		layer0_fd = fopen("/sys/devices/platform/fcff7400.display/layer0", "r+");
+		layer2_fd = fopen("/sys/devices/platform/fcff7400.display/layer2", "r+");
+
+		if ( !layer0_fd || !layer2_fd)
+		{
+			printf("ERROR: Can't access /sys/devices/platform/fcff7400.display/layer2.\n");
+			goto app_error;
+		}
+
+		/* Make Layer 2 (/dev/fb0) only 1x1 pixels */
+		// $ echo xres = 1 , yres = 1 , blend = 1 > /sys/devices/platform/fcff7400.display/layer2
+		fprintf(layer2_fd, "xres = 1 , yres = 1 , blend = 1\n");
+
+
+		/* Enable Layer 0 as YCbCr with YCC_SWAP=0 (Cb/Y0/Cr/Y1) */
+		/* Set Layer 0 data format to "Cb/Y0/Cr/Y1" to match OV7670 output */
+		/* Set Layer 0 to swap data as it reads in "Swapped in 32-bit units + 16-bit units" to match OV7670 output */
+		// $ echo xres = 640 , yres = 480 , base = 0x80200000 , bpp = 16 , format = YCbCr422_0 , read_swap = swap_32_16 > /sys/devices/platform/fcff7400.display/layer0
+		fprintf(layer0_fd, "xres = %d , yres = %d , base = 0x%08X , bpp = 16 , format = YCbCr422_0 , read_swap = swap_32_16\n",
+						cap_width, cap_height, cap_buf_addr);
+
+		fclose(layer0_fd);
+		fclose(layer2_fd);
+
+		/* Make a file to restore Layer 2 back to normal */
+		/* TO RESTORE: $ source /tmp/restore_layer2.txt */
+		restore_fd = fopen("/tmp/restore_layer2.txt", "w");
+		if (!restore_fd)
+		{
+			printf("ERROR: Can't create /tmp/restore_layer2.txt\n");
+			goto app_error;
+		}
+		fprintf(restore_fd, "echo xres = %d , yres = %d , blend = 0 > /sys/devices/platform/fcff7400.display/layer2\n",
+				lcd_width, lcd_height);
+
+		fclose(restore_fd);
+	}
 
 	if( continuous_stream )
 	{

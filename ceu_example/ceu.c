@@ -184,7 +184,7 @@ int ceu_init(int width, int height, int mode)
 		value |= (0 << 4);	/* JPG[1:0] =  Image capture mode */
 	if (mode == 1)
 		value |= (1 << 4);	/* JPG[1:0] =  Data synchronous fetch mode */
-	if (mode == 2) //error
+	if (mode == 2)
 		value |= (2 << 4);	/* JPG[1:0] =  Data enable fetch mode */
 	ceu_write32(CAMCR, value);
 

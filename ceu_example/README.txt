@@ -42,26 +42,40 @@ This code assumes you have taken care of the CEU pin setup in u-boot or the kern
 ----------------------------------------
 CEU Capture Buffer Address
 ----------------------------------------
-Some setup is needed in the ceu_omni.c file for your board.
-
 You must hard code a RAM location for the CEU to capture images to.
-This is done at the top of the file:
-	static unsigned int cap_buf_addr = 0x60900000;	/* 9MB offset in internal RAM */
-	static unsigned int cap_buf_size = (1*1024*1024); 	/* Capture buffer size */
-
+You can see the values of "cap_buf_addr" depend on what board you are using.
 You cannot simply 'malloc' this RAM in the application because you need to use a
-physical RAM address (not virutal address) and the memory must be continuous (not paged)
+physical RAM address (not virtual address) and the memory must be continuous (not paged).
 
-Note when external SDRAM is used, it is easy to hard code the RAM loacion to internal RAM
-because internal RAM is not used by the kernel.
+When external SDRAM is used ('run xsa_boot', or 'run xha_boot)', it is easy to hard code
+the capture RAM loacion to internal RAM because internal RAM is not used by the kernel.
 
 
 ----------------------------------------
-Stream it Board
+Supported Boards
 ----------------------------------------
-When running this code on a Stream it board, it will automatically detect that it is a stream it board
-and adjust the settings for you. However, this assumes you have made the appropriate changes as
-for a V2.3 board or later outlined here:
-	https://elinux.org/RZ-A/Boards/Stream-it
+This code has been written to work on the follow boards:
+ * Renesas RZ/A1H RSK
+ * Renesas RZ/A1LU Stream it
+ * Renesas RZ/A2M EVB
+
+Stream it:
+ * When using the stream it board, plese make sure you haver the appropriate changes for
+   a V2.3 board or later outlined here:	https://elinux.org/RZ-A/Boards/Stream-it
+ * u-boot will configure the CEU pins for you automatically when "#define SDRAM_SIZE_MB 16"
+   is specified in the include/configs/streamit.h file.
+
+
+RZ/A2M EVB:
+ * When using the RZ/A2M EVB, please set switch SW6-4 = OFF on teh sub-board. Note that
+   Ethernet #1 (eth0) cannot be used. However, Ethernet #2 (eth1) will work.
+ * A Device Tree for this board has been supplied that will configure the CEU pins.
+   To compile it, simple do:
+     (rza_bsp)$ make
+     (rza_bsp)$ make program
+
+RZ/A1H RSK:
+ * Note that the LCD that comes with the kit cannot be used at the same time as
+   the camera because of pin muxing. However, the LVDS connector can be used.
 
 
