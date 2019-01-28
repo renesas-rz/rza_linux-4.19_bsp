@@ -236,7 +236,8 @@
 	pinctrl-0 = <&i2c3_pins>;
 
 	status = "okay";
-	clock-frequency = <400000>;
+	//clock-frequency = <400000>;
+	clock-frequency = <200000>;	/* The i2c bus on this board has lots of traces and connections, and sometimes the OV7670 does not like 400KHz */
 
 	ft5x06_ts@38 {
 		compatible = "focaltech,ft5x06";

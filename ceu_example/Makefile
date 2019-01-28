@@ -10,7 +10,7 @@ endif
 #
 # (Change as needed)
 # NOTE: You can also pass in things like CFLAGS on the command line.
-# For eaxmple "CFLAGS -DDEBUG  make"
+# For example "CFLAGS=-DDEBUG  make"
 #######################################################################
 app_name	:= ceu_omni
 LIBS		:=
