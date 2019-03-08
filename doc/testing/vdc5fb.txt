@@ -77,3 +77,29 @@ See register bits GRx_FLM:GRx_RDSWA in the hardware manual for more details.
 	swap_32_16_8
 NOTE: Make sure 'read_swap =' is specificed after 'format =' (since 'format' always set GRx_RDSWA to 0 (no_swap))
 
+
+
+--- Replacing colors in real-time ---
+On any layer, you can have the VDC replace a single pixel color with another pixel color (with alpha).
+This is mostly helpful if you want to pick a single color to become transparent.
+
+NOTE: You must have 'blend' enabled in the layer you set this in.
+
+
+For example, if you wanted to make all black (GBR=000000) pixels look blue (AGBR = FF0000FF with 100% alpha(opaque))
+  $ echo "layer2 = 0x00000000 to 0xFF00F00F" > /sys/devices/platform/fcff7400.display/color_replace
+
+For example, if you wanted to make all black (GBR=000000) pixels look blue (AGBR = FF0000FF with 50% alpha)
+  $ echo "layer2 = 0x00000000 to 0x8000F00F" > /sys/devices/platform/fcff7400.display/color_replace
+
+For example, if you wanted to make all black pixels (GBR=000000) become fully transparent (AGBR=00000000 0% alpha) and let the lower layer
+show through, you would do do this:
+
+  $ echo "layer2 = 0x00000000 to 0x00000000" > /sys/devices/platform/fcff7400.display/color_replace
+
+To remove this replacement feature off, just pass "off"
+$ echo "layer0 = off" > /sys/devices/platform/fcff7400.display/color_replace
+
+To show the current status off all layers, you can do this:
+$ cat /sys/devices/platform/fcff7400.display/color_replace
+
