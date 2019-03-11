@@ -1,0 +1,97 @@
+-----------------------------------------------------------
+Enabling SDRAM on the RSZ/A2M EVB
+-----------------------------------------------------------
+
+By default, the BSP is configured to use 8MB HyperRAM on the CPU board.
+If you would like to use the 64MB SDRAM on the sub board, please follow
+the instructions below.
+
+Please note, when using SDRAM:
+ * "UART" (on board USB-to-Serial) cannot be used
+ * You must connect a TTL USB-to-Serial to the CN17 "CMOS" header.
+     RxD2 (CN17-9)
+     TxD2 (CN17-10)
+     GND  (CN17-2 or CN17-17)
+
+ * "Ether 1" cannot be used
+ * The USB 'overcurrent' signal on the sub board (only) is not conencted (pin conflict)
+
+-----------------------------------------------------------
+Configure u-boot to enable SDRAM
+-----------------------------------------------------------
+1. Edit the file:
+	rza_linux-4.19_bsp/output/u-boot-2017.05/include/configs/rza2mevb.h
+
+2. Remove the comment "//" from the line '#define RZA2M_ENABLE_SDRAM'
+
+3. Rebuild
+	$ ./build.sh u-boot
+
+4. Reprogram
+	$ ./build.sh jlink u-boot
+
+-----------------------------------------------------------
+Configure kernel for XIP with SDRAM
+-----------------------------------------------------------
+1. Edit the Device Tree file:
+	rza_linux-4.19_bsp/output/linux-4.19/arch/arm/boot/dts/r7s9210-rza2mevb.dts
+
+2. Comment out the line '#define MEM_HYPERRAM'
+
+3. Remove the comment "//" from '#define MEM_SDRAM'
+
+4. Comment out the line '#define CONSOLE 4'
+
+5. Remove the comment "//" from '#define CONSOLE 2'
+
+6. Rebuild the Device Tree
+	$ ./build.sh kernel dtbs
+
+7. Reprogram the Device Tree
+	$ ./build.sh jlink dtb
+
+8. Open the kernel configuration
+	$ ./build.sh kernel menuconfig
+
+9. On the main screen, change:
+	(0x40000000) Physical address of main memory
+   to
+	(0x0C000000) Physical address of main memory
+
+10. Exit and save the kernel configuration
+
+11. Rebuild XIP kernel
+	$ ./build.sh kernel xipImage
+
+12. Reprogram XIP kernel
+	$ ./build.sh jlink xipImage 0x20200000
+
+
+-----------------------------------------------------------
+Boot the XIP kernel with SDRAM
+-----------------------------------------------------------
+
+1. You must have the SW6 switches on the sub board set to the following:
+
+                 ON     SW6
+                 +---------------------+
+                 | =   =   = = =       |
+                 |   =   =             |
+                 | 1 2 3 4 5 6 7 8 9 0 |  Please make sure your sub-board matches
+                 +---------------------+  these switch settings.
+        SW6-1 set to SDRAM
+        SW6-2 set to Audio
+        SW6-3 set to DRP
+        SW6-4 set to CEU
+        SW6-5 set to Ether2
+        SW6-6 set to VDC6
+        SW6-7 set to VDC6
+
+2. In u-boot, enter the command:
+	=> run xsa_boot
+
+			'x' = XIP kernel
+			's' = SDRAM
+			'a' = AXFS rootfs
+
+
