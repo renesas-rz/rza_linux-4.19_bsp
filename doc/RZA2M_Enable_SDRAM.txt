@@ -22,7 +22,7 @@ Configure u-boot to enable SDRAM
 1. Edit the file:
 	rza_linux-4.19_bsp/output/u-boot-2017.05/include/configs/rza2mevb.h
 
-2. Remove the comment "//" from the line '#define RZA2M_ENABLE_SDRAM'
+2. Remove the comment markers "/* */" from the line '#define RZA2M_ENABLE_SDRAM'
 
 3. Rebuild
 	$ ./build.sh u-boot
