@@ -29,7 +29,6 @@ Step 2. Build your application and add it to your file system.
 	$ make install
 	$ cd ..
 	$ ./build.sh buildroot
-	$ ./build.sh axfs
 
 
 Step 3. Program the new file system into your board.
