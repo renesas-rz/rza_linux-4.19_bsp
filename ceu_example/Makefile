@@ -34,47 +34,17 @@ CFLAGS+=-ljpeg
 
 # For 2:
 # Add libjpeg statically by specifying the lib directly at the end of the command line (after the .c files)
-#LIBS=$(SYSROOT)/usr/lib/libjpeg.a
+#LIBS=$(SYSROOT_DIR)/usr/lib/libjpeg.a
 
 #for debugging only
 #CFLAGS+=-g
 
 
-#######################################################################
-# Toolchain setup
-#
-# (Should not require chanages)
-#######################################################################
-
-# You want to build apps with the same toolchain and libraries
-# that you built your root file system with. We'll assume you
-# are using Buildroot.
-# Therefore, make sure BUILDROOT_DIR is defined before calling this
-# Makefile.
-# 'BUILDROOT_DIR' should be imported after running setup_env.sh
-
-# Define the base path of the toolchain and put it in the system path
-ifneq ("$(wildcard $(BUILDROOT_DIR)/output/host/bin)","")
-  # Buildroot after 2018, output/host/bin contains host apps for building
-  TC_PATH := $(BUILDROOT_DIR)/output/host
-else
-  # Buildroot before 2018, output/host/usr/bin contains host apps for building
-  TC_PATH := $(BUILDROOT_DIR)/output/host/usr
-endif
-export PATH:=$(TC_PATH)/bin:$(PATH)
-
-# Find out what the prefix of the toolchain that is used for Buildroot
-GCCEXE := $(notdir $(wildcard $(TC_PATH)/bin/*abi*-gcc))
-CROSS_COMPILE := $(subst gcc,,$(GCCEXE))
-
-# Find the location of the sysroot where all the libraries and header files are
-SYSROOT := $(shell find $(TC_PATH) -name sysroot)
-
 # Check that our build environtment is set up correctly
 ifeq ("$(BUILDROOT_DIR)","")
 BR_CHECK := $(error "The environment variable BUILDROOT_DIR has not been set.")
 endif
-ifeq ("$(SYSROOT)","")
+ifeq ("$(SYSROOT_DIR)","")
 SR_CHECK := $(error "The SYSROOT in the toolchain can not be detected")
 endif
 ifeq ("$(CROSS_COMPILE)","")
@@ -94,7 +64,7 @@ all: default
 
 #default: br_check sr_check cc_check
 default:
-	$(CROSS_COMPILE)gcc $(STATIC) $(CFLAGS) --sysroot=$(SYSROOT) -o $(app_name) $(SRC_FILES) $(LIBS)
+	$(CROSS_COMPILE)gcc $(STATIC) $(CFLAGS) --sysroot=$(SYSROOT_DIR) -o $(app_name) $(SRC_FILES) $(LIBS)
 
 # Strip off debug symbols if not debugging (makes file size smaller)
 strip:

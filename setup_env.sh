@@ -28,17 +28,31 @@ if [ -e $OUTDIR/br_version.txt ] ; then
 fi
 export BUILDROOT_DIR=$OUTDIR/buildroot-$BR_VERSION
 
-# Toolchain directory (for u-boot and kernel)
-if [ -e $OUTDIR/buildroot-$BR_VERSION/output/host ] ; then
 
-  export TOOLCHAIN_DIR=$OUTDIR/host/usr
+# Define the base path of the toolchain
+if [ -e $BUILDROOT_DIR/output/host/bin ] ; then
+  # Buildroot versions after 2018, output/host/bin contains host apps for building
+  export TC_PATH=$BUILDROOT_DIR/output/host
+else
+  # Buildroot versions before 2018, output/host/usr/bin contains host apps for building
+  export TC_PATH=$BUILDROOT_DIR/output/host/usr
+fi
+export TOOLCHAIN_DIR=$TC_PATH
 
-  # set toolchain prefix and add to path
-  cd $OUTDIR/buildroot-$BR_VERSION/output/host/usr/bin
-  export CROSS_COMPILE=`ls *gnueabi*-gcc | sed 's/gcc//'`
-  export PATH=`pwd`:$PATH
-  cd -
-  export ARCH=arm
+# Set toolchain prefix and add to path
+cd $TC_PATH/bin
+export CROSS_COMPILE=`ls *abi*-gcc | sed 's/gcc//'`
+export PATH=`pwd`:$PATH
+cd -
+export ARCH=arm
+
+# Find the location of the sysroot where all the libraries and header files are
+export SYSROOT_DIR=`find $TC_PATH -name sysroot`
+if [ "$SYSROOT_DIR" == "" ] ; then
+  echo "==========================================="
+  echo "  ERROR: Cannot find sysroot"
+  echo "         Toolchain path = $TC_PATH"
+  echo "==========================================="
 fi
 
 
