@@ -929,14 +929,17 @@ if [ "$1" == "buildroot" ]  || [ "$1" == "b" ] ; then
 
   if [ ! -e br_version.txt ] ; then
     echo "What version of Buildroot do you want to use?"
-    echo "1. buildroot-2017.02 (Long Term Support)"
-    echo "2. buildroot-2018.02 (Long Term Support)"
+    echo "1. Buildroot-2017.02.10 (EOL)"
+    echo "2. Buildroot-2018.02.12 (EOL)"
+    echo "3. Buildroot-2019.02.x  (updates until March 2020)"
     echo -n "(select number)=> "
     read ANSWER
     if [ "$ANSWER" == "1" ] ; then
       echo "export BR_VERSION=2017.02" > br_version.txt
     elif [ "$ANSWER" == "2" ] ; then
       echo "export BR_VERSION=2018.02" > br_version.txt
+    elif [ "$ANSWER" == "3" ] ; then
+      echo "export BR_VERSION=2019.02" > br_version.txt
     else
       echo "ERROR: \"$ANSWER\" is an invalid selection!"
       exit 128
@@ -948,7 +951,7 @@ if [ "$1" == "buildroot" ]  || [ "$1" == "b" ] ; then
   if [ ! -e buildroot-$BR_VERSION.tar.bz2 ] ;then
     wget http://buildroot.uclibc.org/downloads/buildroot-$BR_VERSION.tar.bz2
     if [ "$?" != "0" ] ; then
-      exit # could not download
+      exit 128 # could not download
     fi
   fi
 
@@ -957,13 +960,13 @@ if [ "$1" == "buildroot" ]  || [ "$1" == "b" ] ; then
     echo "extracting buildroot..."
     tar -xf buildroot-$BR_VERSION.tar.bz2
     if [ "$?" != "0" ] ; then
-      exit # could not extract
+      exit 128 # could not extract
     fi
   fi
 
   if [ ! -e buildroot-$BR_VERSION ] ;then
       # something went wrong
-      exit
+      exit 128
   fi
 
   cd buildroot-$BR_VERSION
