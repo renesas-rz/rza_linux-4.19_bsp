@@ -1,0 +1,2443 @@
+diff --git a/CHANGES b/CHANGES
+index 819950ee5b..b16ed3ed47 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,14 @@
++2018.02.12, Released March 29th, 2019
++
++	Important / security related fixes.
++
++	Updated/fixed packages: avahi, beecrypt, busybox, clamav,
++	cups, devmem2, fetchmail, file, fltk, gcc, gdb, git, jq,
++	leveldb, libopenssl, libraw, libseccomp, libssh2,
++	libunistring, mariadb, mosquitto, nodejs, ntp, openjpeg, perl,
++	php, putty, qt5webkit, rdesktop, systemd, wireshark, vsftpd,
++	xapp_xdm, xlib_libXdmcp
++
+ 2018.02.11, Released February 23th, 2019
+ 
+ 	Important / security related fixes.
+diff --git a/Makefile b/Makefile
+index 37504ae1ce..f15079acc9 100644
+--- a/Makefile
++++ b/Makefile
+@@ -92,9 +92,9 @@ all:
+ .PHONY: all
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2018.02.11
++export BR2_VERSION := 2018.02.12
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1550952000
++BR2_VERSION_EPOCH = 1553870000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+diff --git a/package/avahi/0001-Drop-legacy-unicast-queries-from-address-not-on-loca.patch b/package/avahi/0001-Drop-legacy-unicast-queries-from-address-not-on-loca.patch
+new file mode 100644
+index 0000000000..0e8408c830
+--- /dev/null
++++ b/package/avahi/0001-Drop-legacy-unicast-queries-from-address-not-on-loca.patch
+@@ -0,0 +1,48 @@
++From e111def44a7df4624a4aa3f85fe98054bffb6b4f Mon Sep 17 00:00:00 2001
++From: Trent Lloyd <trent@lloyd.id.au>
++Date: Sat, 22 Dec 2018 09:06:07 +0800
++Subject: [PATCH] Drop legacy unicast queries from address not on local link
++
++When handling legacy unicast queries, ensure that the source IP is
++inside a subnet on the local link, otherwise drop the packet.
++
++Fixes #145
++Fixes #203
++CVE-2017-6519
++CVE-2018-100084
++
++Backported from: e111def44a7df4624a4aa3f85fe98054bffb6b4f
++Signed-off-by: Artem Panfilov <panfilov.artyom@gmail.com>
++---
++ avahi-core/server.c | 8 ++++++++
++ 1 file changed, 8 insertions(+)
++
++diff --git a/avahi-core/server.c b/avahi-core/server.c
++index a2cb19a8..a2580e38 100644
++--- a/avahi-core/server.c
+++++ b/avahi-core/server.c
++@@ -930,6 +930,7 @@ static void dispatch_packet(AvahiServer *s, AvahiDnsPacket *p, const AvahiAddres
++ 
++     if (avahi_dns_packet_is_query(p)) {
++         int legacy_unicast = 0;
+++        char t[AVAHI_ADDRESS_STR_MAX];
++ 
++         /* For queries EDNS0 might allow ARCOUNT != 0. We ignore the
++          * AR section completely here, so far. Until the day we add
++@@ -947,6 +948,13 @@ static void dispatch_packet(AvahiServer *s, AvahiDnsPacket *p, const AvahiAddres
++             legacy_unicast = 1;
++         }
++ 
+++        if (!is_mdns_mcast_address(dst_address) &&
+++            !avahi_interface_address_on_link(i, src_address)) {
+++
+++            avahi_log_debug("Received non-local unicast query from host %s on interface '%s.%i'.", avahi_address_snprint(t, sizeof(t), src_address), i->hardware->name, i->protocol);
+++            return;
+++        }
+++
++         if (legacy_unicast)
++             reflect_legacy_unicast_query_packet(s, p, i, src_address, port);
++ 
++-- 
++2.19.1
++
+diff --git a/package/beecrypt/0003-don-t-check-for-cplusplus-compiler.patch b/package/beecrypt/0003-don-t-check-for-cplusplus-compiler.patch
+new file mode 100644
+index 0000000000..32f167996f
+--- /dev/null
++++ b/package/beecrypt/0003-don-t-check-for-cplusplus-compiler.patch
+@@ -0,0 +1,27 @@
++configure.ac: don't check for C++ compiler
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++
++diff -durN beecrypt-4.2.1-orig/configure.ac beecrypt-4.2.1/configure.ac
++--- beecrypt-4.2.1-orig/configure.ac	2019-03-01 19:58:16.516117640 +0100
+++++ beecrypt-4.2.1/configure.ac	2019-03-01 21:10:17.707391803 +0100
++@@ -119,9 +119,6 @@
++ 
++ # Checks for C compiler and preprocessor
++ AC_PROG_CC
++-AC_PROG_CPP
++-AC_PROG_CXX
++-AC_PROG_CXXCPP
++ AM_PROG_AS
++ AC_PROG_LD
++ AC_PROG_LN_S
++@@ -133,9 +130,6 @@
++ AC_LANG_PUSH(C)
++ AC_OPENMP
++ AC_LANG_POP(C)
++-AC_LANG_PUSH(C++)
++-AC_OPENMP
++-AC_LANG_POP(C++)
++ 
++ # Checks for compiler characteristics and flags
++ if test "$ac_enable_expert_mode" = no; then
+diff --git a/package/busybox/0008-udhcpc-check-that-4-byte-options-are-indeed-4-byte-closes-11506.patch b/package/busybox/0008-udhcpc-check-that-4-byte-options-are-indeed-4-byte-closes-11506.patch
+new file mode 100644
+index 0000000000..b40979e359
+--- /dev/null
++++ b/package/busybox/0008-udhcpc-check-that-4-byte-options-are-indeed-4-byte-closes-11506.patch
+@@ -0,0 +1,137 @@
++From 6d3b4bb24da9a07c263f3c1acf8df85382ff562c Mon Sep 17 00:00:00 2001
++From: Denys Vlasenko <vda.linux@googlemail.com>
++Date: Mon, 17 Dec 2018 18:07:18 +0100
++Subject: udhcpc: check that 4-byte options are indeed 4-byte, closes 11506
++
++function                                             old     new   delta
++udhcp_get_option32                                     -      27     +27
++udhcp_get_option                                     231     248     +17
++------------------------------------------------------------------------------
++(add/remove: 1/0 grow/shrink: 1/0 up/down: 44/0)               Total: 44 bytes
++
++Signed-off-by: Denys Vlasenko <vda.linux@googlemail.com>
++Signed-off-by: Jared Bents <jared.bents@rockwellcollins.com>
++---
++ networking/udhcp/common.c | 19 +++++++++++++++++++
++ networking/udhcp/common.h |  4 ++++
++ networking/udhcp/dhcpc.c  |  6 +++---
++ networking/udhcp/dhcpd.c  |  6 +++---
++ 4 files changed, 29 insertions(+), 6 deletions(-)
++
++diff --git a/networking/udhcp/common.c b/networking/udhcp/common.c
++index e5fd74f91..41b05b855 100644
++--- a/networking/udhcp/common.c
+++++ b/networking/udhcp/common.c
++@@ -272,6 +272,15 @@ uint8_t* FAST_FUNC udhcp_get_option(struct dhcp_packet *packet, int code)
++ 			goto complain; /* complain and return NULL */
++ 
++ 		if (optionptr[OPT_CODE] == code) {
+++			if (optionptr[OPT_LEN] == 0) {
+++				/* So far no valid option with length 0 known.
+++				 * Having this check means that searching
+++				 * for DHCP_MESSAGE_TYPE need not worry
+++				 * that returned pointer might be unsafe
+++				 * to dereference.
+++				 */
+++				goto complain; /* complain and return NULL */
+++			}
++ 			log_option("option found", optionptr);
++ 			return optionptr + OPT_DATA;
++ 		}
++@@ -289,6 +298,16 @@ uint8_t* FAST_FUNC udhcp_get_option(struct dhcp_packet *packet, int code)
++ 	return NULL;
++ }
++ 
+++uint8_t* FAST_FUNC udhcp_get_option32(struct dhcp_packet *packet, int code)
+++{
+++	uint8_t *r = udhcp_get_option(packet, code);
+++	if (r) {
+++		if (r[-1] != 4)
+++			r = NULL;
+++	}
+++	return r;
+++}
+++
++ /* Return the position of the 'end' option (no bounds checking) */
++ int FAST_FUNC udhcp_end_option(uint8_t *optionptr)
++ {
++diff --git a/networking/udhcp/common.h b/networking/udhcp/common.h
++index 7ad603d33..9511152ff 100644
++--- a/networking/udhcp/common.h
+++++ b/networking/udhcp/common.h
++@@ -205,6 +205,10 @@ extern const uint8_t dhcp_option_lengths[] ALIGN1;
++ unsigned FAST_FUNC udhcp_option_idx(const char *name, const char *option_strings);
++ 
++ uint8_t *udhcp_get_option(struct dhcp_packet *packet, int code) FAST_FUNC;
+++/* Same as above + ensures that option length is 4 bytes
+++ * (returns NULL if size is different)
+++ */
+++uint8_t *udhcp_get_option32(struct dhcp_packet *packet, int code) FAST_FUNC;
++ int udhcp_end_option(uint8_t *optionptr) FAST_FUNC;
++ void udhcp_add_binary_option(struct dhcp_packet *packet, uint8_t *addopt) FAST_FUNC;
++ #if ENABLE_UDHCPC || ENABLE_UDHCPD
++diff --git a/networking/udhcp/dhcpc.c b/networking/udhcp/dhcpc.c
++index 4b23e4d39..5b3fd531c 100644
++--- a/networking/udhcp/dhcpc.c
+++++ b/networking/udhcp/dhcpc.c
++@@ -1691,7 +1691,7 @@ int udhcpc_main(int argc UNUSED_PARAM, char **argv)
++  * They say ISC DHCP client supports this case.
++  */
++ 				server_addr = 0;
++-				temp = udhcp_get_option(&packet, DHCP_SERVER_ID);
+++				temp = udhcp_get_option32(&packet, DHCP_SERVER_ID);
++ 				if (!temp) {
++ 					bb_error_msg("no server ID, using 0.0.0.0");
++ 				} else {
++@@ -1718,7 +1718,7 @@ int udhcpc_main(int argc UNUSED_PARAM, char **argv)
++ 				struct in_addr temp_addr;
++ 				uint8_t *temp;
++ 
++-				temp = udhcp_get_option(&packet, DHCP_LEASE_TIME);
+++				temp = udhcp_get_option32(&packet, DHCP_LEASE_TIME);
++ 				if (!temp) {
++ 					bb_error_msg("no lease time with ACK, using 1 hour lease");
++ 					lease_seconds = 60 * 60;
++@@ -1813,7 +1813,7 @@ int udhcpc_main(int argc UNUSED_PARAM, char **argv)
++ 					uint32_t svid;
++ 					uint8_t *temp;
++ 
++-					temp = udhcp_get_option(&packet, DHCP_SERVER_ID);
+++					temp = udhcp_get_option32(&packet, DHCP_SERVER_ID);
++ 					if (!temp) {
++  non_matching_svid:
++ 						log1("received DHCP NAK with wrong"
++diff --git a/networking/udhcp/dhcpd.c b/networking/udhcp/dhcpd.c
++index a8cd3f03b..477856d11 100644
++--- a/networking/udhcp/dhcpd.c
+++++ b/networking/udhcp/dhcpd.c
++@@ -640,7 +640,7 @@ static void add_server_options(struct dhcp_packet *packet)
++ static uint32_t select_lease_time(struct dhcp_packet *packet)
++ {
++ 	uint32_t lease_time_sec = server_config.max_lease_sec;
++-	uint8_t *lease_time_opt = udhcp_get_option(packet, DHCP_LEASE_TIME);
+++	uint8_t *lease_time_opt = udhcp_get_option32(packet, DHCP_LEASE_TIME);
++ 	if (lease_time_opt) {
++ 		move_from_unaligned32(lease_time_sec, lease_time_opt);
++ 		lease_time_sec = ntohl(lease_time_sec);
++@@ -987,7 +987,7 @@ int udhcpd_main(int argc UNUSED_PARAM, char **argv)
++ 		}
++ 
++ 		/* Get SERVER_ID if present */
++-		server_id_opt = udhcp_get_option(&packet, DHCP_SERVER_ID);
+++		server_id_opt = udhcp_get_option32(&packet, DHCP_SERVER_ID);
++ 		if (server_id_opt) {
++ 			uint32_t server_id_network_order;
++ 			move_from_unaligned32(server_id_network_order, server_id_opt);
++@@ -1011,7 +1011,7 @@ int udhcpd_main(int argc UNUSED_PARAM, char **argv)
++ 		}
++ 
++ 		/* Get REQUESTED_IP if present */
++-		requested_ip_opt = udhcp_get_option(&packet, DHCP_REQUESTED_IP);
+++		requested_ip_opt = udhcp_get_option32(&packet, DHCP_REQUESTED_IP);
++ 		if (requested_ip_opt) {
++ 			move_from_unaligned32(requested_nip, requested_ip_opt);
++ 		}
++-- 
++cgit v1.2.1
++
+diff --git a/package/busybox/0009-udhcpc-when-decoding-DHCP_SUBNET-ensure-it-is-4-bytes-long.patch b/package/busybox/0009-udhcpc-when-decoding-DHCP_SUBNET-ensure-it-is-4-bytes-long.patch
+new file mode 100644
+index 0000000000..05939db4ab
+--- /dev/null
++++ b/package/busybox/0009-udhcpc-when-decoding-DHCP_SUBNET-ensure-it-is-4-bytes-long.patch
+@@ -0,0 +1,58 @@
++From 74d9f1ba37010face4bd1449df4d60dd84450b06 Mon Sep 17 00:00:00 2001
++From: Denys Vlasenko <vda.linux@googlemail.com>
++Date: Mon, 7 Jan 2019 15:33:42 +0100
++Subject: udhcpc: when decoding DHCP_SUBNET, ensure it is 4 bytes long
++
++function                                             old     new   delta
++udhcp_run_script                                     795     801      +6
++
++Signed-off-by: Denys Vlasenko <vda.linux@googlemail.com>
++Signed-off-by: Jared Bents <jared.bents@rockwellcollins.com>
++---
++ networking/udhcp/common.c | 2 +-
++ networking/udhcp/common.h | 2 +-
++ networking/udhcp/dhcpc.c  | 2 +-
++ 3 files changed, 3 insertions(+), 3 deletions(-)
++
++diff --git a/networking/udhcp/common.c b/networking/udhcp/common.c
++index 4c2221b77..fc4de5716 100644
++--- a/networking/udhcp/common.c
+++++ b/networking/udhcp/common.c
++@@ -302,7 +302,7 @@ uint8_t* FAST_FUNC udhcp_get_option32(struct dhcp_packet *packet, int code)
++ {
++ 	uint8_t *r = udhcp_get_option(packet, code);
++ 	if (r) {
++-		if (r[-1] != 4)
+++		if (r[-OPT_DATA + OPT_LEN] != 4)
++ 			r = NULL;
++ 	}
++ 	return r;
++diff --git a/networking/udhcp/common.h b/networking/udhcp/common.h
++index 9511152ff..62f9a2a4a 100644
++--- a/networking/udhcp/common.h
+++++ b/networking/udhcp/common.h
++@@ -119,7 +119,7 @@ enum {
++ //#define DHCP_TIME_SERVER      0x04 /* RFC 868 time server (32-bit, 0 = 1.1.1900) */
++ //#define DHCP_NAME_SERVER      0x05 /* IEN 116 _really_ ancient kind of NS */
++ //#define DHCP_DNS_SERVER       0x06
++-//#define DHCP_LOG_SERVER       0x07 /* port 704 UDP log (not syslog)
+++//#define DHCP_LOG_SERVER       0x07 /* port 704 UDP log (not syslog) */
++ //#define DHCP_COOKIE_SERVER    0x08 /* "quote of the day" server */
++ //#define DHCP_LPR_SERVER       0x09
++ #define DHCP_HOST_NAME          0x0c /* 12: either client informs server or server gives name to client */
++diff --git a/networking/udhcp/dhcpc.c b/networking/udhcp/dhcpc.c
++index 5b3fd531c..dcec8cdfd 100644
++--- a/networking/udhcp/dhcpc.c
+++++ b/networking/udhcp/dhcpc.c
++@@ -531,7 +531,7 @@ static char **fill_envp(struct dhcp_packet *packet)
++ 		temp = udhcp_get_option(packet, code);
++ 		*curr = xmalloc_optname_optval(temp, &dhcp_optflags[i], opt_name);
++ 		putenv(*curr++);
++-		if (code == DHCP_SUBNET) {
+++		if (code == DHCP_SUBNET && temp[-OPT_DATA + OPT_LEN] == 4) {
++ 			/* Subnet option: make things like "$ip/$mask" possible */
++ 			uint32_t subnet;
++ 			move_from_unaligned32(subnet, temp);
++-- 
++cgit v1.2.1
++
+diff --git a/package/clamav/0003-m4-reorganization-libs-curl.m4-fix-curl-config-detec.patch b/package/clamav/0003-m4-reorganization-libs-curl.m4-fix-curl-config-detec.patch
+deleted file mode 100644
+index 1d26b099b9..0000000000
+--- a/package/clamav/0003-m4-reorganization-libs-curl.m4-fix-curl-config-detec.patch
++++ /dev/null
+@@ -1,75 +0,0 @@
+-From 6b6ff53b5931c162be13504a1efc53fc5212f9d1 Mon Sep 17 00:00:00 2001
+-From: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
+-Date: Mon, 7 May 2018 22:57:34 +0200
+-Subject: [PATCH] m4/reorganization/libs/curl.m4: fix curl-config detection
+- logic
+-
+-The current logic in curl.m4 doesn't behave properly when
+---without-libcurl is passed to the ./configure script.
+-
+-Indeed, in this case what happens is that:
+-
+- (1) Since --without-libcurl is passed, LIBCURL_HOME is set to nothing
+-
+- (2) find_curl is set to "no"
+-
+- (3) Due to find_curl being "no", LIBCURL_HOME is not set to
+-     /usr/local and remains empty
+-
+- (4) We test if $LIBCURL_HOME/bin/curl_config exists, which is
+-     equivalent to testing if /bin/curl-config exists. So curl.m4 is
+-     looking at /bin/curl-config, which is irrelevant in a
+-     cross-compilation context: it is not because the build machine
+-     has libcurl installed that it is available for the target.
+-
+-     Due to this mistake, it sets have_curl="yes"
+-
+-Due to this, the ./configure script assumes it can build the
+-clamsubmit program, which fails at build time because curl/curl.h
+-doesn't exist.
+-
+-To fix this, this commit rewrites the curl-config detection logic with
+-a simpler loop. If find_curl=yes, it means we have to find libcurl
+-ourselves, so we iterate over /usr/local and /usr, and check if a
+-bin/curl-config binary is available there. If so, we use this path as
+-LIBCURL_HOME and set have_curl="yes".
+-
+-This preserves the existing behavior, while fixing the situation where
+---without-libcurl is passed, but /bin/curl-config exists.
+-
+-Signed-off-by: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
+-Upstream-status: https://github.com/Cisco-Talos/clamav-devel/pull/87
+----
+- m4/reorganization/libs/curl.m4 | 15 +++++----------
+- 1 file changed, 5 insertions(+), 10 deletions(-)
+-
+-diff --git a/m4/reorganization/libs/curl.m4 b/m4/reorganization/libs/curl.m4
+-index 2a5966ee7..b6a9c2137 100644
+---- a/m4/reorganization/libs/curl.m4
+-+++ b/m4/reorganization/libs/curl.m4
+-@@ -19,17 +19,12 @@ fi
+- [find_curl="yes"])
+- 
+- if test "X$find_curl" = "Xyes"; then
+--    LIBCURL_HOME=/usr/local
+--fi
+--if test -f "$LIBCURL_HOME/bin/curl-config"; then
+--    have_curl="yes"
+--else
+--    if test "X$find_curl" = "Xyes"; then
+--        LIBCURL_HOME=/usr
+--        if test -f "$LIBCURL_HOME/bin/curl-config"; then
+--            have_curl="yes"
+-+    for p in /usr/local /usr ; do
+-+        if test -f "${p}/bin/curl-config"; then
+-+           LIBCURL_HOME=$p
+-+           have_curl="yes"
+-         fi
+--    fi
+-+    done
+- fi
+- 
+- if test "X$have_curl" = "Xyes"; then
+--- 
+-2.14.3
+-
+diff --git a/package/clamav/Config.in b/package/clamav/Config.in
+index bc934ea452..2017011b67 100644
+--- a/package/clamav/Config.in
++++ b/package/clamav/Config.in
+@@ -1,7 +1,9 @@
+ config BR2_PACKAGE_CLAMAV
+ 	bool "clamav"
++	depends on BR2_INSTALL_LIBSTDCPP
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS
+ 	depends on BR2_USE_MMU # fork()
++	depends on BR2_USE_WCHAR
+ 	select BR2_PACKAGE_LIBTOOL
+ 	select BR2_PACKAGE_OPENSSL
+ 	select BR2_PACKAGE_ZLIB
+@@ -11,6 +13,7 @@ config BR2_PACKAGE_CLAMAV
+ 
+ 	  http://www.clamav.net
+ 
+-comment "clamav needs a toolchain w/ threads"
+-	depends on !BR2_TOOLCHAIN_HAS_THREADS
++comment "clamav needs a toolchain w/ C++, threads, wchar"
++	depends on !BR2_INSTALL_LIBSTDCPP \
++		|| !BR2_TOOLCHAIN_HAS_THREADS || !BR2_USE_WCHAR
+ 	depends on BR2_USE_MMU
+diff --git a/package/clamav/clamav.hash b/package/clamav/clamav.hash
+index 390251fc24..4b61cd9654 100644
+--- a/package/clamav/clamav.hash
++++ b/package/clamav/clamav.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated
+-sha256 4a2e4f0cd41e62adb5a713b4a1857c49145cd09a69957e6d946ecad575206dd6  clamav-0.100.2.tar.gz
++sha256 0a12ebdf6ff7a74c0bde2bdc2b55cae33449e6dd953ec90824a9e01291277634  clamav-0.101.2.tar.gz
+ sha256 0c4fd2fa9733fc9122503797648710851e4ee6d9e4969dd33fcbd8c63cd2f584  COPYING
+ sha256 d72a145c90918184a05ef65a04c9e6f7466faa59bc1b82c8f6a8ddc7ddcb9bed  COPYING.bzip2
+ sha256 dfb818a0d41411c6fb1c193c68b73018ceadd1994bda41ad541cbff292894bc6  COPYING.file
+diff --git a/package/clamav/clamav.mk b/package/clamav/clamav.mk
+index 50990abad6..57315e7a0b 100644
+--- a/package/clamav/clamav.mk
++++ b/package/clamav/clamav.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-CLAMAV_VERSION = 0.100.2
++CLAMAV_VERSION = 0.101.2
+ CLAMAV_SITE = https://www.clamav.net/downloads/production
+ CLAMAV_LICENSE = GPL-2.0
+ CLAMAV_LICENSE_FILES = COPYING COPYING.bzip2 COPYING.file COPYING.getopt \
+@@ -16,14 +16,16 @@ CLAMAV_DEPENDENCIES = \
+ 	openssl \
+ 	zlib \
+ 	$(TARGET_NLS_DEPENDENCIES)
+-# 0003-m4-reorganization-libs-curl.m4-fix-curl-config-detec.patch
+-CLAMAV_AUTORECONF = YES
+ 
+ # mmap cannot be detected when cross-compiling, needed for mempool support
+ CLAMAV_CONF_ENV = \
+ 	ac_cv_c_mmap_private=yes \
+ 	have_cv_ipv6=yes
+ 
++ifeq ($(BR2_TOOLCHAIN_HAS_LIBATOMIC),y)
++CLAMAV_CONF_ENV += LIBS=-latomic
++endif
++
+ # UCLIBC_HAS_FTS is disabled, therefore disable fanotify (missing fts.h)
+ CLAMAV_CONF_OPTS = \
+ 	--with-dbdir=/var/lib/clamav \
+diff --git a/package/cups/cups.hash b/package/cups/cups.hash
+index d4f20b60db..3d238d61e6 100644
+--- a/package/cups/cups.hash
++++ b/package/cups/cups.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated:
+-sha256 a8795e2aa54dcfbdc9ff254a770f0d7154e35c981bca5b3369050c5193ab5a21  cups-2.2.5-source.tar.gz
++sha256 77c8b2b3bb7fe8b5fbfffc307f2c817b2d7ec67b657f261a1dd1c61ab81205bb  cups-2.2.10-source.tar.gz
++sha256 6e0e0ffbde118aae709f7ef65590de9071e8b2cd322f84fd645c6b64f3cc452c  LICENSE.txt
+diff --git a/package/cups/cups.mk b/package/cups/cups.mk
+index 0726d8a37f..b91fe7ac4c 100644
+--- a/package/cups/cups.mk
++++ b/package/cups/cups.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-CUPS_VERSION = 2.2.5
++CUPS_VERSION = 2.2.10
+ CUPS_SOURCE = cups-$(CUPS_VERSION)-source.tar.gz
+ CUPS_SITE = https://github.com/apple/cups/releases/download/v$(CUPS_VERSION)
+ CUPS_LICENSE = GPL-2.0, LGPL-2.0
+@@ -24,6 +24,7 @@ CUPS_CONF_OPTS = \
+ 	--without-java \
+ 	--without-php \
+ 	--disable-gssapi \
++	--disable-pam \
+ 	--libdir=/usr/lib
+ CUPS_CONFIG_SCRIPTS = cups-config
+ CUPS_DEPENDENCIES = \
+diff --git a/package/devmem2/Config.in b/package/devmem2/Config.in
+index 64d6400bd8..1ccb0553b4 100644
+--- a/package/devmem2/Config.in
++++ b/package/devmem2/Config.in
+@@ -4,4 +4,4 @@ config BR2_PACKAGE_DEVMEM2
+ 	help
+ 	  Simple program to read/write from/to any location in memory.
+ 
+-	  http://free-electrons.com/pub/mirror/devmem2.c
++	  http://bootlin.com/pub/mirror/devmem2.c
+diff --git a/package/devmem2/devmem2.mk b/package/devmem2/devmem2.mk
+index eb92db6098..bce70af7b1 100644
+--- a/package/devmem2/devmem2.mk
++++ b/package/devmem2/devmem2.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-DEVMEM2_SITE = http://free-electrons.com/pub/mirror
++DEVMEM2_SITE = http://bootlin.com/pub/mirror
+ DEVMEM2_SOURCE = devmem2.c
+ DEVMEM2_VERSION = 1
+ DEVMEM2_LICENSE = GPL-2.0+
+diff --git a/package/fetchmail/0002-enable-libressl.patch b/package/fetchmail/0001-enable-libressl.patch
+similarity index 100%
+rename from package/fetchmail/0002-enable-libressl.patch
+rename to package/fetchmail/0001-enable-libressl.patch
+diff --git a/package/fetchmail/0001-fix-openssl-static-link.patch b/package/fetchmail/0001-fix-openssl-static-link.patch
+deleted file mode 100644
+index 1a5f4d6f71..0000000000
+--- a/package/fetchmail/0001-fix-openssl-static-link.patch
++++ /dev/null
+@@ -1,30 +0,0 @@
+-Fix checking for statically build OpenSSL with libz dependency
+-
+-Fixes
+-http://autobuild.buildroot.net/results/48a/48ad6d3659cf1f04581b7e3d115bebf454ff17fd/
+-
+-configure: Enabling OpenSSL support in /home/br/br/output/host/usr/i486-buildroot-linux-uclibc/sysroot/usr.
+-checking for additional library dependencies of SSL... error
+-configure: error: cannot link with SSL - check config.log
+-
+-In config.log multiple linking errors to libz can be found:
+-
+-configure:10099: /home/br/br/output/host/usr/bin/i486-ctng-linux-uclibc-gcc -o
+-  conftest -D_LARGEFILE_SOURCE -D_LARGEFILE64
+-  /home/br/br/output/host/usr/i486-buildroot-linux-uclibc/sysroot/usr/lib/libcrypto.a(c_zlib.o):
+-  In function `zlib_stateful_c_zlib.c:(.text+0x56): undefined reference to `inflate'
+-
+-Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+-
+-diff -uNr fetchmail-6.3.26.org/configure.ac fetchmail-6.3.26/configure.ac
+---- fetchmail-6.3.26.org/configure.ac	2013-04-23 22:51:10.000000000 +0200
+-+++ fetchmail-6.3.26/configure.ac	2014-07-27 09:20:25.000000000 +0200
+-@@ -778,7 +778,7 @@
+-     AC_MSG_ERROR([SSL support enabled, but OpenSSL not found])
+-   fi
+-   LDFLAGS="$LDFLAGS -L$with_ssl/lib"
+--  LIBS="$LIBS -lssl -lcrypto"
+-+  LIBS="-lssl -lcrypto $LIBS"
+-   dnl check if -ldl is needed
+-   AC_MSG_CHECKING([for additional library dependencies of SSL])
+-   found=0
+diff --git a/package/fetchmail/0002-configure.ac-use-pkg-config-to-find-openssl.patch b/package/fetchmail/0002-configure.ac-use-pkg-config-to-find-openssl.patch
+new file mode 100644
+index 0000000000..aefed7f2e4
+--- /dev/null
++++ b/package/fetchmail/0002-configure.ac-use-pkg-config-to-find-openssl.patch
+@@ -0,0 +1,69 @@
++From 1ed0af7f1bbcaccbd7356bd90596f5c942b64720 Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Fri, 22 Mar 2019 20:24:54 +0100
++Subject: [PATCH 1/1] configure.ac: use pkg-config to find openssl
++
++openssl can have multiples dependencies such as libatomic on sparcv8
++32 bits
++
++Fixes:
++ - http://autobuild.buildroot.org/results/58e5aa7c6ba8fe7474071d7a3cba6ed3a1b4cff4
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Upstream status:
++https://gitlab.com/fetchmail/fetchmail/merge_requests/14]
++---
++ configure.ac | 37 +++++++++++++++++++------------------
++ 1 file changed, 19 insertions(+), 18 deletions(-)
++
++diff --git a/configure.ac b/configure.ac
++index 16b0fcba..3a75ec6e 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -778,24 +778,25 @@ then
++   else
++     AC_MSG_ERROR([SSL support enabled, but OpenSSL not found])
++   fi
++-  LDFLAGS="$LDFLAGS -L$with_ssl/lib"
++-  LIBS="$LIBS -lssl -lcrypto"
++-  dnl check if -ldl is needed
++-  AC_MSG_CHECKING([for additional library dependencies of SSL])
++-  found=0
++-  save_LIBS="$LIBS"
++-  for i in "" "-ldl" ; do
++-      LIBS="$LDFLAGS $save_LIBS $i"
++-      AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <openssl/ssl.h>],[SSL_library_init()])],[found=1; break])
++-  done
++-  if test $found = 0 ; then
++-      AC_MSG_RESULT([error])
++-      AC_MSG_ERROR([cannot link with SSL - check config.log])
++-  fi
++-  LIBS="$save_LIBS $i"
++-  if test "$i" = "" ; then i="(none)" ; fi
++-  AC_MSG_RESULT($i)
++-  dnl XXX FIXME: use pkg-config if available!
+++  PKG_CHECK_MODULES([SSL],[libssl libcrypto],[LIBS="$LIBS $SSL_LIBS"],[
+++    LDFLAGS="$LDFLAGS -L$with_ssl/lib"
+++    LIBS="$LIBS -lssl -lcrypto"
+++    dnl check if -ldl is needed
+++    AC_MSG_CHECKING([for additional library dependencies of SSL])
+++    found=0
+++    save_LIBS="$LIBS"
+++    for i in "" "-ldl" ; do
+++        LIBS="$LDFLAGS $save_LIBS $i"
+++        AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <openssl/ssl.h>],[SSL_library_init()])],[found=1; break])
+++    done
+++    if test $found = 0 ; then
+++        AC_MSG_RESULT([error])
+++        AC_MSG_ERROR([cannot link with SSL - check config.log])
+++    fi
+++    LIBS="$save_LIBS $i"
+++    if test "$i" = "" ; then i="(none)" ; fi
+++    AC_MSG_RESULT($i)
+++  ])
++   AC_DEFINE(SSL_ENABLE)
++ else
++   AC_MSG_WARN(Disabling SSL support.)
++-- 
++2.20.1
++
+diff --git a/package/fetchmail/fetchmail.mk b/package/fetchmail/fetchmail.mk
+index 37bbeabf62..41505e8637 100644
+--- a/package/fetchmail/fetchmail.mk
++++ b/package/fetchmail/fetchmail.mk
+@@ -13,17 +13,12 @@ FETCHMAIL_LICENSE_FILES = COPYING
+ FETCHMAIL_AUTORECONF = YES
+ FETCHMAIL_GETTEXTIZE = YES
+ 
+-# needed to help fetchmail detecting the availability of openssl,
+-# because it doesn't use pkg-config
+-ifeq ($(BR2_STATIC_LIBS),y)
+-FETCHMAIL_CONF_ENV += LIBS="-lz"
+-endif
+-
+ FETCHMAIL_CONF_OPTS = \
+ 	--with-ssl=$(STAGING_DIR)/usr
+ 
+ FETCHMAIL_DEPENDENCIES = \
+ 	ca-certificates \
++	host-pkgconf \
+ 	openssl \
+ 	$(TARGET_NLS_DEPENDENCIES)
+ 
+diff --git a/package/file/0001-Avoid-reading-past-the-end-of-buffer-Rui-Reis.patch b/package/file/0001-Avoid-reading-past-the-end-of-buffer-Rui-Reis.patch
+deleted file mode 100644
+index daff866692..0000000000
+--- a/package/file/0001-Avoid-reading-past-the-end-of-buffer-Rui-Reis.patch
++++ /dev/null
+@@ -1,30 +0,0 @@
+-From a642587a9c9e2dd7feacdf513c3643ce26ad3c22 Mon Sep 17 00:00:00 2001
+-From: Christos Zoulas <christos@zoulas.com>
+-Date: Sat, 9 Jun 2018 16:00:06 +0000
+-Subject: [PATCH] Avoid reading past the end of buffer (Rui Reis)
+-
+-[baruch: drop file version string update hunk]
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: commit a642587a9c9 in github mirror
+-
+- src/readelf.c | 5 +++--
+- 1 file changed, 3 insertions(+), 2 deletions(-)
+-
+-diff --git a/src/readelf.c b/src/readelf.c
+-index 79c83f9f5048..1f41b46113c3 100644
+---- a/src/readelf.c
+-+++ b/src/readelf.c
+-@@ -842,7 +842,8 @@ do_core_note(struct magic_set *ms, unsigned char *nbuf, uint32_t type,
+- 
+- 				cname = (unsigned char *)
+- 				    &nbuf[doff + prpsoffsets(i)];
+--				for (cp = cname; *cp && isprint(*cp); cp++)
+-+				for (cp = cname; cp < nbuf + size && *cp
+-+				    && isprint(*cp); cp++)
+- 					continue;
+- 				/*
+- 				 * Linux apparently appends a space at the end
+--- 
+-2.17.1
+-
+diff --git a/package/file/file.hash b/package/file/file.hash
+index a6b40be349..7948e856ee 100644
+--- a/package/file/file.hash
++++ b/package/file/file.hash
+@@ -1,5 +1,7 @@
+-# Locally calculated
+-sha256 1c52c8c3d271cd898d5511c36a68059cda94036111ab293f01f83c3525b737c6  file-5.33.tar.gz
+-sha256 3c0ad13c36f891a9b4f951e59eb2fc108065a46f849697cc6fd3cdb41cc23a3d  COPYING
+-sha256 d98ee4d8d95e7d021a5dfc41f137ecc3b624a7b98e8bd793130202d12a21ed57  src/mygetopt.h
+-sha256 85e358d575ad4ac5b38b623a25b24246ccff3c7e680d930c0a9ff5228fe434b6  src/vasprintf.c
++# Locally calculated after verifying signature
++# ftp://ftp.astron.com/pub/file/file-5.36.tar.gz.asc
++# using key BE04995BA8F90ED0C0C176C471112AB16CB33B3A
++sha256 fb608290c0fd2405a8f63e5717abf6d03e22e183fb21884413d1edd918184379  file-5.36.tar.gz
++sha256 0bfa856a9930bddadbef95d1be1cf4e163c0be618e76ea3275caaf255283e274  COPYING
++sha256 4ccb60d623884ef637af4a5bc16b2cb350163e2135e967655837336019a64462  src/mygetopt.h
++sha256 7ac061e1a1c840c4dfa0573aec6f3497676c9295b5ec4190d3576646eb1646bf  src/vasprintf.c
+diff --git a/package/file/file.mk b/package/file/file.mk
+index 1f04dad688..1a835015a7 100644
+--- a/package/file/file.mk
++++ b/package/file/file.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-FILE_VERSION = 5.33
++FILE_VERSION = 5.36
+ FILE_SITE = ftp://ftp.astron.com/pub/file
+ FILE_DEPENDENCIES = host-file zlib
+ HOST_FILE_DEPENDENCIES = host-zlib
+diff --git a/package/fltk/fltk.mk b/package/fltk/fltk.mk
+index 611d79da50..c37a13176c 100644
+--- a/package/fltk/fltk.mk
++++ b/package/fltk/fltk.mk
+@@ -54,4 +54,11 @@ else
+ FLTK_CONF_OPTS += --disable-xinerama
+ endif
+ 
++ifeq ($(BR2_PACKAGE_XLIB_LIBXRENDER),y)
++FLTK_DEPENDENCIES += xlib_libXrender
++FLTK_CONF_OPTS += --enable-xrender
++else
++FLTK_CONF_OPTS += --disable-xrender
++endif
++
+ $(eval $(autotools-package))
+diff --git a/package/gcc/gcc.mk b/package/gcc/gcc.mk
+index 27fc1e987c..ea0d8dac28 100644
+--- a/package/gcc/gcc.mk
++++ b/package/gcc/gcc.mk
+@@ -94,7 +94,7 @@ HOST_GCC_COMMON_DEPENDENCIES = \
+ HOST_GCC_COMMON_CONF_OPTS = \
+ 	--target=$(GNU_TARGET_NAME) \
+ 	--with-sysroot=$(STAGING_DIR) \
+-	--disable-__cxa_atexit \
++	--enable-__cxa_atexit \
+ 	--with-gnu-ld \
+ 	--disable-libssp \
+ 	--disable-multilib \
+diff --git a/package/gdb/gdb.mk b/package/gdb/gdb.mk
+index 0981b6ef53..cfe79e2c52 100644
+--- a/package/gdb/gdb.mk
++++ b/package/gdb/gdb.mk
+@@ -128,6 +128,11 @@ ifneq ($(BR2_INSTALL_LIBSTDCPP),y)
+ GDB_CONF_OPTS += --disable-build-with-cxx
+ endif
+ 
++# inprocess-agent can't be built statically
++ifeq ($(BR2_STATIC_LIBS),y)
++GDB_CONF_OPTS += --disable-inprocess-agent
++endif
++
+ ifeq ($(BR2_PACKAGE_GDB_TUI),y)
+ GDB_CONF_OPTS += --enable-tui
+ else
+diff --git a/package/git/git.mk b/package/git/git.mk
+index 9b176d3661..aec30e3eb3 100644
+--- a/package/git/git.mk
++++ b/package/git/git.mk
+@@ -12,9 +12,9 @@ GIT_LICENSE_FILES = COPYING LGPL-2.1
+ GIT_DEPENDENCIES = zlib $(TARGET_NLS_DEPENDENCIES)
+ 
+ ifeq ($(BR2_PACKAGE_OPENSSL),y)
+-GIT_DEPENDENCIES += openssl
++GIT_DEPENDENCIES += host-pkgconf openssl
+ GIT_CONF_OPTS += --with-openssl
+-GIT_CONF_ENV_LIBS += $(if $(BR2_STATIC_LIBS),-lz)
++GIT_MAKE_OPTS += LIB_4_CRYPTO="`$(PKG_CONFIG_HOST_BINARY) --libs libssl libcrypto`"
+ else
+ GIT_CONF_OPTS += --without-openssl
+ endif
+diff --git a/package/jq/jq.hash b/package/jq/jq.hash
+index 2cd640563a..449619b024 100644
+--- a/package/jq/jq.hash
++++ b/package/jq/jq.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+-sha256  c4d2bfec6436341113419debf479d833692cc5cdab7eb0326b5a4d4fbe9f493c  jq-1.5.tar.gz
++sha256  5de8c8e29aaa3fb9cc6b47bb27299f271354ebb72514e3accadc7d38b5bbaa72  jq-1.6.tar.gz
++sha256  111136aebcbfa68b6b0084e582b30e981da76adcff84eab6f9be32a1f38c5bf1  COPYING
+diff --git a/package/jq/jq.mk b/package/jq/jq.mk
+index 79629faa5e..aebe8c86e4 100644
+--- a/package/jq/jq.mk
++++ b/package/jq/jq.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-JQ_VERSION = 1.5
++JQ_VERSION = 1.6
+ JQ_SITE = https://github.com/stedolan/jq/releases/download/jq-$(JQ_VERSION)
+ JQ_LICENSE = MIT (code), CC-BY-3.0 (documentation)
+ JQ_LICENSE_FILES = COPYING
+@@ -17,8 +17,8 @@ JQ_CONF_ENV += CFLAGS="$(TARGET_CFLAGS) -std=c99 -D_GNU_SOURCE"
+ HOST_JQ_CONF_ENV += CFLAGS="$(HOST_CFLAGS) -std=c99 -D_GNU_SOURCE"
+ 
+ # jq explicitly enables maintainer mode, which we don't need/want
+-JQ_CONF_OPTS += --disable-maintainer-mode
+-HOST_JQ_CONF_OPTS += --disable-maintainer-mode
++JQ_CONF_OPTS += --disable-maintainer-mode --without-oniguruma
++HOST_JQ_CONF_OPTS += --disable-maintainer-mode --without-oniguruma
+ 
+ $(eval $(autotools-package))
+ $(eval $(host-autotools-package))
+diff --git a/package/leveldb/0003-Generate-position-independant-code-for-static-librar.patch b/package/leveldb/0003-Generate-position-independant-code-for-static-librar.patch
+new file mode 100644
+index 0000000000..dce06ec725
+--- /dev/null
++++ b/package/leveldb/0003-Generate-position-independant-code-for-static-librar.patch
+@@ -0,0 +1,52 @@
++From 6ed1b57ef6bcee0d497c181730710b2b0fafbfb3 Mon Sep 17 00:00:00 2001
++From: =?utf-8?q?Ga=C3=ABl=20PORTAY?= <gael.portay@savoirfairelinux.com>
++Date: Fri, 31 Aug 2018 12:23:46 -0400
++Subject: [PATCH] Generate position independant code for static library
++MIME-Version: 1.0
++Content-Type: text/plain; charset=utf-8
++Content-Transfer-Encoding: 8bit
++
++Currently, only shared libraries are using the PIC flag.
++
++Generalize this flag for static libraries in order to let them linkable
++by dynamic libraries.
++
++Fixes:
++
++	/home/gportay/src/buildroot/output/host/opt/ext-toolchain/bin/../lib/gcc/x86_64-amd-linux-gnu/6.2.0/../../../../x86_64-amd-linux-gnu/bin/ld: /home/gportay/src/buildroot/output/host/x86_64-buildroot-linux-gnu/sysroot/usr/lib/libmemenv.a(memenv.o): relocation R_X86_64_32S against `.rodata' can not be used when making a shared object; recompile with -fPIC
++	/home/gportay/src/buildroot/output/host/x86_64-buildroot-linux-gnu/sysroot/usr/lib/libmemenv.a: error adding symbols: Bad value
++	collect2: error: ld returned 1 exit status
++
++Upstream-Status: Inappropriate [upstream has migrated to cmake]
++Signed-off-by: Gaël PORTAY <gael.portay@savoirfairelinux.com>
++---
++ build_detect_platform | 6 +++---
++ 1 file changed, 3 insertions(+), 3 deletions(-)
++
++diff --git a/build_detect_platform b/build_detect_platform
++index d2a20ce..4839444 100755
++--- a/build_detect_platform
+++++ b/build_detect_platform
++@@ -55,8 +55,8 @@ fi
++ 
++ COMMON_FLAGS=
++ CROSS_COMPILE=
++-PLATFORM_CCFLAGS=
++-PLATFORM_CXXFLAGS=
+++PLATFORM_CCFLAGS="-fPIC"
+++PLATFORM_CXXFLAGS="-fPIC"
++ PLATFORM_LDFLAGS=
++ PLATFORM_LIBS=
++ PLATFORM_SHARED_EXT="so"
++@@ -197,7 +197,7 @@ else
++ EOF
++     if [ "$?" = 0 ]; then
++         COMMON_FLAGS="$COMMON_FLAGS -DLEVELDB_PLATFORM_POSIX -DLEVELDB_ATOMIC_PRESENT"
++-        PLATFORM_CXXFLAGS="-std=c++0x"
+++        PLATFORM_CXXFLAGS="$PLATFORM_CXXFLAGS -std=c++0x"
++     else
++         COMMON_FLAGS="$COMMON_FLAGS -DLEVELDB_PLATFORM_POSIX"
++     fi
++-- 
++2.18.0
++
+diff --git a/package/leveldb/leveldb.mk b/package/leveldb/leveldb.mk
+index af9e879828..6078cd496c 100644
+--- a/package/leveldb/leveldb.mk
++++ b/package/leveldb/leveldb.mk
+@@ -25,6 +25,8 @@ define LEVELDB_INSTALL_STAGING_CMDS
+ 	$(TARGET_MAKE_ENV) $(MAKE1) \
+ 		INSTALL_ROOT=$(STAGING_DIR) INSTALL_PREFIX=/usr \
+ 		$(LEVELDB_MAKE_ARGS) -C $(@D) install
++	$(INSTALL) -D -m 0644 $(@D)/out-static/libmemenv.a $(STAGING_DIR)/usr/lib/libmemenv.a
++	$(INSTALL) -D -m 0644 $(@D)/helpers/memenv/memenv.h $(STAGING_DIR)/usr/include/helpers/memenv/memenv.h
+ endef
+ 
+ define LEVELDB_INSTALL_TARGET_CMDS
+diff --git a/package/libopenssl/libopenssl.hash b/package/libopenssl/libopenssl.hash
+index 83fb8bd513..7e6e6057ee 100644
+--- a/package/libopenssl/libopenssl.hash
++++ b/package/libopenssl/libopenssl.hash
+@@ -1,7 +1,7 @@
+-# From https://www.openssl.org/source/openssl-1.0.2q.tar.gz.sha256
+-sha256	5744cfcbcec2b1b48629f7354203bc1e5e9b5466998bbccc5b5fcde3b18eb684	openssl-1.0.2q.tar.gz
+-# From https://www.openssl.org/source/openssl-1.0.2q.tar.gz.sha1
+-sha1	692f5f2f1b114f8adaadaa3e7be8cce1907f38c5				openssl-1.0.2q.tar.gz
++# From https://www.openssl.org/source/openssl-1.0.2r.tar.gz.sha256
++sha256	ae51d08bba8a83958e894946f15303ff894d75c2b8bbd44a852b64e3fe11d0d6	openssl-1.0.2r.tar.gz
++# From https://www.openssl.org/source/openssl-1.0.2r.tar.gz.sha1
++sha1	b9aec1fa5cedcfa433aed37c8fe06b0ab0ce748d				openssl-1.0.2r.tar.gz
+ # Locally computed
+ sha256	eddd8a5123748052c598214487ac178e4bfa4e31ba2ec520c70d59c8c5bfa2e9	openssl-1.0.2a-parallel-install-dirs.patch?id=c8abcbe8de5d3b6cdd68c162f398c011ff6e2d9d
+ sha256	147c3eeaad614c044749ea527cb433eae5e2d5cad34a78c6ba61cd967bfbe01f	openssl-1.0.2a-parallel-obj-headers.patch?id=c8abcbe8de5d3b6cdd68c162f398c011ff6e2d9d
+diff --git a/package/libopenssl/libopenssl.mk b/package/libopenssl/libopenssl.mk
+index dc15abf66a..a53e78c07e 100644
+--- a/package/libopenssl/libopenssl.mk
++++ b/package/libopenssl/libopenssl.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBOPENSSL_VERSION = 1.0.2q
++LIBOPENSSL_VERSION = 1.0.2r
+ LIBOPENSSL_SITE = https://www.openssl.org/source
+ LIBOPENSSL_SOURCE = openssl-$(LIBOPENSSL_VERSION).tar.gz
+ LIBOPENSSL_LICENSE = OpenSSL or SSLeay
+diff --git a/package/libraw/0001-Remove-paths-which-break-cross-compilation.patch b/package/libraw/0001-Remove-paths-which-break-cross-compilation.patch
+deleted file mode 100644
+index 0f0eee1a64..0000000000
+--- a/package/libraw/0001-Remove-paths-which-break-cross-compilation.patch
++++ /dev/null
+@@ -1,29 +0,0 @@
+-From 1f9c2ebc9c65e8ce7fdbece55d578cf00c6c4b46 Mon Sep 17 00:00:00 2001
+-From: Bernd Kuhls <bernd.kuhls@t-online.de>
+-Date: Sat, 30 Jan 2016 17:06:04 +0100
+-Subject: [PATCH 1/1] Remove paths which break cross-compilation
+-
+-Patch sent upstream: https://github.com/LibRaw/LibRaw/pull/57
+-
+-Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+----
+- configure.ac | 3 ---
+- 1 file changed, 3 deletions(-)
+-
+-diff --git a/configure.ac b/configure.ac
+-index 9bb07b2..78064d9 100644
+---- a/configure.ac
+-+++ b/configure.ac
+-@@ -16,9 +16,6 @@ AC_SUBST(LIBTOOL_DEPS)
+- 
+- # Config files to generate
+- 
+--CPPFLAGS="$CPPFLAGS -I/usr/local/include"
+--LDFLAGS="$LDFLAGS -L/usr/local/lib"
+--
+- AC_CONFIG_FILES([
+- 	Makefile
+- 	libraw.pc
+--- 
+-2.7.0.rc3
+-
+diff --git a/package/libraw/0002-libraw_x3f.cpp-remove-Byte-order-mark.patch b/package/libraw/0002-libraw_x3f.cpp-remove-Byte-order-mark.patch
+deleted file mode 100644
+index 24f0eb1897..0000000000
+--- a/package/libraw/0002-libraw_x3f.cpp-remove-Byte-order-mark.patch
++++ /dev/null
+@@ -1,39 +0,0 @@
+-From 0f2507bfe30f2df10dfc38b94cdfde5594902b8e Mon Sep 17 00:00:00 2001
+-From: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+-Date: Fri, 12 Feb 2016 10:00:12 +0100
+-Subject: [PATCH] libraw_x3f.cpp: remove Byte order mark
+-
+-The U+FEFF character, which is a Byte order mark, at the beginning of
+-libraw_x3f.cpp, prevents gcc 4.3.x from building this file:
+-
+-src/../internal/libraw_x3f.cpp:1: error: stray '\357' in program
+-src/../internal/libraw_x3f.cpp:1: error: stray '\273' in program
+-src/../internal/libraw_x3f.cpp:1: error: stray '\277' in program
+-
+-Support in gcc for the Byte order mark has been added in gcc
+-4.4.x. Since anyway this Byte order mark is not useful, we simply
+-remove it.
+-
+-See https://en.wikipedia.org/wiki/Byte_order_mark for more details.
+-
+-Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+----
+-Submitted upstream at:
+-https://github.com/LibRaw/LibRaw/pull/61
+-
+- internal/libraw_x3f.cpp | 2 +-
+- 1 file changed, 1 insertion(+), 1 deletion(-)
+-
+-diff --git a/internal/libraw_x3f.cpp b/internal/libraw_x3f.cpp
+-index dbf28c1..67047ab 100644
+---- a/internal/libraw_x3f.cpp
+-+++ b/internal/libraw_x3f.cpp
+-@@ -1,4 +1,4 @@
+--﻿/* Library for accessing X3F Files 
+-+/* Library for accessing X3F Files 
+- ----------------------------------------------------------------
+- BSD-style License
+- ----------------------------------------------------------------
+--- 
+-2.6.4
+-
+diff --git a/package/libraw/libraw.hash b/package/libraw/libraw.hash
+index 29794252f1..643a2109b5 100644
+--- a/package/libraw/libraw.hash
++++ b/package/libraw/libraw.hash
+@@ -1,3 +1,5 @@
+ # Locally calculated
+-sha256	e599651a4cc37e00cfc2d2b56be87c3a4e4dae2c360b680fe9ab3f93d07cdea1	LibRaw-0.17.1.tar.gz
+-sha256	3c09bc4d70268e78798696c5ea3a8cc65fe4e161811d5321fc3ef2ca012d8fd1	0001-Fix_gcc6_narrowing_conversion.patch?id=d890937aaca6359df45a66b35e547c94ca564823
++sha256	400d47969292291d297873a06fb0535ccce70728117463927ddd9452aa849644	LibRaw-0.19.2.tar.gz
++sha256	eea173a556abac0370461e57e12aab266894ea6be3874c2be05fd87871f75449	LICENSE.LGPL
++sha256	0e3098d2d54a12434715f6679ea408d57da5e8d613c385c58ecc6fe5d30cc81f	LICENSE.CDDL
++sha256	eee0055723d3483ef3ee7920e2178177b14a334c2a622be4101bcfb05d21407e	README.md
+diff --git a/package/libraw/libraw.mk b/package/libraw/libraw.mk
+index 589ff891be..0d95207b73 100644
+--- a/package/libraw/libraw.mk
++++ b/package/libraw/libraw.mk
+@@ -4,22 +4,17 @@
+ #
+ ################################################################################
+ 
+-LIBRAW_VERSION = 0.17.1
++LIBRAW_VERSION = 0.19.2
+ LIBRAW_SOURCE = LibRaw-$(LIBRAW_VERSION).tar.gz
+ LIBRAW_SITE = http://www.libraw.org/data
+-LIBRAW_PATCH = \
+-	https://anonscm.debian.org/cgit/pkg-phototools/libraw.git/plain/debian/patches/0001-Fix_gcc6_narrowing_conversion.patch?id=d890937aaca6359df45a66b35e547c94ca564823
+-
+ LIBRAW_INSTALL_STAGING = YES
+-# we patch configure.ac
+-LIBRAW_AUTORECONF = YES
+ LIBRAW_CONF_OPTS += \
+ 	--disable-examples \
+ 	--disable-openmp \
+ 	--disable-demosaic-pack-gpl2 \
+ 	--disable-demosaic-pack-gpl3
+-LIBRAW_LICENSE = LGPL-2.1 or CDDL-1.0 or LibRaw Software License 27032010
+-LIBRAW_LICENSE_FILES = LICENSE.LGPL LICENSE.CDDL LICENSE.LibRaw.pdf README
++LIBRAW_LICENSE = LGPL-2.1 or CDDL-1.0
++LIBRAW_LICENSE_FILES = LICENSE.LGPL LICENSE.CDDL README.md
+ LIBRAW_DEPENDENCIES = host-pkgconf
+ LIBRAW_CXXFLAGS = $(TARGET_CXXFLAGS)
+ LIBRAW_CONF_ENV = CXXFLAGS="$(LIBRAW_CXXFLAGS)"
+diff --git a/package/libseccomp/0001-remove-static.patch b/package/libseccomp/0001-remove-static.patch
+index 6fd81f96d5..60a1ff00b6 100644
+--- a/package/libseccomp/0001-remove-static.patch
++++ b/package/libseccomp/0001-remove-static.patch
+@@ -1,25 +1,31 @@
+-Do not force static link, it breaks build with
+-# BR2_STATIC_LIBS is not set
++From 5d010fb06eae43b284e5ccc322f6de47eb42b751 Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Sat, 2 Jun 2018 13:45:22 +0200
++Subject: [PATCH] remove static
++
++Do not force static link of tools, it breaks build with:
+ BR2_SHARED_LIBS=y
+ 
++Patch retrieved from
++https://git.buildroot.net/buildroot/tree/package/libseccomp/0001-remove-static.patch
++and slighly updated to work with 2.3.3
++
++[Upstream status: https://github.com/seccomp/libseccomp/pull/121]
++
+ Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Peter: updated for v2.4.0 which adds scmp_api_level]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ tools/Makefile.am | 3 ---
++ 1 file changed, 3 deletions(-)
+ 
+-diff -uNr libseccomp-2.2.0.org/tests/Makefile.am libseccomp-2.2.0/tests/Makefile.am
+---- libseccomp-2.2.0.org/tests/Makefile.am	2015-02-11 21:57:11.000000000 +0100
+-+++ libseccomp-2.2.0/tests/Makefile.am	2015-03-29 16:03:49.668946652 +0200
+-@@ -16,7 +16,6 @@
+- # along with this library; if not, see <http://www.gnu.org/licenses>.
+- #
+- 
+--AM_LDFLAGS = -static
+- LDADD = util.la ../src/libseccomp.la
+- 
+- check_LTLIBRARIES = util.la
+-diff -uNr libseccomp-2.2.0.org/tools/Makefile.am libseccomp-2.2.0/tools/Makefile.am
+---- libseccomp-2.2.0.org/tools/Makefile.am	2015-02-11 21:57:11.000000000 +0100
+-+++ libseccomp-2.2.0/tools/Makefile.am	2015-03-29 16:03:46.164992302 +0200
+-@@ -33,8 +33,6 @@
+- scmp_bpf_sim_SOURCES = scmp_bpf_sim.c bpf.h util.h
++diff --git a/tools/Makefile.am b/tools/Makefile.am
++index f768365..5f9d571 100644
++--- a/tools/Makefile.am
+++++ b/tools/Makefile.am
++@@ -37,10 +37,7 @@ scmp_bpf_sim_SOURCES = scmp_bpf_sim.c bpf.h util.h
++ scmp_api_level_SOURCES = scmp_api_level.c
+  
+  scmp_sys_resolver_LDADD = ../src/libseccomp.la
+ -scmp_sys_resolver_LDFLAGS = -static
+@@ -27,3 +33,8 @@ diff -uNr libseccomp-2.2.0.org/tools/Makefile.am libseccomp-2.2.0/tools/Makefile
+ -scmp_arch_detect_LDFLAGS = -static
+  scmp_bpf_disasm_LDADD = util.la
+  scmp_bpf_sim_LDADD = util.la
++ scmp_api_level_LDADD = ../src/libseccomp.la
++-scmp_api_level_LDFLAGS = -static
++-- 
++2.11.0
++
+diff --git a/package/libseccomp/libseccomp.hash b/package/libseccomp/libseccomp.hash
+index ef390ff562..0823903c36 100644
+--- a/package/libseccomp/libseccomp.hash
++++ b/package/libseccomp/libseccomp.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+-sha256 09864282ae579c34bd5ef75ef3487200adfecaa51f5cffc7c7ad1ed2f89f5d6c libseccomp-v2.3.1.tar.gz
++sha256 b7ee0299157fb7a6a81c99f2e0d7e64429b7d7c0eae43c3a6ef91e87eeed2868 libseccomp-v2.4.0.tar.gz
++sha256 102900208eef27b766380135906d431dba87edaa7ec6aa72e6ebd3dd67f3a97b LICENSE
+diff --git a/package/libseccomp/libseccomp.mk b/package/libseccomp/libseccomp.mk
+index 9a241a5513..90b981f042 100644
+--- a/package/libseccomp/libseccomp.mk
++++ b/package/libseccomp/libseccomp.mk
+@@ -4,17 +4,11 @@
+ #
+ ################################################################################
+ 
+-LIBSECCOMP_VERSION = v2.3.1
++LIBSECCOMP_VERSION = v2.4.0
+ LIBSECCOMP_SITE = $(call github,seccomp,libseccomp,$(LIBSECCOMP_VERSION))
+ LIBSECCOMP_LICENSE = LGPL-2.1
+ LIBSECCOMP_LICENSE_FILES = LICENSE
+ LIBSECCOMP_INSTALL_STAGING = YES
+ LIBSECCOMP_AUTORECONF = YES
+ 
+-# Needed for autoreconf to work properly, see ./autogen.sh
+-define LIBSECCOMP_FIXUP_M4_DIR
+-	mkdir $(@D)/m4
+-endef
+-LIBSECCOMP_POST_EXTRACT_HOOKS += LIBSECCOMP_FIXUP_M4_DIR
+-
+ $(eval $(autotools-package))
+diff --git a/package/libssh2/0002-acinclude.m4-add-mbedtls-to-LIBS.patch b/package/libssh2/0002-acinclude.m4-add-mbedtls-to-LIBS.patch
+index 76e08c51a9..a70b1fe84f 100644
+--- a/package/libssh2/0002-acinclude.m4-add-mbedtls-to-LIBS.patch
++++ b/package/libssh2/0002-acinclude.m4-add-mbedtls-to-LIBS.patch
+@@ -8,6 +8,10 @@ libssh2.pc contains correct info for the benefit of pkg-config users.
+ Static link with libssh2 requires this information.
+ 
+ Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++[Fabrice: Replace $LIBMBEDCRYTO by -lmdedcrypto to avoid adding a full
++library path to libssh2.pc as it raises build failures on some packages
++such as xerces]
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
+ ---
+ Upstream status: https://github.com/libssh2/libssh2/pull/242
+ 
+@@ -22,7 +26,7 @@ index c0e89a1a0c98..02c70845d27c 100644
+  [mbedtls], [
+    LIBSSH2_LIB_HAVE_LINKFLAGS([mbedcrypto], [], [#include <mbedtls/version.h>], [
+      AC_DEFINE(LIBSSH2_MBEDTLS, 1, [Use $1])
+-+    LIBS="$LIBS $LIBMBEDCRYPTO"
+++    LIBS="$LIBS -lmbedcrypto"
+      found_crypto="$1"
+      support_clear_memory=yes
+    ])
+diff --git a/package/libssh2/libssh2.hash b/package/libssh2/libssh2.hash
+index d36262ad9a..c4732a2c07 100644
+--- a/package/libssh2/libssh2.hash
++++ b/package/libssh2/libssh2.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+-sha256 e73d55cd512863aa6423c6e137039e3e1bcbf5ba87f130e7441132c2c78a5425 libssh2-616fd4d1b3e4a55de67c48819fefca83132126b5.tar.gz
++sha256 468e7a81a8121c06cb099eef2e17106b0b8c2e1d890b1c0e34e1951f182babb1  libssh2-1b3cbaff518f32e5b70650d4b7b52361b1410d37.tar.gz
++sha256 e15ed284a15e80115467d6d7f030f0d89d8fabbecd78fb6e0f861f0cfc128fd9  COPYING
+diff --git a/package/libssh2/libssh2.mk b/package/libssh2/libssh2.mk
+index c5b0bd855e..e3d0957942 100644
+--- a/package/libssh2/libssh2.mk
++++ b/package/libssh2/libssh2.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBSSH2_VERSION = 616fd4d1b3e4a55de67c48819fefca83132126b5
++LIBSSH2_VERSION = 1b3cbaff518f32e5b70650d4b7b52361b1410d37
+ LIBSSH2_SITE = $(call github,libssh2,libssh2,$(LIBSSH2_VERSION))
+ LIBSSH2_LICENSE = BSD
+ LIBSSH2_LICENSE_FILES = COPYING
+diff --git a/package/libunistring/libunistring.hash b/package/libunistring/libunistring.hash
+index 15e35cb81c..2e4595b17d 100644
+--- a/package/libunistring/libunistring.hash
++++ b/package/libunistring/libunistring.hash
+@@ -1,2 +1,6 @@
+ # Locally calculated after checking pgp signature
+-sha256	2e3764512aaf2ce598af5a38818c0ea23dedf1ff5460070d1b6cee5c3336e797	libunistring-0.9.7.tar.xz
++# https://ftp.gnu.org/gnu/libunistring/libunistring-0.9.10.tar.xz.sig
++sha256	eb8fb2c3e4b6e2d336608377050892b54c3c983b646c561836550863003c05d7	libunistring-0.9.10.tar.xz
++# Locally calculated
++sha256	8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903	COPYING
++sha256	a853c2ffec17057872340eee242ae4d96cbf2b520ae27d903e1b2fef1a5f9d1c	COPYING.LIB
+diff --git a/package/libunistring/libunistring.mk b/package/libunistring/libunistring.mk
+index 9340e79937..fa51447170 100644
+--- a/package/libunistring/libunistring.mk
++++ b/package/libunistring/libunistring.mk
+@@ -4,18 +4,12 @@
+ #
+ ################################################################################
+ 
+-LIBUNISTRING_VERSION = 0.9.7
++LIBUNISTRING_VERSION = 0.9.10
+ LIBUNISTRING_SITE = $(BR2_GNU_MIRROR)/libunistring
+ LIBUNISTRING_SOURCE = libunistring-$(LIBUNISTRING_VERSION).tar.xz
+ LIBUNISTRING_INSTALL_STAGING = YES
+ LIBUNISTRING_LICENSE = LGPL-3.0+ or GPL-2.0
+-LIBUNISTRING_LICENSE_FILES = COPYING.LIB
+-
+-ifeq ($(BR2_TOOLCHAIN_HAS_THREADS),y)
+-LIBUNISTRING_CONF_OPTS += --enable-threads=posix
+-else
+-LIBUNISTRING_CONF_OPTS += --disable-threads
+-endif
++LIBUNISTRING_LICENSE_FILES = COPYING COPYING.LIB
+ 
+ $(eval $(autotools-package))
+ $(eval $(host-autotools-package))
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index 05faac86fa..52ab36080c 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -250,12 +250,12 @@ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+ 	default "3.2.102"	if BR2_KERNEL_HEADERS_3_2
+ 	default "4.1.52"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.174"	if BR2_KERNEL_HEADERS_4_4
+-	default "4.9.156"	if BR2_KERNEL_HEADERS_4_9
++	default "4.4.177"	if BR2_KERNEL_HEADERS_4_4
++	default "4.9.166"	if BR2_KERNEL_HEADERS_4_9
+ 	default "4.10.17"	if BR2_KERNEL_HEADERS_4_10
+ 	default "4.11.12"	if BR2_KERNEL_HEADERS_4_11
+ 	default "4.12.14"	if BR2_KERNEL_HEADERS_4_12
+ 	default "4.13.16"	if BR2_KERNEL_HEADERS_4_13
+-	default "4.14.99"	if BR2_KERNEL_HEADERS_4_14
++	default "4.14.109"	if BR2_KERNEL_HEADERS_4_14
+ 	default "4.15.18"	if BR2_KERNEL_HEADERS_4_15
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/mariadb/mariadb.hash b/package/mariadb/mariadb.hash
+index 7730ae0cb0..461f40bfc5 100644
+--- a/package/mariadb/mariadb.hash
++++ b/package/mariadb/mariadb.hash
+@@ -1,8 +1,8 @@
+-# From https://downloads.mariadb.org/mariadb/10.1.37/
+-md5 123b37bec63ddca19260e45f0f2276bb  mariadb-10.1.37.tar.gz
+-sha1 35e9c15b5532c2e7c746b1e7452952053d7d5b5a  mariadb-10.1.37.tar.gz
+-sha256 8cd516b0a7f7aa36a7c1d6e687dbbad8c0b08c92d5fd60c6e691b19a6cab4d46  mariadb-10.1.37.tar.gz
+-sha512 b7c35cd67ad265ce2e3a4db20a2ae2b78745db96dc70a211f027a39b6dbb3dc900991c2ee1021ee6a97d12489c3e2a70252e2adf348a458af38b99c3de5a4f25  mariadb-10.1.37.tar.gz
++# From https://downloads.mariadb.org/mariadb/10.1.38/
++md5 edf8bee4854a464f214e6c24c5d28625  mariadb-10.1.38.tar.gz
++sha1 1474b3a9ad402c848cff6ef6a79856dc405806b1  mariadb-10.1.38.tar.gz
++sha256 caf1f4fc237d143343995b6625375aef911dfc366433645d400727e7063f077f  mariadb-10.1.38.tar.gz
++sha512 184582f3a902a989ba3d9c4d21288c014c8b469adbbb4cbabc621c5006022cef29baed8c1140ed4476b124da83b76dfa414295ed0c3374be826e75aca953a77b  mariadb-10.1.38.tar.gz
+ 
+ # Hash for license files
+ sha256 d89f09a82da1666d389916bba8c21278d3ef5ac43c2139587234576a128428d4  README
+diff --git a/package/mariadb/mariadb.mk b/package/mariadb/mariadb.mk
+index 4e1c4addb8..89d66a2acb 100644
+--- a/package/mariadb/mariadb.mk
++++ b/package/mariadb/mariadb.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MARIADB_VERSION = 10.1.37
++MARIADB_VERSION = 10.1.38
+ MARIADB_SITE = https://downloads.mariadb.org/interstitial/mariadb-$(MARIADB_VERSION)/source
+ MARIADB_LICENSE = GPL-2.0 (server), GPL-2.0 with FLOSS exception (GPL client library), LGPL-2.0 (LGPL client library)
+ # Tarball no longer contains LGPL license text
+diff --git a/package/mosquitto/mosquitto.hash b/package/mosquitto/mosquitto.hash
+index 17a467a721..25b9910138 100644
+--- a/package/mosquitto/mosquitto.hash
++++ b/package/mosquitto/mosquitto.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated after checking gpg signature
+-sha256 d4024c3388502d50be4192991e90d66dfb344376104df3f63846c9f201779955  mosquitto-1.5.7.tar.gz
++sha256 78d7e70c3794dc3a1d484b4f2f8d3addebe9c2da3f5a1cebe557f7d13beb0da4  mosquitto-1.5.8.tar.gz
+ 
+ # License files
+ sha256 cc77e25bafd40637b7084f04086d606f0a200051b61806f97c93405926670bc1  LICENSE.txt
+diff --git a/package/mosquitto/mosquitto.mk b/package/mosquitto/mosquitto.mk
+index e8a6ef74f4..368291b736 100644
+--- a/package/mosquitto/mosquitto.mk
++++ b/package/mosquitto/mosquitto.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MOSQUITTO_VERSION = 1.5.7
++MOSQUITTO_VERSION = 1.5.8
+ MOSQUITTO_SITE = https://mosquitto.org/files/source
+ MOSQUITTO_LICENSE = EPL-1.0 or EDLv1.0
+ MOSQUITTO_LICENSE_FILES = LICENSE.txt epl-v10 edl-v10
+diff --git a/package/nodejs/nodejs.hash b/package/nodejs/nodejs.hash
+index 5a06e5328c..ad8ad4ad99 100644
+--- a/package/nodejs/nodejs.hash
++++ b/package/nodejs/nodejs.hash
+@@ -1,5 +1,5 @@
+-# From https://nodejs.org/dist/v8.15.0/SHASUMS256.txt
+-sha256 968523333947cc3f769d73dedc6c9c60580826d8714bc0e62ca4589de6a7c633  node-v8.15.0.tar.xz
++# From https://nodejs.org/dist/v8.15.1/SHASUMS256.txt
++sha256 6b6486a3f452624941f6e11dd5f878c298d43e9c21b5f43ca1721dc7ce25add1  node-v8.15.1.tar.xz
+ 
+ # Hash for license file
+ sha256 b87be6c1479ed977481115869c2dd8b6d59e5ea55aa09939d6c898242121b2f5  LICENSE
+diff --git a/package/nodejs/nodejs.mk b/package/nodejs/nodejs.mk
+index d266493de9..65f95016dd 100644
+--- a/package/nodejs/nodejs.mk
++++ b/package/nodejs/nodejs.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-NODEJS_VERSION = 8.15.0
++NODEJS_VERSION = 8.15.1
+ NODEJS_SOURCE = node-v$(NODEJS_VERSION).tar.xz
+ NODEJS_SITE = http://nodejs.org/dist/v$(NODEJS_VERSION)
+ NODEJS_DEPENDENCIES = host-python host-nodejs c-ares \
+diff --git a/package/ntp/0003-fix-nommu.patch b/package/ntp/0003-fix-nommu.patch
+deleted file mode 100644
+index 0959fa0ba5..0000000000
+--- a/package/ntp/0003-fix-nommu.patch
++++ /dev/null
+@@ -1,29 +0,0 @@
+-Fix no-MMU build
+-
+-The detach_from_terminal() is unused for no-MMU, but it depends on symbols
+-that are not defined for no-MMU. Don't define detach_from_terminal() when
+-HAVE_WORKING_FORK is not defined.
+-
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: http://bugs.ntp.org/show_bug.cgi?id=3538
+-
+-diff -Nuar ntp-4.2.8p12.orig/ntpd/ntpd.c ntp-4.2.8p12/ntpd/ntpd.c
+---- ntp-4.2.8p12.orig/ntpd/ntpd.c	2018-08-14 14:51:30.000000000 +0300
+-+++ ntp-4.2.8p12/ntpd/ntpd.c	2018-10-13 21:25:25.858261249 +0300
+-@@ -534,6 +534,7 @@
+-  * Detach from terminal (much like daemon())
+-  * Nothe that this function calls exit()
+-  */
+-+# ifdef HAVE_WORKING_FORK
+- static void
+- detach_from_terminal(
+- 	int pipe_fds[2],
+-@@ -617,6 +618,7 @@
+- 
+- 	return;
+- }
+-+# endif /* HAVE_WORKING_FORK */
+- 
+- #ifdef HAVE_DROPROOT
+- /*
+diff --git a/package/ntp/0004-fix-work-fork-without-droproot.patch b/package/ntp/0004-fix-work-fork-without-droproot.patch
+deleted file mode 100644
+index cb6fec0125..0000000000
+--- a/package/ntp/0004-fix-work-fork-without-droproot.patch
++++ /dev/null
+@@ -1,26 +0,0 @@
+-Fix work_fork build when droproot is disabled
+-
+-The set_user_group_ids() depends on HAVE_DROPROOT. When HAVE_DROPROOT is not
+-enabled, work_fork.c code causes a link failure:
+-
+-../libntp/libntp.a(work_fork.o): In function `send_blocking_req_internal':
+-work_fork.c:(.text+0x498): undefined reference to `set_user_group_ids'
+-
+-Make the set_user_group_ids() call depend on HAVE_DROPROOT.
+-
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: http://bugs.ntp.org/show_bug.cgi?id=3539
+-
+---- ntp-4.2.8p12.orig/libntp/work_fork.c	2018-08-14 14:51:06.000000000 +0300
+-+++ ntp-4.2.8p12/libntp/work_fork.c	2018-10-15 21:10:54.580917962 +0300
+-@@ -594,7 +594,9 @@
+- 	init_logging("ntp_intres", 0, FALSE);
+- 	setup_logfile(NULL);
+- 
+-+#if defined(HAVE_DROPROOT)
+- 	(void) set_user_group_ids();
+-+#endif
+- 
+- 	/*
+- 	 * And now back to the portable code
+diff --git a/package/ntp/ntp.hash b/package/ntp/ntp.hash
+index 2fd8a8322b..4014936e61 100644
+--- a/package/ntp/ntp.hash
++++ b/package/ntp/ntp.hash
+@@ -1,5 +1,5 @@
+-# From https://www.eecis.udel.edu/~ntp/ntp_spool/ntp4/ntp-4.2/ntp-4.2.8p12.tar.gz.md5
+-md5 1522d66574bae14abb2622746dad2bdc  ntp-4.2.8p12.tar.gz
++# From https://www.eecis.udel.edu/~ntp/ntp_spool/ntp4/ntp-4.2/ntp-4.2.8p13.tar.gz.md5
++md5 ea040ab9b4ca656b5229b89d6b822f13  ntp-4.2.8p13.tar.gz
+ # Calculated based on the hash above
+-sha256 709b222b5013d77d26bfff532b5ea470a8039497ef29d09363931c036cb30454  ntp-4.2.8p12.tar.gz
+-sha256 62c87b269365b38b55359b16dfde7ec28c683c722ef489db90afd0f2e478e4a1  COPYRIGHT
++sha256 288772cecfcd9a53694ffab108d1825a31ba77f3a8466b0401baeca3bc232a38  ntp-4.2.8p13.tar.gz
++sha256 3828da5fc8126889d6a64432288ace08526c490bf5427d799931689069968d91  COPYRIGHT
+diff --git a/package/ntp/ntp.mk b/package/ntp/ntp.mk
+index edd3d521aa..af5196253a 100644
+--- a/package/ntp/ntp.mk
++++ b/package/ntp/ntp.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ NTP_VERSION_MAJOR = 4.2
+-NTP_VERSION = $(NTP_VERSION_MAJOR).8p12
++NTP_VERSION = $(NTP_VERSION_MAJOR).8p13
+ NTP_SITE = https://www.eecis.udel.edu/~ntp/ntp_spool/ntp4/ntp-$(NTP_VERSION_MAJOR)
+ NTP_DEPENDENCIES = host-pkgconf libevent $(if $(BR2_PACKAGE_BUSYBOX),busybox)
+ NTP_LICENSE = NTP
+diff --git a/package/openjpeg/0004-install-static-lib.patch b/package/openjpeg/0004-install-static-lib.patch
+deleted file mode 100644
+index 4a3bbfa28a..0000000000
+--- a/package/openjpeg/0004-install-static-lib.patch
++++ /dev/null
+@@ -1,27 +0,0 @@
+-From 66297f07a43d2770a97c8456d20202f3d051d980 Mon Sep 17 00:00:00 2001
+-From: Even Rouault <even.rouault@spatialys.com>
+-Date: Mon, 9 Oct 2017 11:40:43 +0200
+-Subject: [PATCH] Unix build: fix regression of 2.3.0 where a shared-only or
+- static-only build lacks the installation target for the library (#1019, fixes
+- regression introduced by 3dfc6ca2bcf06fd1adb6b6b4cecc6c092f08ba0b)
+-
+-Downloaded from upstream commit
+-https://github.com/uclouvain/openjpeg/commit/66297f07a43d2770a97c8456d20202f3d051d980
+-
+-Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+----
+- src/lib/openjp2/CMakeLists.txt | 1 +
+- 1 file changed, 1 insertion(+)
+-
+-diff --git a/src/lib/openjp2/CMakeLists.txt b/src/lib/openjp2/CMakeLists.txt
+-index 0b4520384..f8990ccf0 100644
+---- a/src/lib/openjp2/CMakeLists.txt
+-+++ b/src/lib/openjp2/CMakeLists.txt
+-@@ -99,6 +99,7 @@ else()
+-     set(INSTALL_LIBS ${OPENJPEG_LIBRARY_NAME} openjp2_static)
+-   else()
+-     add_library(${OPENJPEG_LIBRARY_NAME} ${OPENJPEG_SRCS})
+-+    set(INSTALL_LIBS ${OPENJPEG_LIBRARY_NAME})
+-   endif()
+- endif()
+- 
+diff --git a/package/openjpeg/openjpeg.hash b/package/openjpeg/openjpeg.hash
+index dd3cf26cf0..8a6fda48c4 100644
+--- a/package/openjpeg/openjpeg.hash
++++ b/package/openjpeg/openjpeg.hash
+@@ -1,2 +1,3 @@
+ # Locally computed:
+-sha256 3dc787c1bb6023ba846c2a0d9b1f6e179f1cd255172bde9eb75b01f1e6c7d71a  openjpeg-2.3.0.tar.gz
++sha256 3389a1aa908c2b577863da213db3a170df3edbb1432e99ae5fd3f2ac721d69d3  openjpeg-51f097e6d5754ddae93e716276fe8176b44ec548.tar.gz
++sha256 a6af136f3e15038a666b61f376612a07d9a4e48cb7c01adbf3e33b3f14ab49b6  LICENSE
+diff --git a/package/openjpeg/openjpeg.mk b/package/openjpeg/openjpeg.mk
+index 9a8fdab7a4..6036ab95a3 100644
+--- a/package/openjpeg/openjpeg.mk
++++ b/package/openjpeg/openjpeg.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-OPENJPEG_VERSION = 2.3.0
+-OPENJPEG_SITE = $(call github,uclouvain,openjpeg,v$(OPENJPEG_VERSION))
++OPENJPEG_VERSION = 51f097e6d5754ddae93e716276fe8176b44ec548
++OPENJPEG_SITE = $(call github,uclouvain,openjpeg,$(OPENJPEG_VERSION))
+ OPENJPEG_LICENSE = BSD-2-Clause
+ OPENJPEG_LICENSE_FILES = LICENSE
+ OPENJPEG_INSTALL_STAGING = YES
+diff --git a/package/perl/perl.hash b/package/perl/perl.hash
+index 210f6d581b..502f0db9df 100644
+--- a/package/perl/perl.hash
++++ b/package/perl/perl.hash
+@@ -1,7 +1,7 @@
+-# Hashes from: http://www.cpan.org/src/5.0/perl-5.26.2.tar.xz.{md5,sha1,sha256}.txt
+-md5    1fa1b53eeff76aa37b17bfc9b2771671                                 perl-5.26.2.tar.xz
+-sha1   bfa5c7921ed7bf5e035dbf2f7ff81367b81e372c                         perl-5.26.2.tar.xz
+-sha256 0f8c0fb1b0db4681adb75c3ba0dd77a0472b1b359b9e80efd79fc27b4352132c perl-5.26.2.tar.xz
++# Hashes from: http://www.cpan.org/src/5.0/perl-5.26.3.tar.xz.{md5,sha1,sha256}.txt
++md5    218d73f2334d2f3fdaff5a1f35358247                                 perl-5.26.3.tar.xz
++sha1   ca73432ac07288fdce2063f5e09c642e28584226                         perl-5.26.3.tar.xz
++sha256 e0a17cdaed5304aea1783e507e56bb0001dd72c46f211553ead3a580c3f38135 perl-5.26.3.tar.xz
+ 
+-# Hashes from: http://github.com/arsv/perl-cross/releases/download/1.1.9/perl-cross-1.1.9.hash
+-sha256	0bbb450e48d07e7fdf867d578b1780ac8f0e8dc284d52301dac4d763b42f6041  perl-cross-1.1.9.tar.gz
++# Hashes from: http://github.com/arsv/perl-cross/releases/download/1.2.2/perl-cross-1.2.2.hash
++sha256	e6987838f27d8cd3368ea68fc56a68cc52371505950927b8b7c5cb76e3a94caa  perl-cross-1.2.2.tar.gz
+diff --git a/package/perl/perl.mk b/package/perl/perl.mk
+index 7b4a2710b1..023ef4f776 100644
+--- a/package/perl/perl.mk
++++ b/package/perl/perl.mk
+@@ -6,14 +6,14 @@
+ 
+ # When updating the version here, also update utils/scancpan
+ PERL_VERSION_MAJOR = 26
+-PERL_VERSION = 5.$(PERL_VERSION_MAJOR).2
++PERL_VERSION = 5.$(PERL_VERSION_MAJOR).3
+ PERL_SITE = http://www.cpan.org/src/5.0
+ PERL_SOURCE = perl-$(PERL_VERSION).tar.xz
+ PERL_LICENSE = Artistic or GPL-1.0+
+ PERL_LICENSE_FILES = Artistic Copying README
+ PERL_INSTALL_STAGING = YES
+ 
+-PERL_CROSS_VERSION = 1.1.9
++PERL_CROSS_VERSION = 1.2.2
+ # DO NOT refactor with the github helper (the result is not the same)
+ PERL_CROSS_SITE = https://github.com/arsv/perl-cross/releases/download/$(PERL_CROSS_VERSION)
+ PERL_CROSS_SOURCE = perl-cross-$(PERL_CROSS_VERSION).tar.gz
+diff --git a/package/php/0004-OPcache-flock-mechanism-is-obviously-linux-so-force-.patch b/package/php/0004-OPcache-flock-mechanism-is-obviously-linux-so-force-.patch
+deleted file mode 100644
+index c5d3740920..0000000000
+--- a/package/php/0004-OPcache-flock-mechanism-is-obviously-linux-so-force-.patch
++++ /dev/null
+@@ -1,80 +0,0 @@
+-From bedbd41ef0a5ce80b83a6f6eaebd7c90f0bc5615 Mon Sep 17 00:00:00 2001
+-From: Gustavo Zacarias <gustavo@zacarias.com.ar>
+-Date: Tue, 9 Aug 2016 11:52:19 +0200
+-Subject: [PATCH] OPcache: flock mechanism is obviously linux so force it.
+-
+-Signed-off-by: Gustavo Zacarias <gustavo@zacarias.com.ar>
+-Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+-[Bernd: update for 7.2.12 & 7.2.15]
+----
+- ext/opcache/config.m4 | 34 ++--------------------------------
+- 1 file changed, 2 insertions(+), 32 deletions(-)
+-
+-diff --git a/ext/opcache/config.m4 b/ext/opcache/config.m4
+-index fbb9b21..ffddc8e 100644
+---- a/ext/opcache/config.m4
+-+++ b/ext/opcache/config.m4
+-@@ -343,58 +343,8 @@ int main() {
+-     msg=yes,msg=no,msg=no)
+-   AC_MSG_RESULT([$msg])
+- 
+--flock_type=unknown
+--AC_MSG_CHECKING(for struct flock layout)
+--
+--if test "$flock_type" = "unknown"; then
+--AC_TRY_RUN([
+--  #include <fcntl.h>
+--  struct flock lock = { 1, 2, 3, 4, 5, 6, 7 };
+--  int main() {
+--    if(lock.l_type == 1 && lock.l_whence == 2 && lock.l_start == 6 && lock.l_len== 7) {
+--		return 0;
+--    }
+--    return 1;
+--  }
+--], [
+--    flock_type=aix64
+--    AC_DEFINE([HAVE_FLOCK_AIX64], [], [Struct flock is 64-bit AIX-type])
+--], [])
+--fi
+--
+--if test "$flock_type" = "unknown"; then
+--AC_TRY_RUN([
+--  #include <fcntl.h>
+--  struct flock lock = { 1, 2, 3, 4, 5 };
+--  int main() {
+--    if(lock.l_type == 1 && lock.l_whence == 2 && lock.l_start == 3 && lock.l_len == 4) {
+--		return 0;
+--    }
+--    return 1;
+--  }
+--], [
+--	flock_type=linux
+--    AC_DEFINE([HAVE_FLOCK_LINUX], [], [Struct flock is Linux-type])
+--], [])
+--fi
+--
+--if test "$flock_type" = "unknown"; then
+--AC_TRY_RUN([
+--  #include <fcntl.h>
+--  struct flock lock = { 1, 2, 3, 4, 5 };
+--  int main() {
+--    if(lock.l_start == 1 && lock.l_len == 2 && lock.l_type == 4 && lock.l_whence == 5) {
+--		return 0;
+--    }
+--    return 1;
+--  }
+--], [
+--	flock_type=bsd
+--    AC_DEFINE([HAVE_FLOCK_BSD], [], [Struct flock is BSD-type])
+--], [])
+--fi
+--
+--AC_MSG_RESULT([$flock_type])
+-+flock_type=linux
+-+AC_DEFINE([HAVE_FLOCK_LINUX], [], [Struct flock is Linux-type])
+- 
+- if test "$flock_type" = "unknown"; then
+- 	AC_MSG_ERROR([Don't know how to define struct flock on this system[,] set --enable-opcache=no])
+--- 
+-2.7.4
+-
+diff --git a/package/php/php.hash b/package/php/php.hash
+index 89cdbd204b..865cee4ee7 100644
+--- a/package/php/php.hash
++++ b/package/php/php.hash
+@@ -1,5 +1,5 @@
+ # From http://php.net/downloads.php
+-sha256 75e90012faef700dffb29311f3d24fa25f1a5e0f70254a9b8d5c794e25e938ce  php-7.2.15.tar.xz
++sha256 7d91ed3c1447c6358a3d53f84599ef854aca4c3622de7435e2df115bf196e482  php-7.2.16.tar.xz
+ 
+ # License file
+ sha256 f689b8fa63bea7950ce6a21bf52ed88ea0d77673ee76e6de12f51191174d91b8  LICENSE
+diff --git a/package/php/php.mk b/package/php/php.mk
+index 67baadcc7c..e765fbf84e 100644
+--- a/package/php/php.mk
++++ b/package/php/php.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-PHP_VERSION = 7.2.15
++PHP_VERSION = 7.2.16
+ PHP_SITE = http://www.php.net/distributions
+ PHP_SOURCE = php-$(PHP_VERSION).tar.xz
+ PHP_INSTALL_STAGING = YES
+diff --git a/package/putty/0001-Fix-compilation-with-NO_GSSAPI.patch b/package/putty/0001-Fix-compilation-with-NO_GSSAPI.patch
+new file mode 100644
+index 0000000000..56a29e19dc
+--- /dev/null
++++ b/package/putty/0001-Fix-compilation-with-NO_GSSAPI.patch
+@@ -0,0 +1,266 @@
++From 7ad08649a223a4cd61e67d8334a147f55c79399d Mon Sep 17 00:00:00 2001
++From: Jacob Nevins <jacobn@chiark.greenend.org.uk>
++Date: Mon, 25 Mar 2019 23:46:59 +0000
++Subject: [PATCH] Fix compilation with NO_GSSAPI.
++
++This is a fairly shallow patch, which removes the UI and interactions
++with external libraries. Some other machinery (which is dead code in
++this configuration) is left in place.
++
++Adapted by me from a patch by Jeroen Roovers.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit 7ad08649a22
++
++ config.c        |  4 ++++
++ settings.c      | 12 ++++++++++--
++ ssh.c           | 16 +++++++++++++++-
++ ssh2transport.c |  3 +--
++ ssh2userauth.c  |  8 ++++++--
++ sshserver.c     | 13 ++++++++++++-
++ 6 files changed, 48 insertions(+), 8 deletions(-)
++
++diff --git a/config.c b/config.c
++index 9c299feecc21..6528a9696584 100644
++--- a/config.c
+++++ b/config.c
++@@ -2442,10 +2442,12 @@ void setup_config_box(struct controlbox *b, bool midsession,
++ 			      HELPCTX(ssh_kexlist),
++ 			      kexlist_handler, P(NULL));
++             c->listbox.height = KEX_MAX;
+++#ifndef NO_GSSAPI
++ 	    ctrl_checkbox(s, "Attempt GSSAPI key exchange",
++ 			  'k', HELPCTX(ssh_gssapi),
++ 			  conf_checkbox_handler,
++ 			  I(CONF_try_gssapi_kex));
+++#endif
++ 
++ 	    s = ctrl_getset(b, "Connection/SSH/Kex", "repeat",
++ 			    "Options controlling key re-exchange");
++@@ -2455,11 +2457,13 @@ void setup_config_box(struct controlbox *b, bool midsession,
++ 			 conf_editbox_handler,
++ 			 I(CONF_ssh_rekey_time),
++ 			 I(-1));
+++#ifndef NO_GSSAPI
++             ctrl_editbox(s, "Minutes between GSS checks (0 for never)", NO_SHORTCUT, 20,
++                          HELPCTX(ssh_kex_repeat),
++                          conf_editbox_handler,
++                          I(CONF_gssapirekey),
++                          I(-1));
+++#endif
++ 	    ctrl_editbox(s, "Max data before rekey (0 for no limit)", 'x', 20,
++ 			 HELPCTX(ssh_kex_repeat),
++ 			 conf_editbox_handler,
++diff --git a/settings.c b/settings.c
++index 8d56302677d9..54f5ab7b2919 100644
++--- a/settings.c
+++++ b/settings.c
++@@ -592,21 +592,25 @@ void save_open_settings(settings_w *sesskey, Conf *conf)
++     write_setting_b(sesskey, "Compression", conf_get_bool(conf, CONF_compression));
++     write_setting_b(sesskey, "TryAgent", conf_get_bool(conf, CONF_tryagent));
++     write_setting_b(sesskey, "AgentFwd", conf_get_bool(conf, CONF_agentfwd));
+++#ifndef NO_GSSAPI
++     write_setting_b(sesskey, "GssapiFwd", conf_get_bool(conf, CONF_gssapifwd));
+++#endif
++     write_setting_b(sesskey, "ChangeUsername", conf_get_bool(conf, CONF_change_username));
++     wprefs(sesskey, "Cipher", ciphernames, CIPHER_MAX, conf, CONF_ssh_cipherlist);
++     wprefs(sesskey, "KEX", kexnames, KEX_MAX, conf, CONF_ssh_kexlist);
++     wprefs(sesskey, "HostKey", hknames, HK_MAX, conf, CONF_ssh_hklist);
++     write_setting_i(sesskey, "RekeyTime", conf_get_int(conf, CONF_ssh_rekey_time));
+++#ifndef NO_GSSAPI
++     write_setting_i(sesskey, "GssapiRekey", conf_get_int(conf, CONF_gssapirekey));
+++#endif
++     write_setting_s(sesskey, "RekeyBytes", conf_get_str(conf, CONF_ssh_rekey_data));
++     write_setting_b(sesskey, "SshNoAuth", conf_get_bool(conf, CONF_ssh_no_userauth));
++     write_setting_b(sesskey, "SshBanner", conf_get_bool(conf, CONF_ssh_show_banner));
++     write_setting_b(sesskey, "AuthTIS", conf_get_bool(conf, CONF_try_tis_auth));
++     write_setting_b(sesskey, "AuthKI", conf_get_bool(conf, CONF_try_ki_auth));
+++#ifndef NO_GSSAPI
++     write_setting_b(sesskey, "AuthGSSAPI", conf_get_bool(conf, CONF_try_gssapi_auth));
++     write_setting_b(sesskey, "AuthGSSAPIKEX", conf_get_bool(conf, CONF_try_gssapi_kex));
++-#ifndef NO_GSSAPI
++     wprefs(sesskey, "GSSLibs", gsslibkeywords, ngsslibs, conf, CONF_ssh_gsslist);
++     write_setting_filename(sesskey, "GSSCustom", conf_get_filename(conf, CONF_ssh_gss_custom));
++ #endif
++@@ -937,7 +941,9 @@ void load_open_settings(settings_r *sesskey, Conf *conf)
++     gppb(sesskey, "TryAgent", true, conf, CONF_tryagent);
++     gppb(sesskey, "AgentFwd", false, conf, CONF_agentfwd);
++     gppb(sesskey, "ChangeUsername", false, conf, CONF_change_username);
+++#ifndef NO_GSSAPI
++     gppb(sesskey, "GssapiFwd", false, conf, CONF_gssapifwd);
+++#endif
++     gprefs(sesskey, "Cipher", "\0",
++ 	   ciphernames, CIPHER_MAX, conf, CONF_ssh_cipherlist);
++     {
++@@ -990,7 +996,9 @@ void load_open_settings(settings_r *sesskey, Conf *conf)
++     gprefs(sesskey, "HostKey", "ed25519,ecdsa,rsa,dsa,WARN",
++            hknames, HK_MAX, conf, CONF_ssh_hklist);
++     gppi(sesskey, "RekeyTime", 60, conf, CONF_ssh_rekey_time);
+++#ifndef NO_GSSAPI
++     gppi(sesskey, "GssapiRekey", GSS_DEF_REKEY_MINS, conf, CONF_gssapirekey);
+++#endif
++     gpps(sesskey, "RekeyBytes", "1G", conf, CONF_ssh_rekey_data);
++     {
++ 	/* SSH-2 only by default */
++@@ -1007,9 +1015,9 @@ void load_open_settings(settings_r *sesskey, Conf *conf)
++     gppb(sesskey, "SshBanner", true, conf, CONF_ssh_show_banner);
++     gppb(sesskey, "AuthTIS", false, conf, CONF_try_tis_auth);
++     gppb(sesskey, "AuthKI", true, conf, CONF_try_ki_auth);
+++#ifndef NO_GSSAPI
++     gppb(sesskey, "AuthGSSAPI", true, conf, CONF_try_gssapi_auth);
++     gppb(sesskey, "AuthGSSAPIKEX", true, conf, CONF_try_gssapi_kex);
++-#ifndef NO_GSSAPI
++     gprefs(sesskey, "GSSLibs", "\0",
++ 	   gsslibkeywords, ngsslibs, conf, CONF_ssh_gsslist);
++     gppfile(sesskey, "GSSCustom", conf, CONF_ssh_gss_custom);
++diff --git a/ssh.c b/ssh.c
++index e35ebc64e2b5..e8ad61b8085d 100644
++--- a/ssh.c
+++++ b/ssh.c
++@@ -50,7 +50,9 @@ struct Ssh {
++     ssh_sharing_state *connshare;
++     bool attempting_connshare;
++ 
+++#ifndef NO_GSSAPI
++     struct ssh_connection_shared_gss_state gss_state;
+++#endif
++ 
++     char *savedhost;
++     int savedport;
++@@ -252,10 +254,18 @@ static void ssh_got_ssh_version(struct ssh_version_receiver *rcv,
++                     conf_get_bool(ssh->conf, CONF_tryagent), username,
++                     conf_get_bool(ssh->conf, CONF_change_username),
++                     conf_get_bool(ssh->conf, CONF_try_ki_auth),
+++#ifndef NO_GSSAPI
++                     conf_get_bool(ssh->conf, CONF_try_gssapi_auth),
++                     conf_get_bool(ssh->conf, CONF_try_gssapi_kex),
++                     conf_get_bool(ssh->conf, CONF_gssapifwd),
++-                    &ssh->gss_state);
+++                    &ssh->gss_state
+++#else
+++                    false,
+++                    false,
+++                    false,
+++                    NULL
+++#endif
+++                    );
++                 ssh_connect_ppl(ssh, userauth_layer);
++                 transport_child_layer = userauth_layer;
++ 
++@@ -267,7 +277,11 @@ static void ssh_got_ssh_version(struct ssh_version_receiver *rcv,
++                 ssh->fullhostname,
++                 ssh_verstring_get_local(old_bpp),
++                 ssh_verstring_get_remote(old_bpp),
+++#ifndef NO_GSSAPI
++                 &ssh->gss_state,
+++#else
+++                NULL,
+++#endif
++                 &ssh->stats, transport_child_layer, false);
++             ssh_connect_ppl(ssh, ssh->base_layer);
++ 
++diff --git a/ssh2transport.c b/ssh2transport.c
++index 8640d89d4be4..5e8955a0275f 100644
++--- a/ssh2transport.c
+++++ b/ssh2transport.c
++@@ -1781,6 +1781,7 @@ static void ssh2_transport_gss_update(struct ssh2_transport_state *s,
++     if (mins > 0 && s->gss_ctxt_lifetime <= mins * 60)
++         s->gss_status |= GSS_CTXT_EXPIRES;
++ }
+++#endif /* NO_GSSAPI */
++ 
++ ptrlen ssh2_transport_get_session_id(PacketProtocolLayer *ppl)
++ {
++@@ -1805,8 +1806,6 @@ void ssh2_transport_notify_auth_done(PacketProtocolLayer *ppl)
++     queue_idempotent_callback(&s->ppl.ic_process_queue);
++ }
++ 
++-#endif /* NO_GSSAPI */
++-
++ static bool ssh2_transport_get_specials(
++     PacketProtocolLayer *ppl, add_special_fn_t add_special, void *ctx)
++ {
++diff --git a/ssh2userauth.c b/ssh2userauth.c
++index fc4139230557..7f5a129295ab 100644
++--- a/ssh2userauth.c
+++++ b/ssh2userauth.c
++@@ -613,8 +613,10 @@ static void ssh2_userauth_process_queue(PacketProtocolLayer *ppl)
++                  * Scan it for method identifiers we know about.
++                  */
++                 bool srv_pubkey = false, srv_passwd = false;
++-                bool srv_keyb_inter = false, srv_gssapi = false;
++-                bool srv_gssapi_keyex_auth = false;
+++                bool srv_keyb_inter = false;
+++#ifndef NO_GSSAPI
+++                bool srv_gssapi = false, srv_gssapi_keyex_auth = false;
+++#endif
++ 
++                 for (ptrlen method; get_commasep_word(&methods, &method) ;) {
++                     if (ptrlen_eq_string(method, "publickey"))
++@@ -623,10 +625,12 @@ static void ssh2_userauth_process_queue(PacketProtocolLayer *ppl)
++                         srv_passwd = true;
++                     else if (ptrlen_eq_string(method, "keyboard-interactive"))
++                         srv_keyb_inter = true;
+++#ifndef NO_GSSAPI
++                     else if (ptrlen_eq_string(method, "gssapi-with-mic"))
++                         srv_gssapi = true;
++                     else if (ptrlen_eq_string(method, "gssapi-keyex"))
++                         srv_gssapi_keyex_auth = true;
+++#endif
++                 }
++ 
++                 /*
++diff --git a/sshserver.c b/sshserver.c
++index 5f6e7ddeeaec..5c34bb356757 100644
++--- a/sshserver.c
+++++ b/sshserver.c
++@@ -50,7 +50,9 @@ struct server {
++     PacketProtocolLayer *base_layer;
++     ConnectionLayer *cl;
++ 
+++#ifndef NO_GSSAPI
++     struct ssh_connection_shared_gss_state gss_state;
+++#endif
++ };
++ 
++ static void ssh_server_free_callback(void *vsrv);
++@@ -245,9 +247,11 @@ Plug *ssh_server_plug(
++     bufchain_init(&srv->out_raw);
++     bufchain_init(&srv->dummy_user_input);
++ 
+++#ifndef NO_GSSAPI
++     /* FIXME: replace with sensible */
++     srv->gss_state.libs = snew(struct ssh_gss_liblist);
++     srv->gss_state.libs->nlibraries = 0;
+++#endif
++ 
++     return &srv->plug;
++ }
++@@ -297,7 +301,9 @@ static void ssh_server_free_callback(void *vsrv)
++     conf_free(srv->conf);
++     log_free(srv->logctx);
++ 
+++#ifndef NO_GSSAPI
++     sfree(srv->gss_state.libs);        /* FIXME: replace with sensible */
+++#endif
++ 
++     sfree(srv);
++ 
++@@ -442,7 +448,12 @@ static void server_got_ssh_version(struct ssh_version_receiver *rcv,
++             srv->conf, NULL, 0, NULL,
++             ssh_verstring_get_remote(old_bpp),
++             ssh_verstring_get_local(old_bpp),
++-            &srv->gss_state, &srv->stats, transport_child_layer, true);
+++#ifndef NO_GSSAPI
+++            &srv->gss_state,
+++#else
+++            NULL,
+++#endif
+++            &srv->stats, transport_child_layer, true);
++         ssh2_transport_provide_hostkeys(
++             srv->base_layer, srv->hostkeys, srv->nhostkeys);
++         if (userauth_layer)
++-- 
++2.20.1
++
+diff --git a/package/putty/0002-unix-uxpoll-need-_XOPEN_SOURCE.patch b/package/putty/0002-unix-uxpoll-need-_XOPEN_SOURCE.patch
+new file mode 100644
+index 0000000000..fb4b6c26e5
+--- /dev/null
++++ b/package/putty/0002-unix-uxpoll-need-_XOPEN_SOURCE.patch
+@@ -0,0 +1,39 @@
++From c1b9d07d39e33e40d2ad04be176367cf48271cfd Mon Sep 17 00:00:00 2001
++From: Baruch Siach <baruch@tkos.co.il>
++Date: Tue, 26 Mar 2019 20:00:45 +0200
++Subject: [PATCH] unix/uxpoll: need _XOPEN_SOURCE
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++The code needs _XOPEN_SOURCE for some poll() flags.
++
++Fix this build failure with uClibc:
++
++./../unix/uxpoll.c: In function ‘pollwrap_add_fd_rwx’:
++./../unix/uxpoll.c:75:32: error: ‘POLLRDNORM’ undeclared (first use in this function); did you mean ‘POLLNVAL’?
++ #define SELECT_R_IN (POLLIN  | POLLRDNORM | POLLRDBAND)
++                                ^
++./../unix/uxpoll.c:87:19: note: in expansion of macro ‘SELECT_R_IN’
++         events |= SELECT_R_IN;
++                   ^~~~~~~~~~~
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: issue reported to upstream developers
++
++ unix/uxpoll.c | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/unix/uxpoll.c b/unix/uxpoll.c
++index bbc5490d125d..6fe6ac7ba0c1 100644
++--- a/unix/uxpoll.c
+++++ b/unix/uxpoll.c
++@@ -1,3 +1,4 @@
+++#define _XOPEN_SOURCE
++ #include <poll.h>
++ 
++ #include "putty.h"
++-- 
++2.20.1
++
+diff --git a/package/putty/0003-Fix-uClibc-build-issues.patch b/package/putty/0003-Fix-uClibc-build-issues.patch
+new file mode 100644
+index 0000000000..ceefded976
+--- /dev/null
++++ b/package/putty/0003-Fix-uClibc-build-issues.patch
+@@ -0,0 +1,93 @@
++From 0554cfbb926a2ba26efda08865b270af8536e0bb Mon Sep 17 00:00:00 2001
++From: Simon Tatham <anakin@pobox.com>
++Date: Tue, 26 Mar 2019 20:03:09 +0200
++Subject: [PATCH] Fix uClibc build issues
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++Fix two uClibc build failures.
++
++Missing sys/auxv.h header:
++
++./../unix/uxutils.c:5:10: fatal error: sys/auxv.h: No such file or directory
++ #include <sys/auxv.h>
++          ^~~~~~~~~~~~
++
++Missing futimes() implementation:
++
++./../unix/uxsftpserver.c: In function ‘uss_fsetstat’:
++./../unix/uxsftpserver.c:441:25: warning: implicit declaration of function ‘futimes’; did you mean ‘lutimes’? [-Wimplicit-function-declaration]
++ #define FD_PREFIX(func) f ## func
++                         ^
++./../unix/uxsftpserver.c:435:17: note: in expansion of macro ‘FD_PREFIX’
++             if (api_prefix(utimes)(api_arg, tv) < 0)                    \
++                 ^~~~~~~~~~
++./../unix/uxsftpserver.c:470:5: note: in expansion of macro ‘SETSTAT_GUTS’
++     SETSTAT_GUTS(FD_PREFIX, fd, attrs, success);
++     ^~~~~~~~~~~~
++
++unix/uxsftpserver.o: In function `uss_fsetstat':
++uxsftpserver.c:(.text+0x1058): undefined reference to `futimes'
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: patch suggested by upstream developer Simon Tatham
++
++ configure.ac        |  3 ++-
++ unix/uxsftpserver.c | 10 ++++++++++
++ unix/uxutils.c      |  3 ++-
++ 3 files changed, 14 insertions(+), 2 deletions(-)
++
++diff --git a/configure.ac b/configure.ac
++index 35552ed24dbe..1949ef62f219 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -173,8 +173,9 @@ AC_CHECK_LIB(X11, XOpenDisplay,
++              [GTK_LIBS="-lX11 $GTK_LIBS"
++               AC_DEFINE([HAVE_LIBX11],[],[Define if libX11.a is available])])
++ 
++-AC_CHECK_FUNCS([getaddrinfo posix_openpt ptsname setresuid strsignal updwtmpx fstatat dirfd])
+++AC_CHECK_FUNCS([getaddrinfo posix_openpt ptsname setresuid strsignal updwtmpx fstatat dirfd futimes])
++ AC_CHECK_DECLS([CLOCK_MONOTONIC], [], [], [[#include <time.h>]])
+++AC_CHECK_HEADERS([sys/auxv.h asm/hwcap.h])
++ AC_SEARCH_LIBS([clock_gettime], [rt], [AC_DEFINE([HAVE_CLOCK_GETTIME],[],[Define if clock_gettime() is available])])
++ 
++ AC_CACHE_CHECK([for SO_PEERCRED and dependencies], [x_cv_linux_so_peercred], [
++diff --git a/unix/uxsftpserver.c b/unix/uxsftpserver.c
++index 6fab0ba090d6..a90344e04219 100644
++--- a/unix/uxsftpserver.c
+++++ b/unix/uxsftpserver.c
++@@ -412,6 +412,16 @@ static void uss_fstat(SftpServer *srv, SftpReplyBuilder *reply,
++     }
++ }
++ 
+++#if !HAVE_FUTIMES
+++static inline int futimes(int fd, const struct timeval tv[2])
+++{
+++    /* If the OS doesn't support futimes(3) then we have to pretend it
+++     * always returns failure */
+++    errno = EINVAL;
+++    return -1;
+++}
+++#endif
+++
++ /*
++  * The guts of setstat and fsetstat, macroised so that they can call
++  * fchown(fd,...) or chown(path,...) depending on parameters.
++diff --git a/unix/uxutils.c b/unix/uxutils.c
++index fcbcc4d422c1..f01bc2c14a2d 100644
++--- a/unix/uxutils.c
+++++ b/unix/uxutils.c
++@@ -1,6 +1,7 @@
++ #include "ssh.h"
++ 
++-#if defined __linux__ && (defined __arm__ || defined __aarch64__)
+++#if defined __linux__ && (defined __arm__ || defined __aarch64__) && \
+++    HAVE_SYS_AUXV_H && HAVE_ASM_HWCAP_H
++ 
++ #include <sys/auxv.h>
++ #include <asm/hwcap.h>
++-- 
++2.20.1
++
+diff --git a/package/putty/putty.hash b/package/putty/putty.hash
+index e0527105c1..30f51848f8 100644
+--- a/package/putty/putty.hash
++++ b/package/putty/putty.hash
+@@ -1,3 +1,6 @@
+-# Hashes from: http://the.earth.li/~sgtatham/putty/0.70/{sha256,sha512}sums
+-sha256 bb8aa49d6e96c5a8e18a057f3150a1695ed99a24eef699e783651d1f24e7b0be                                                                 putty-0.70.tar.gz
+-sha512 2aaf4fa2b4ad2d82eb5cdc4419ade79e0c5d8bd3c093db92b3c048e6107f85a5f1647f9d8203cda0906ce2b926725a75319f981cb32e6f1ebf50b1f738564fed putty-0.70.tar.gz
++# Hashes from: http://the.earth.li/~sgtatham/putty/0.71/{sha256,sha512}sums
++sha256 2f931ce2f89780cc8ca7bbed90fcd22c44515d2773f5fa954069e209b48ec6b8                                                                 putty-0.71.tar.gz
++sha512 f8791210bd5925b26d51b13f0558eea15dbac40808051165b236d6436226f5c2b0aa7d69288ed9e2bddc1066455678cfd0af73ef6b715a136c42f3b6f754ac07 putty-0.71.tar.gz
++
++# Locally calculated
++sha256 b517b4a9504ba0f651d5e590245197b88d9a81d073905cc798cc9464c5ca7ba8  LICENCE
+diff --git a/package/putty/putty.mk b/package/putty/putty.mk
+index 52f2d4c3dd..68622a5743 100644
+--- a/package/putty/putty.mk
++++ b/package/putty/putty.mk
+@@ -4,13 +4,14 @@
+ #
+ ################################################################################
+ 
+-PUTTY_VERSION = 0.70
++PUTTY_VERSION = 0.71
+ PUTTY_SITE = http://the.earth.li/~sgtatham/putty/$(PUTTY_VERSION)
+-PUTTY_SUBDIR = unix
+ PUTTY_LICENSE = MIT
+ PUTTY_LICENSE_FILES = LICENCE
+ PUTTY_CONF_OPTS = --disable-gtktest
+ PUTTY_CONF_ENV = CFLAGS="$(TARGET_CFLAGS) -Wno-error"
++# Patching configure.ac
++PUTTY_AUTORECONF = YES
+ 
+ ifeq ($(BR2_PACKAGE_LIBGTK2),y)
+ PUTTY_CONF_OPTS += --with-gtk=2
+diff --git a/package/qt5/qt5webkit/Config.in b/package/qt5/qt5webkit/Config.in
+index 72c641b9f7..e8008f7bab 100644
+--- a/package/qt5/qt5webkit/Config.in
++++ b/package/qt5/qt5webkit/Config.in
+@@ -3,10 +3,13 @@ config BR2_PACKAGE_QT5WEBKIT
+ 	depends on !BR2_STATIC_LIBS
+ 	depends on BR2_PACKAGE_QT5_JSCORE_AVAILABLE
+ 	depends on BR2_HOST_GCC_AT_LEAST_4_8 # icu
++	depends on BR2_INSTALL_LIBSTDCPP # leveldb
+ 	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_4_8 # icu
++	depends on BR2_TOOLCHAIN_HAS_THREADS # leveldb
+ 	depends on !BR2_BINFMT_FLAT # icu
+ 	# assumes a FPU is available on MIPS
+ 	depends on !BR2_MIPS_SOFT_FLOAT
++	select BR2_PACKAGE_LEVELDB
+ 	select BR2_PACKAGE_QT5BASE
+ 	select BR2_PACKAGE_QT5BASE_ICU
+ 	select BR2_PACKAGE_QT5BASE_GUI
+diff --git a/package/qt5/qt5webkit/qt5webkit.mk b/package/qt5/qt5webkit/qt5webkit.mk
+index 5186671663..ef992afa53 100644
+--- a/package/qt5/qt5webkit/qt5webkit.mk
++++ b/package/qt5/qt5webkit/qt5webkit.mk
+@@ -16,7 +16,7 @@ endif
+ QT5WEBKIT_SOURCE = qtwebkit-opensource-src-$(QT5WEBKIT_VERSION).tar.xz
+ QT5WEBKIT_DEPENDENCIES = \
+ 	host-bison host-flex host-gperf host-python host-ruby \
+-	qt5base sqlite
++	leveldb qt5base sqlite
+ QT5WEBKIT_INSTALL_STAGING = YES
+ 
+ QT5WEBKIT_LICENSE_FILES = Source/WebCore/LICENSE-LGPL-2 Source/WebCore/LICENSE-LGPL-2.1
+@@ -44,6 +44,8 @@ define QT5WEBKIT_PYTHON2_SYMLINK
+ endef
+ QT5WEBKIT_PRE_CONFIGURE_HOOKS += QT5WEBKIT_PYTHON2_SYMLINK
+ 
++QT5WEBKIT_QMAKEFLAGS += WEBKIT_CONFIG+=use_system_leveldb
++
+ # The mesa's EGL/eglplatform.h header includes X11 headers unless the flag
+ # MESA_EGL_NO_X11_HEADERS is defined. Tell to not include X11 headers if
+ # the libxcb is not selected.
+diff --git a/package/rdesktop/rdesktop.hash b/package/rdesktop/rdesktop.hash
+index cc1f55b771..a43fab76fa 100644
+--- a/package/rdesktop/rdesktop.hash
++++ b/package/rdesktop/rdesktop.hash
+@@ -1,3 +1,3 @@
+-# From http://sourceforge.net/projects/rdesktop/files/rdesktop/1.8.3/
+-md5	86e8b368a7c715e74ded92e0d7912dc5	rdesktop-1.8.3.tar.gz
+-sha1	aa1e56043782e04a0121357b24874e3ad6ae7b1d	rdesktop-1.8.3.tar.gz
++# Locally calculated
++sha256	516f04df92f16eba04c96bbf9aeb05b9da686689c2bb5c107e0941583e09f933	rdesktop-1.8.4.tar.gz
++sha256	fc82ca8b6fdb18d4e3e85cfd8ab58d1bcd3f1b29abe782895abd91d64763f8e7	COPYING
+diff --git a/package/rdesktop/rdesktop.mk b/package/rdesktop/rdesktop.mk
+index da8a80ef92..d97422cf13 100644
+--- a/package/rdesktop/rdesktop.mk
++++ b/package/rdesktop/rdesktop.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-RDESKTOP_VERSION = 1.8.3
+-RDESKTOP_SITE = http://downloads.sourceforge.net/project/rdesktop/rdesktop/$(RDESKTOP_VERSION)
++RDESKTOP_VERSION = 1.8.4
++RDESKTOP_SITE = $(call github,rdesktop,rdesktop,v$(RDESKTOP_VERSION))
+ RDESKTOP_DEPENDENCIES = host-pkgconf openssl xlib_libX11 xlib_libXt \
+ 	$(if $(BR2_PACKAGE_ALSA_LIB_PCM),alsa-lib) \
+ 	$(if $(BR2_PACKAGE_LIBAO),libao) \
+@@ -13,6 +13,8 @@ RDESKTOP_DEPENDENCIES = host-pkgconf openssl xlib_libX11 xlib_libXt \
+ RDESKTOP_CONF_OPTS = --with-openssl=$(STAGING_DIR)/usr --disable-credssp
+ RDESKTOP_LICENSE = GPL-3.0+
+ RDESKTOP_LICENSE_FILES = COPYING
++# From git
++RDESKTOP_AUTORECONF = YES
+ 
+ ifeq ($(BR2_PACKAGE_PCSC_LITE),y)
+ RDESKTOP_DEPENDENCIES += pcsc-lite
+diff --git a/package/systemd/systemd.mk b/package/systemd/systemd.mk
+index 4dea7d340d..d636fb5536 100644
+--- a/package/systemd/systemd.mk
++++ b/package/systemd/systemd.mk
+@@ -366,19 +366,26 @@ endef
+ 
+ ifneq ($(call qstrip,$(BR2_TARGET_GENERIC_GETTY_PORT)),)
+ # systemd needs getty.service for VTs and serial-getty.service for serial ttys
++# note that console-getty.service should be used on /dev/console as it should not have dependencies
+ # also patch the file to use the correct baud-rate, the default baudrate is 115200 so look for that
+ define SYSTEMD_INSTALL_SERVICE_TTY
+-	if echo $(BR2_TARGET_GENERIC_GETTY_PORT) | egrep -q 'tty[0-9]*$$'; \
++	if [ $(BR2_TARGET_GENERIC_GETTY_PORT) = "console" ]; \
+ 	then \
+-		SERVICE="getty"; \
++		TARGET="console-getty.service"; \
++		LINK_NAME="console-getty.service"; \
++	elif echo $(BR2_TARGET_GENERIC_GETTY_PORT) | egrep -q 'tty[0-9]*$$'; \
++	then \
++		TARGET="getty@.service"; \
++		LINK_NAME="getty@$(call qstrip,$(BR2_TARGET_GENERIC_GETTY_PORT)).service"; \
+ 	else \
+-		SERVICE="serial-getty"; \
++		TARGET="serial-getty@.service"; \
++		LINK_NAME="serial-getty@$(call qstrip,$(BR2_TARGET_GENERIC_GETTY_PORT)).service"; \
+ 	fi; \
+-	ln -fs ../../../../lib/systemd/system/$${SERVICE}@.service \
+-		$(TARGET_DIR)/etc/systemd/system/getty.target.wants/$${SERVICE}@$(BR2_TARGET_GENERIC_GETTY_PORT).service; \
++	ln -fs ../../../../lib/systemd/system/$${TARGET} \
++		$(TARGET_DIR)/etc/systemd/system/getty.target.wants/$${LINK_NAME}; \
+ 	if [ $(call qstrip,$(BR2_TARGET_GENERIC_GETTY_BAUDRATE)) -gt 0 ] ; \
+ 	then \
+-		$(SED) 's,115200,$(BR2_TARGET_GENERIC_GETTY_BAUDRATE),' $(TARGET_DIR)/lib/systemd/system/$${SERVICE}@.service; \
++		$(SED) 's,115200,$(BR2_TARGET_GENERIC_GETTY_BAUDRATE),' $(TARGET_DIR)/lib/systemd/system/$${TARGET}; \
+ 	fi
+ endef
+ endif
+diff --git a/package/vsftpd/0004-Prevent-hang-in-SIGCHLD-handler.patch b/package/vsftpd/0004-Prevent-hang-in-SIGCHLD-handler.patch
+new file mode 100644
+index 0000000000..0732c5f632
+--- /dev/null
++++ b/package/vsftpd/0004-Prevent-hang-in-SIGCHLD-handler.patch
+@@ -0,0 +1,87 @@
++From 1e65a0a15f819b8bf1b551bd84f71d0da1f5a00c Mon Sep 17 00:00:00 2001
++From: Martin Sehnoutka <msehnout@redhat.com>
++Date: Thu, 17 Nov 2016 13:02:27 +0100
++Subject: [PATCH] Prevent hanging in SIGCHLD handler.
++
++vsftpd can now handle pam_exec.so in pam.d config without hanging
++in SIGCHLD handler.
++
++[Abdelmalek:
++Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1198259
++Fetched from:
++https://src.fedoraproject.org/cgit/rpms/vsftpd.git/plain/0026-Prevent-hanging-in-SIGCHLD-handler.patch]
++Signed-off-by: Abdelmalek Benelouezzane <abdelmalek.benelouezzane@savoirfairelinux.com>
++---
++ sysutil.c    |  4 ++--
++ sysutil.h    |  2 +-
++ twoprocess.c | 13 +++++++++++--
++ 3 files changed, 14 insertions(+), 5 deletions(-)
++
++diff --git a/sysutil.c b/sysutil.c
++index 6d7cb3f..099748f 100644
++--- a/sysutil.c
+++++ b/sysutil.c
++@@ -608,13 +608,13 @@ vsf_sysutil_exit(int exit_code)
++ }
++ 
++ struct vsf_sysutil_wait_retval
++-vsf_sysutil_wait(void)
+++vsf_sysutil_wait(int hang)
++ {
++   struct vsf_sysutil_wait_retval retval;
++   vsf_sysutil_memclr(&retval, sizeof(retval));
++   while (1)
++   {
++-    int sys_ret = wait(&retval.exit_status);
+++    int sys_ret = waitpid(-1, &retval.exit_status, hang ? 0 : WNOHANG);
++     if (sys_ret < 0 && errno == EINTR)
++     {
++       vsf_sysutil_check_pending_actions(kVSFSysUtilUnknown, 0, 0);
++diff --git a/sysutil.h b/sysutil.h
++index c145bdf..13153cd 100644
++--- a/sysutil.h
+++++ b/sysutil.h
++@@ -177,7 +177,7 @@ struct vsf_sysutil_wait_retval
++   int PRIVATE_HANDS_OFF_syscall_retval;
++   int PRIVATE_HANDS_OFF_exit_status;
++ };
++-struct vsf_sysutil_wait_retval vsf_sysutil_wait(void);
+++struct vsf_sysutil_wait_retval vsf_sysutil_wait(int hang);
++ int vsf_sysutil_wait_reap_one(void);
++ int vsf_sysutil_wait_get_retval(
++   const struct vsf_sysutil_wait_retval* p_waitret);
++diff --git a/twoprocess.c b/twoprocess.c
++index 33d84dc..b1891e7 100644
++--- a/twoprocess.c
+++++ b/twoprocess.c
++@@ -47,8 +47,17 @@ static void
++ handle_sigchld(void* duff)
++ {
++ 
++-  struct vsf_sysutil_wait_retval wait_retval = vsf_sysutil_wait();
+++  struct vsf_sysutil_wait_retval wait_retval = vsf_sysutil_wait(0);
++   (void) duff;
+++  if (!vsf_sysutil_wait_get_exitcode(&wait_retval) &&
+++      !vsf_sysutil_wait_get_retval(&wait_retval))
+++    /* There was nobody to wait for, possibly caused by underlying library
+++     * which created a new process through fork()/vfork() and already picked
+++     * it up, e.g. by pam_exec.so or integrity check routines for libraries
+++     * when FIPS mode is on (nss freebl), which can lead to calling prelink
+++     * if the prelink package is installed.
+++     */
+++    return;
++   /* Child died, so we'll do the same! Report it as an error unless the child
++    * exited normally with zero exit code
++    */
++@@ -390,7 +399,7 @@ common_do_login(struct vsf_session* p_sess, const struct mystr* p_user_str,
++   priv_sock_send_result(p_sess->parent_fd, PRIV_SOCK_RESULT_OK);
++   if (!p_sess->control_use_ssl)
++   {
++-    (void) vsf_sysutil_wait();
+++    (void) vsf_sysutil_wait(1);
++   }
++   else
++   {
++-- 
++2.14.4
++
+diff --git a/package/wireshark/0001-packet-gtp-c-remove-unneeded-named-structures.patch b/package/wireshark/0001-packet-gtp-c-remove-unneeded-named-structures.patch
+new file mode 100644
+index 0000000000..0a894a282e
+--- /dev/null
++++ b/package/wireshark/0001-packet-gtp-c-remove-unneeded-named-structures.patch
+@@ -0,0 +1,75 @@
++From 020e25b660250c97c8085e64cf85074ccfcdd06b Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Tue, 5 Mar 2019 20:59:49 +0100
++Subject: [PATCH] packet-gtp.c: remove unneeded named structures
++
++In uclibc, _header is already in sigcontext.h:
++
++packet-gtp.c:2361:16: error: redefinition of 'struct _header'
++ typedef struct _header {
++                ^~~~~~~
++In file included from /home/dawncrow/buildroot-test/scripts/instance-0/output/host/i686-buildroot-linux-uclibc/sysroot/usr/include/bits/sigcontext.h:30:0,
++                 from /home/dawncrow/buildroot-test/scripts/instance-0/output/host/i686-buildroot-linux-uclibc/sysroot/usr/include/signal.h:311,
++                 from /home/dawncrow/buildroot-test/scripts/instance-0/output/host/i686-buildroot-linux-uclibc/sysroot/usr/include/glib-2.0/glib/gbacktrace.h:36,
++                 from /home/dawncrow/buildroot-test/scripts/instance-0/output/host/i686-buildroot-linux-uclibc/sysroot/usr/include/glib-2.0/glib.h:34,
++                 from ../../epan/proto.h:28,
++                 from ../../epan/packet.h:14,
++                 from packet-gtp.c:43:
++/home/dawncrow/buildroot-test/scripts/instance-0/output/host/i686-buildroot-linux-uclibc/sysroot/usr/include/asm/sigcontext.h:173:8: note: originally defined here
++ struct _header {
++
++To fix this issue, transform _header and other named structures (with
++the exception of gtp_conv_info_t) into unnamed structures
++
++Fixes:
++ - http://autobuild.buildroot.org/results/c41d42fe3489bc63c42e7ce7a9eccb1b4ca7b9b2
++
++Change-Id: I78116233c2a8dd7c54723b7cb558254bd5143bd2
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Reviewed-on: https://code.wireshark.org/review/32335
++Petri-Dish: Guy Harris <guy@alum.mit.edu>
++Tested-by: Petri Dish Buildbot
++Reviewed-by: Guy Harris <guy@alum.mit.edu>
++[Retrieved from:
++https://github.com/wireshark/wireshark/commit/020e25b660250c97c8085e64cf85074ccfcdd06b]
++---
++ epan/dissectors/packet-gtp.c | 8 ++++----
++ 1 file changed, 4 insertions(+), 4 deletions(-)
++
++diff --git a/epan/dissectors/packet-gtp.c b/epan/dissectors/packet-gtp.c
++index 4c40e7aa54..971197e4ae 100644
++--- a/epan/dissectors/packet-gtp.c
+++++ b/epan/dissectors/packet-gtp.c
++@@ -2170,7 +2170,7 @@ GHashTable* session_table;
++ /* Relation between <teid,ip> -> frame */
++ wmem_tree_t* frame_tree;
++ 
++-typedef struct gtp_info {
+++typedef struct {
++     guint32 teid;
++     guint32 frame;
++ } gtp_info_t;
++@@ -2482,7 +2482,7 @@ static int decode_gtp_node_addr(tvbuff_t * tvb, int offset, packet_info * pinfo,
++ static int decode_gtp_priv_ext(tvbuff_t * tvb, int offset, packet_info * pinfo, proto_tree * tree, session_args_t * args _U_);
++ static int decode_gtp_unknown(tvbuff_t * tvb, int offset, packet_info * pinfo, proto_tree * tree, session_args_t * args _U_);
++ 
++-typedef struct _gtp_opt {
+++typedef struct {
++     int optcode;
++     int (*decode) (tvbuff_t *, int, packet_info *, proto_tree *, session_args_t *);
++ } gtp_opt_t;
++@@ -2661,12 +2661,12 @@ id_to_str(tvbuff_t *tvb, gint offset)
++ /* Next definitions and function check_field_presence checks if given field
++  * in GTP packet is compliant with ETSI
++  */
++-typedef struct _header {
+++typedef struct {
++     guint8 code;
++     guint8 presence;
++ } ext_header;
++ 
++-typedef struct _message {
+++typedef struct {
++     guint8 code;
++     ext_header fields[32];
++ } _gtp_mess_items;
+diff --git a/package/wireshark/wireshark.hash b/package/wireshark/wireshark.hash
+index bad0a0fd45..071940e1c1 100644
+--- a/package/wireshark/wireshark.hash
++++ b/package/wireshark/wireshark.hash
+@@ -1,4 +1,4 @@
+-# From: https://www.wireshark.org/download/src/all-versions/SIGNATURES-2.6.6.txt
+-sha256 487933ea075bdbb25d8df06017d9c4f49fc20eb7f6ec80af086718ed5550e863  wireshark-2.6.6.tar.xz
++# From: https://www.wireshark.org/download/src/all-versions/SIGNATURES-2.6.7.txt
++sha256 747b3e7a37414942959f76f198be49dcbcca936bda538c4408942ce71bfd2b71  wireshark-2.6.7.tar.xz
+ # Locally calculated
+ sha256 7cdbed2b697efaa45576a033f1ac0e73cd045644a91c79bbf41d4a7d81dac7bf  COPYING
+diff --git a/package/wireshark/wireshark.mk b/package/wireshark/wireshark.mk
+index 3b77deabb0..1e2b46ca98 100644
+--- a/package/wireshark/wireshark.mk
++++ b/package/wireshark/wireshark.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WIRESHARK_VERSION = 2.6.6
++WIRESHARK_VERSION = 2.6.7
+ WIRESHARK_SOURCE = wireshark-$(WIRESHARK_VERSION).tar.xz
+ WIRESHARK_SITE = https://www.wireshark.org/download/src/all-versions
+ WIRESHARK_LICENSE = wireshark license
+diff --git a/package/x11r7/xapp_xdm/xapp_xdm.hash b/package/x11r7/xapp_xdm/xapp_xdm.hash
+index 207d769fbf..605be9debc 100644
+--- a/package/x11r7/xapp_xdm/xapp_xdm.hash
++++ b/package/x11r7/xapp_xdm/xapp_xdm.hash
+@@ -1,2 +1,7 @@
+-# From http://lists.x.org/archives/xorg-announce/2011-September/001737.html
+-sha256	d4da426ddea0124279a3f2e00a26db61944690628ee818a64df9d27352081c47	xdm-1.1.11.tar.bz2
++# From https://lists.x.org/archives/xorg-announce/2019-March/002959.html
++md5 47c4c3bf8d59b64b64d134df8b5e5ec5  xdm-1.1.12.tar.bz2
++sha1 5cc5590e40837949b1a63cb030878f8ceebd4d85  xdm-1.1.12.tar.bz2
++sha256 0dd283f72dda098d09e2925b9278c95e21551e693a5802ab442d1b577d8327f4  xdm-1.1.12.tar.bz2
++sha512 1a4be0a070ced5db8fda6fc74794c9f9ed0cb37fa440fda6a3a7652aff62dfc3d7ba68b9facf054671ebf0f4db2a0eec29d0aa3716e3407ccd5529bac3553bdb  xdm-1.1.12.tar.bz2
++# Locally computed
++sha256 b33b4bebbd6511b3e15315e8e29d67f25334ee45da8b7da6e6e97c53a70c6923  COPYING
+diff --git a/package/x11r7/xapp_xdm/xapp_xdm.mk b/package/x11r7/xapp_xdm/xapp_xdm.mk
+index 8f846a82aa..f415c7d687 100644
+--- a/package/x11r7/xapp_xdm/xapp_xdm.mk
++++ b/package/x11r7/xapp_xdm/xapp_xdm.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-XAPP_XDM_VERSION = 1.1.11
++XAPP_XDM_VERSION = 1.1.12
+ XAPP_XDM_SOURCE = xdm-$(XAPP_XDM_VERSION).tar.bz2
+ XAPP_XDM_SITE = http://xorg.freedesktop.org/releases/individual/app
+ XAPP_XDM_LICENSE = MIT
+diff --git a/package/x11r7/xlib_libXdmcp/xlib_libXdmcp.hash b/package/x11r7/xlib_libXdmcp/xlib_libXdmcp.hash
+index 6b50cb1c79..0dbea635f2 100644
+--- a/package/x11r7/xlib_libXdmcp/xlib_libXdmcp.hash
++++ b/package/x11r7/xlib_libXdmcp/xlib_libXdmcp.hash
+@@ -1,2 +1,7 @@
+-# From http://lists.x.org/archives/xorg-announce/2015-March/002554.html
+-sha256	81fe09867918fff258296e1e1e159f0dc639cb30d201c53519f25ab73af4e4e2	libXdmcp-1.1.2.tar.bz2
++# From https://lists.x.org/archives/xorg-announce/2019-March/002974.html
++md5 115c5c12ecce0e749cd91d999a5fd160  libXdmcp-1.1.3.tar.bz2
++sha1 0a8f8a274f829331efb1e8e2027c38631b204dd0  libXdmcp-1.1.3.tar.bz2
++sha256 20523b44aaa513e17c009e873ad7bbc301507a3224c232610ce2e099011c6529  libXdmcp-1.1.3.tar.bz2
++sha512 cb1d4650f97d66e73acd2465ec7d757b9b797cce2f85e301860a44997a461837eea845ec9bd5b639ec5ca34c804f8bdd870697a5ce3f4e270b687c9ef74f25ec  libXdmcp-1.1.3.tar.bz2
++# Locally computed
++sha256 8a3c3f35b0dbcb60a4e242b9e4394a352a65bb27deb2938ea1e2e62a626e16e9  COPYING
+diff --git a/package/x11r7/xlib_libXdmcp/xlib_libXdmcp.mk b/package/x11r7/xlib_libXdmcp/xlib_libXdmcp.mk
+index ec1b861b92..7e6ed05d5e 100644
+--- a/package/x11r7/xlib_libXdmcp/xlib_libXdmcp.mk
++++ b/package/x11r7/xlib_libXdmcp/xlib_libXdmcp.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-XLIB_LIBXDMCP_VERSION = 1.1.2
++XLIB_LIBXDMCP_VERSION = 1.1.3
+ XLIB_LIBXDMCP_SOURCE = libXdmcp-$(XLIB_LIBXDMCP_VERSION).tar.bz2
+ XLIB_LIBXDMCP_SITE = http://xorg.freedesktop.org/releases/individual/lib
+ XLIB_LIBXDMCP_LICENSE = MIT

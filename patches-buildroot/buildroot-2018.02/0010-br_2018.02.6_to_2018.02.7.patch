@@ -1,0 +1,3651 @@
+diff --git a/CHANGES b/CHANGES
+index cdf682164f..0c073bdf20 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,30 @@
++2018.02.7, Released October 25th, 2018
++
++	Important / security related fixes.
++
++	Detect and reject build paths containing '@', as this confuses
++	a number of packages, including GCC.
++
++	utils/get-developers: Add -e option for use with git
++	send-email.
++
++	utils/diffconfig: Make it work for (non-Buildroot) config
++	files not using the BR2_ prefix.
++
++	u-boot: Fix for environment image handling on big endian
++	systems.
++
++	Updated/fixed packages: binutils, ca-certificates,
++	cups-filters, erlang, libarchive, libcurl, libssh, live555,
++	ljlinenoise, file, freetype, gcc, git, gvfs, leveldb, mariadb,
++	mongoose, netsnmp, nmap, nodejs, ntp, open-plc-utils, poco,
++	psmisc, qptpd2, python-enum34, qemu, qt, qt5base, spice,
++	spice-protocols, setools, tinc, ustr, wireshark
++
++	Issues resolved (http://bugs.uclibc.org):
++
++	#11396: uboot environment image checksum invalid if target is big endian
++
+ 2018.02.6, Released October 7th, 2018
+ 
+ 	Important / security related fixes.
+diff --git a/Config.in b/Config.in
+index 52fb53bc6a..584a1f087f 100644
+--- a/Config.in
++++ b/Config.in
+@@ -67,6 +67,9 @@ config BR2_HOST_GCC_AT_LEAST_8
+ 	default y if BR2_HOST_GCC_VERSION = "8"
+ 	select BR2_HOST_GCC_AT_LEAST_7
+ 
++# When adding new entries above, be sure to update
++# the HOSTCC_MAX_VERSION variable in the Makefile.
++
+ # Hidden boolean selected by packages in need of Java in order to build
+ # (example: kodi)
+ config BR2_NEEDS_HOST_JAVA
+diff --git a/Makefile b/Makefile
+index 36614a8c35..9fb131fe86 100644
+--- a/Makefile
++++ b/Makefile
+@@ -60,6 +60,11 @@ override O := $(patsubst %/,%,$(patsubst %.,%,$(O)))
+ # avoid empty CANONICAL_O in case on non-existing entry.
+ CANONICAL_O := $(shell mkdir -p $(O) >/dev/null 2>&1)$(realpath $(O))
+ 
++# gcc fails to build when the srcdir contains a '@'
++ifneq ($(findstring @,$(CANONICAL_O)),)
++$(error The build directory can not contain a '@')
++endif
++
+ CANONICAL_CURDIR = $(realpath $(CURDIR))
+ 
+ REQ_UMASK = 0022
+@@ -87,9 +92,9 @@ all:
+ .PHONY: all
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2018.02.6
++export BR2_VERSION := 2018.02.7
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1538896000
++BR2_VERSION_EPOCH = 1540493000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+@@ -355,8 +360,14 @@ export HOSTARCH := $(shell LC_ALL=C $(HOSTCC_NOCCACHE) -v 2>&1 | \
+ 	    -e 's/macppc/powerpc/' \
+ 	    -e 's/sh.*/sh/' )
+ 
+-HOSTCC_VERSION := $(shell $(HOSTCC_NOCCACHE) --version | \
+-	sed -n -r 's/^.* ([0-9]*)\.([0-9]*)\.([0-9]*)[ ]*.*/\1 \2/p')
++# When adding a new host gcc version in Config.in,
++# update the HOSTCC_MAX_VERSION variable:
++HOSTCC_MAX_VERSION := 8
++
++HOSTCC_VERSION := $(shell V=$$($(HOSTCC_NOCCACHE) --version | \
++	sed -n -r 's/^.* ([0-9]*)\.([0-9]*)\.([0-9]*)[ ]*.*/\1 \2/p'); \
++	[ "$${V%% *}" -le $(HOSTCC_MAX_VERSION) ] || V=$(HOSTCC_MAX_VERSION); \
++	printf "%s" "$${V}")
+ 
+ # For gcc >= 5.x, we only need the major version.
+ ifneq ($(firstword $(HOSTCC_VERSION)),4)
+diff --git a/boot/uboot/uboot.mk b/boot/uboot/uboot.mk
+index 27946d99fe..14fe3702ba 100644
+--- a/boot/uboot/uboot.mk
++++ b/boot/uboot/uboot.mk
+@@ -262,7 +262,7 @@ define UBOOT_GENERATE_ENV_IMAGE
+ 		>$(@D)/buildroot-env.txt
+ 	$(HOST_DIR)/bin/mkenvimage -s $(BR2_TARGET_UBOOT_ENVIMAGE_SIZE) \
+ 		$(if $(BR2_TARGET_UBOOT_ENVIMAGE_REDUNDANT),-r) \
+-		$(if $(filter BIG,$(BR2_ENDIAN)),-b) \
++		$(if $(filter "BIG",$(BR2_ENDIAN)),-b) \
+ 		-o $(BINARIES_DIR)/uboot-env.bin \
+ 		$(@D)/buildroot-env.txt
+ endef
+diff --git a/package/binutils/2.27/0100-elf32-arm-no-data-fix.patch b/package/binutils/2.27/0100-elf32-arm-no-data-fix.patch
+deleted file mode 100644
+index c6b0e7efe8..0000000000
+--- a/package/binutils/2.27/0100-elf32-arm-no-data-fix.patch
++++ /dev/null
+@@ -1,22 +0,0 @@
+-bfd/ChangeLog
+-2016-08-23  Nick Clifton  <address@hidden>
+-
+-        * elf32-arm.c (elf32_arm_count_additional_relocs): Return zero if
+-        there is no arm data associated with the section.
+-
+-[Thomas: taken from https://lists.gnu.org/archive/html/bug-binutils/2016-08/msg00165.html.]
+-Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+-
+-diff --git a/bfd/elf32-arm.c b/bfd/elf32-arm.c
+-index 1eba21b..4478238 100644
+---- a/bfd/elf32-arm.c
+-+++ b/bfd/elf32-arm.c
+-@@ -18688,7 +18688,7 @@ elf32_arm_count_additional_relocs (asection *sec)
+- {
+-   struct _arm_elf_section_data *arm_data;
+-   arm_data = get_arm_elf_section_data (sec);
+--  return arm_data->additional_reloc_count;
+-+  return arm_data == NULL ? 0 : arm_data->additional_reloc_count;
+- }
+- 
+- /* Called to set the sh_flags, sh_link and sh_info fields of OSECTION which
+diff --git a/package/binutils/2.27/0120-sh-conf.patch b/package/binutils/2.27/0120-sh-conf.patch
+deleted file mode 100644
+index cc14ef4029..0000000000
+--- a/package/binutils/2.27/0120-sh-conf.patch
++++ /dev/null
+@@ -1,46 +0,0 @@
+-From 1ceee199e9a32034c6def7700fdbb26335ca76a3 Mon Sep 17 00:00:00 2001
+-From: Romain Naour <romain.naour@gmail.com>
+-Date: Fri, 25 Dec 2015 11:38:13 +0100
+-Subject: [PATCH] sh-conf
+-
+-Likewise, binutils has no idea about any of these new targets either, so we
+-fix that up too.. now we're able to actually build a real toolchain for
+-sh2a_nofpu- and other more ineptly named toolchains (and yes, there are more
+-inept targets than that one, really. Go look, I promise).
+-
+-[Romain: rebase on top of 2.26]
+-Signed-off-by: Romain Naour <romain.naour@gmail.com>
+----
+- configure    | 2 +-
+- configure.ac | 2 +-
+- 2 files changed, 2 insertions(+), 2 deletions(-)
+-
+-diff --git a/configure b/configure
+-index 34b66f7..905bc7b 100755
+---- a/configure
+-+++ b/configure
+-@@ -3939,7 +3939,7 @@ case "${target}" in
+-   or1k*-*-*)
+-     noconfigdirs="$noconfigdirs gdb"
+-     ;;
+--  sh-*-* | sh64-*-*)
+-+  sh*-*-* | sh64-*-*)
+-     case "${target}" in
+-       sh*-*-elf)
+-          ;;
+-diff --git a/configure.ac b/configure.ac
+-index 4977d97..1e69ee2 100644
+---- a/configure.ac
+-+++ b/configure.ac
+-@@ -1276,7 +1276,7 @@ case "${target}" in
+-   or1k*-*-*)
+-     noconfigdirs="$noconfigdirs gdb"
+-     ;;
+--  sh-*-* | sh64-*-*)
+-+  sh*-*-* | sh64-*-*)
+-     case "${target}" in
+-       sh*-*-elf)
+-          ;;
+--- 
+-2.4.3
+-
+diff --git a/package/binutils/2.27/0130-tc-xtensa.c-fixup-xg_reverse_shift_count-typo.patch b/package/binutils/2.27/0130-tc-xtensa.c-fixup-xg_reverse_shift_count-typo.patch
+deleted file mode 100644
+index 7973607884..0000000000
+--- a/package/binutils/2.27/0130-tc-xtensa.c-fixup-xg_reverse_shift_count-typo.patch
++++ /dev/null
+@@ -1,33 +0,0 @@
+-From 78fb7e37eb8bb08ae537d6c487996ff17c810332 Mon Sep 17 00:00:00 2001
+-From: Trevor Saunders <tbsaunde+binutils@tbsaunde.org>
+-Date: Mon, 26 Sep 2016 12:42:11 -0400
+-Subject: [PATCH] tc-xtensa.c: fixup xg_reverse_shift_count typo
+-
+-gas/ChangeLog:
+-
+-2016-09-26  Trevor Saunders  <tbsaunde+binutils@tbsaunde.org>
+-
+-	* config/tc-xtensa.c (xg_reverse_shift_count): Pass cnt_arg instead of
+-	cnt_argp to concat.
+-
+-Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
+----
+- gas/config/tc-xtensa.c | 2 +-
+- 1 file changed, 1 insertion(+), 1 deletion(-)
+-
+-diff --git a/gas/config/tc-xtensa.c b/gas/config/tc-xtensa.c
+-index d062044..ca261ae 100644
+---- a/gas/config/tc-xtensa.c
+-+++ b/gas/config/tc-xtensa.c
+-@@ -2228,7 +2228,7 @@ xg_reverse_shift_count (char **cnt_argp)
+-   cnt_arg = *cnt_argp;
+- 
+-   /* replace the argument with "31-(argument)" */
+--  new_arg = concat ("31-(", cnt_argp, ")", (char *) NULL);
+-+  new_arg = concat ("31-(", cnt_arg, ")", (char *) NULL);
+- 
+-   free (cnt_arg);
+-   *cnt_argp = new_arg;
+--- 
+-2.1.4
+-
+diff --git a/package/binutils/2.27/0131-xtensa-fix-memory-corruption-by-broken-sysregs.patch b/package/binutils/2.27/0131-xtensa-fix-memory-corruption-by-broken-sysregs.patch
+deleted file mode 100644
+index 30103ee05e..0000000000
+--- a/package/binutils/2.27/0131-xtensa-fix-memory-corruption-by-broken-sysregs.patch
++++ /dev/null
+@@ -1,42 +0,0 @@
+-From 3c8788dbb70b40e737d4b8e30cab81406e5c5091 Mon Sep 17 00:00:00 2001
+-From: Max Filippov <jcmvbkbc@gmail.com>
+-Date: Wed, 2 Aug 2017 00:36:05 -0700
+-Subject: [PATCH] xtensa: fix memory corruption by broken sysregs
+-
+-In some xtensa configurations there may be system/user registers in
+-xtensa-modules with negative index. ISA initialization for such config
+-may clobber heap and result in program termination.
+-Don't update lookup table entries for register with negative indices.
+-They are not directly accessible via RSR/WSR/XSR or RUR/WUR, so this
+-change should not affect processing of valid assembly/binary code.
+-
+-bfd/
+-2017-08-02  Max Filippov  <jcmvbkbc@gmail.com>
+-
+-	* xtensa-isa.c (xtensa_isa_init): Don't update lookup table
+-	entries for sysregs with negative indices.
+-
+-Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
+----
+-Backported from: d84ed528d4817b0ff854006b65a9f6ec75f0407a
+-
+- bfd/xtensa-isa.c | 3 ++-
+- 1 file changed, 2 insertions(+), 1 deletion(-)
+-
+-diff --git a/bfd/xtensa-isa.c b/bfd/xtensa-isa.c
+-index 8da75bea8109..8c6ee88fdeae 100644
+---- a/bfd/xtensa-isa.c
+-+++ b/bfd/xtensa-isa.c
+-@@ -292,7 +292,8 @@ xtensa_isa_init (xtensa_isa_status *errno_p, char **error_msg_p)
+-       xtensa_sysreg_internal *sreg = &isa->sysregs[n];
+-       is_user = sreg->is_user;
+- 
+--      isa->sysreg_table[is_user][sreg->number] = n;
+-+      if (sreg->number >= 0)
+-+	isa->sysreg_table[is_user][sreg->number] = n;
+-     }
+- 
+-   /* Set up the interface lookup table.  */
+--- 
+-2.1.4
+-
+diff --git a/package/binutils/2.27/0300-ld-makefile.patch b/package/binutils/2.27/0300-ld-makefile.patch
+deleted file mode 100644
+index 73cc098024..0000000000
+--- a/package/binutils/2.27/0300-ld-makefile.patch
++++ /dev/null
+@@ -1,41 +0,0 @@
+-From d76a7549b43974fe8564971a3f40459bc495a8a7 Mon Sep 17 00:00:00 2001
+-From: Romain Naour <romain.naour@gmail.com>
+-Date: Fri, 25 Dec 2015 11:40:53 +0100
+-Subject: [PATCH] ld-makefile
+-
+-[Romain: rebase on top of 2.26]
+-Signed-off-by: Romain Naour <romain.naour@gmail.com>
+----
+- ld/Makefile.am | 2 +-
+- ld/Makefile.in | 2 +-
+- 2 files changed, 2 insertions(+), 2 deletions(-)
+-
+-diff --git a/ld/Makefile.am b/ld/Makefile.am
+-index 0b3b049..3871c74 100644
+---- a/ld/Makefile.am
+-+++ b/ld/Makefile.am
+-@@ -57,7 +57,7 @@ endif
+- # We put the scripts in the directory $(scriptdir)/ldscripts.
+- # We can't put the scripts in $(datadir) because the SEARCH_DIR
+- # directives need to be different for native and cross linkers.
+--scriptdir = $(tooldir)/lib
+-+scriptdir = $(libdir)
+- 
+- EMUL = @EMUL@
+- EMULATION_OFILES = @EMULATION_OFILES@
+-diff --git a/ld/Makefile.in b/ld/Makefile.in
+-index ed98f87..530e4c9 100644
+---- a/ld/Makefile.in
+-+++ b/ld/Makefile.in
+-@@ -413,7 +413,7 @@ AM_CFLAGS = $(WARN_CFLAGS) $(ELF_CLFAGS)
+- # We put the scripts in the directory $(scriptdir)/ldscripts.
+- # We can't put the scripts in $(datadir) because the SEARCH_DIR
+- # directives need to be different for native and cross linkers.
+--scriptdir = $(tooldir)/lib
+-+scriptdir = $(libdir)
+- BASEDIR = $(srcdir)/..
+- BFDDIR = $(BASEDIR)/bfd
+- INCDIR = $(BASEDIR)/include
+--- 
+-2.4.3
+-
+diff --git a/package/binutils/2.27/0301-check-ldrunpath-length.patch b/package/binutils/2.27/0301-check-ldrunpath-length.patch
+deleted file mode 100644
+index 3b4c204c7f..0000000000
+--- a/package/binutils/2.27/0301-check-ldrunpath-length.patch
++++ /dev/null
+@@ -1,36 +0,0 @@
+-From ebe1cba46df52d7bf86def3d681271fd05fb453b Mon Sep 17 00:00:00 2001
+-From: Romain Naour <romain.naour@gmail.com>
+-Date: Fri, 25 Dec 2015 11:41:47 +0100
+-Subject: [PATCH] check-ldrunpath-length
+-
+-[Romain: rebase on top of 2.26]
+-Signed-off-by: Romain Naour <romain.naour@gmail.com>
+----
+- ld/emultempl/elf32.em | 4 ++++
+- 1 file changed, 4 insertions(+)
+-
+-diff --git a/ld/emultempl/elf32.em b/ld/emultempl/elf32.em
+-index 0405d4f..efd3300 100644
+---- a/ld/emultempl/elf32.em
+-+++ b/ld/emultempl/elf32.em
+-@@ -1242,6 +1242,8 @@ fragment <<EOF
+- 	      && command_line.rpath == NULL)
+- 	    {
+- 	      lib_path = (const char *) getenv ("LD_RUN_PATH");
+-+	      if ((lib_path) && (strlen (lib_path) == 0))
+-+	      	lib_path = NULL;
+- 	      if (gld${EMULATION_NAME}_search_needed (lib_path, &n,
+- 						      force))
+- 		break;
+-@@ -1523,6 +1525,8 @@ gld${EMULATION_NAME}_before_allocation (void)
+-   rpath = command_line.rpath;
+-   if (rpath == NULL)
+-     rpath = (const char *) getenv ("LD_RUN_PATH");
+-+  if ((rpath) && (strlen (rpath) == 0))
+-+  	rpath = NULL;
+- 
+-   for (abfd = link_info.input_bfds; abfd; abfd = abfd->link.next)
+-     if (bfd_get_flavour (abfd) == bfd_target_elf_flavour)
+--- 
+-2.4.3
+-
+diff --git a/package/binutils/2.27/0500-add-sysroot-fix-from-bug-3049.patch b/package/binutils/2.27/0500-add-sysroot-fix-from-bug-3049.patch
+deleted file mode 100644
+index f67a43efdf..0000000000
+--- a/package/binutils/2.27/0500-add-sysroot-fix-from-bug-3049.patch
++++ /dev/null
+@@ -1,52 +0,0 @@
+-From 30628870e583375f8927c04398c7219c6e9f703c Mon Sep 17 00:00:00 2001
+-From: Romain Naour <romain.naour@gmail.com>
+-Date: Fri, 25 Dec 2015 11:42:48 +0100
+-Subject: [PATCH] add sysroot fix from bug #3049
+-
+-Always try to prepend the sysroot prefix to absolute filenames first.
+-
+-http://bugs.gentoo.org/275666
+-http://sourceware.org/bugzilla/show_bug.cgi?id=10340
+-
+-Signed-off-by: Sven Rebhan <odinshorse@googlemail.com>
+-[Romain: rebase on top of 2.26]
+-Signed-off-by: Romain Naour <romain.naour@gmail.com>
+----
+- ld/ldfile.c | 11 +++++++++--
+- 1 file changed, 9 insertions(+), 2 deletions(-)
+-
+-diff --git a/ld/ldfile.c b/ld/ldfile.c
+-index 96f9ecc..1439309 100644
+---- a/ld/ldfile.c
+-+++ b/ld/ldfile.c
+-@@ -335,18 +335,25 @@ ldfile_open_file_search (const char *arch,
+-      directory first.  */
+-   if (! entry->flags.maybe_archive)
+-     {
+--      if (entry->flags.sysrooted && IS_ABSOLUTE_PATH (entry->filename))
+-+      /* For absolute pathnames, try to always open the file in the
+-+	 sysroot first. If this fails, try to open the file at the
+-+	 given location.  */
+-+      entry->flags.sysrooted = is_sysrooted_pathname (entry->filename);
+-+      if (!entry->flags.sysrooted && IS_ABSOLUTE_PATH (entry->filename)
+-+	  && ld_sysroot)
+- 	{
+- 	  char *name = concat (ld_sysroot, entry->filename,
+- 			       (const char *) NULL);
+- 	  if (ldfile_try_open_bfd (name, entry))
+- 	    {
+- 	      entry->filename = name;
+-+	      entry->flags.sysrooted = TRUE;
+- 	      return TRUE;
+- 	    }
+- 	  free (name);
+- 	}
+--      else if (ldfile_try_open_bfd (entry->filename, entry))
+-+
+-+      if (ldfile_try_open_bfd (entry->filename, entry))
+- 	return TRUE;
+- 
+-       if (IS_ABSOLUTE_PATH (entry->filename))
+--- 
+-2.4.3
+-
+diff --git a/package/binutils/2.27/0600-poison-system-directories.patch b/package/binutils/2.27/0600-poison-system-directories.patch
+deleted file mode 100644
+index d16994ec0c..0000000000
+--- a/package/binutils/2.27/0600-poison-system-directories.patch
++++ /dev/null
+@@ -1,306 +0,0 @@
+-From be366461dd49e760440fb28eaee5164eb281adcc Mon Sep 17 00:00:00 2001
+-From: Romain Naour <romain.naour@gmail.com>
+-Date: Fri, 25 Dec 2015 11:45:38 +0100
+-Subject: [PATCH] poison-system-directories
+-
+-Patch adapted to binutils 2.23.2 and extended to use
+-BR_COMPILER_PARANOID_UNSAFE_PATH by Thomas Petazzoni.
+-
+-[Romain: rebase on top of 2.26]
+-Signed-off-by: Romain Naour <romain.naour@gmail.com>
+-[Gustavo: adapt to binutils 2.25]
+-Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+-Signed-off-by: Gustavo Zacarias <gustavo@zacarias.com.ar>
+-
+-Upstream-Status: Inappropriate [distribution: codesourcery]
+-
+-Patch originally created by Mark Hatle, forward-ported to
+-binutils 2.21 by Scott Garman.
+-
+-purpose:  warn for uses of system directories when cross linking
+-
+-Code Merged from Sourcery G++ binutils 2.19 - 4.4-277
+-
+-2008-07-02  Joseph Myers  <joseph@codesourcery.com>
+-
+-    ld/
+-    * ld.h (args_type): Add error_poison_system_directories.
+-    * ld.texinfo (--error-poison-system-directories): Document.
+-    * ldfile.c (ldfile_add_library_path): Check
+-    command_line.error_poison_system_directories.
+-    * ldmain.c (main): Initialize
+-    command_line.error_poison_system_directories.
+-    * lexsup.c (enum option_values): Add
+-    OPTION_ERROR_POISON_SYSTEM_DIRECTORIES.
+-    (ld_options): Add --error-poison-system-directories.
+-    (parse_args): Handle new option.
+-
+-2007-06-13  Joseph Myers  <joseph@codesourcery.com>
+-
+-    ld/
+-    * config.in: Regenerate.
+-    * ld.h (args_type): Add poison_system_directories.
+-    * ld.texinfo (--no-poison-system-directories): Document.
+-    * ldfile.c (ldfile_add_library_path): Check
+-    command_line.poison_system_directories.
+-    * ldmain.c (main): Initialize
+-    command_line.poison_system_directories.
+-    * lexsup.c (enum option_values): Add
+-    OPTION_NO_POISON_SYSTEM_DIRECTORIES.
+-    (ld_options): Add --no-poison-system-directories.
+-    (parse_args): Handle new option.
+-
+-2007-04-20  Joseph Myers  <joseph@codesourcery.com>
+-
+-    Merge from Sourcery G++ binutils 2.17:
+-
+-    2007-03-20  Joseph Myers  <joseph@codesourcery.com>
+-    Based on patch by Mark Hatle <mark.hatle@windriver.com>.
+-    ld/
+-    * configure.ac (--enable-poison-system-directories): New option.
+-    * configure, config.in: Regenerate.
+-    * ldfile.c (ldfile_add_library_path): If
+-    ENABLE_POISON_SYSTEM_DIRECTORIES defined, warn for use of /lib,
+-    /usr/lib, /usr/local/lib or /usr/X11R6/lib.
+-
+-Signed-off-by: Mark Hatle <mark.hatle@windriver.com>
+-Signed-off-by: Scott Garman <scott.a.garman@intel.com>
+----
+- ld/config.in    |  3 +++
+- ld/configure    | 14 ++++++++++++++
+- ld/configure.ac | 10 ++++++++++
+- ld/ld.h         |  8 ++++++++
+- ld/ld.texinfo   | 12 ++++++++++++
+- ld/ldfile.c     | 17 +++++++++++++++++
+- ld/ldlex.h      |  2 ++
+- ld/ldmain.c     |  2 ++
+- ld/lexsup.c     | 21 +++++++++++++++++++++
+- 9 files changed, 89 insertions(+)
+-
+-diff --git a/ld/config.in b/ld/config.in
+-index 276fb77..35c58eb 100644
+---- a/ld/config.in
+-+++ b/ld/config.in
+-@@ -14,6 +14,9 @@
+-    language is requested. */
+- #undef ENABLE_NLS
+- 
+-+/* Define to warn for use of native system library directories */
+-+#undef ENABLE_POISON_SYSTEM_DIRECTORIES
+-+
+- /* Additional extension a shared object might have. */
+- #undef EXTRA_SHLIB_EXTENSION
+- 
+-diff --git a/ld/configure b/ld/configure
+-index a446283..d1f9504 100755
+---- a/ld/configure
+-+++ b/ld/configure
+-@@ -786,6 +786,7 @@ with_lib_path
+- enable_targets
+- enable_64_bit_bfd
+- with_sysroot
+-+enable_poison_system_directories
+- enable_gold
+- enable_got
+- enable_compressed_debug_sections
+-@@ -1442,6 +1443,8 @@ Optional Features:
+-   --disable-largefile     omit support for large files
+-   --enable-targets        alternative target configurations
+-   --enable-64-bit-bfd     64-bit support (on hosts with narrower word sizes)
+-+  --enable-poison-system-directories
+-+                          warn for use of native system library directories
+-   --enable-gold[=ARG]     build gold [ARG={default,yes,no}]
+-   --enable-got=<type>     GOT handling scheme (target, single, negative,
+-                           multigot)
+-@@ -15491,7 +15494,18 @@ else
+- fi
+- 
+- 
+-+# Check whether --enable-poison-system-directories was given.
+-+if test "${enable_poison_system_directories+set}" = set; then :
+-+  enableval=$enable_poison_system_directories;
+-+else
+-+  enable_poison_system_directories=no
+-+fi
+-+
+-+if test "x${enable_poison_system_directories}" = "xyes"; then
+- 
+-+$as_echo "#define ENABLE_POISON_SYSTEM_DIRECTORIES 1" >>confdefs.h
+-+
+-+fi
+- 
+- # Check whether --enable-got was given.
+- if test "${enable_got+set}" = set; then :
+-diff --git a/ld/configure.ac b/ld/configure.ac
+-index 188172d..2cd8443 100644
+---- a/ld/configure.ac
+-+++ b/ld/configure.ac
+-@@ -95,6 +95,16 @@ AC_SUBST(use_sysroot)
+- AC_SUBST(TARGET_SYSTEM_ROOT)
+- AC_SUBST(TARGET_SYSTEM_ROOT_DEFINE)
+- 
+-+AC_ARG_ENABLE([poison-system-directories],
+-+         AS_HELP_STRING([--enable-poison-system-directories],
+-+                [warn for use of native system library directories]),,
+-+         [enable_poison_system_directories=no])
+-+if test "x${enable_poison_system_directories}" = "xyes"; then
+-+  AC_DEFINE([ENABLE_POISON_SYSTEM_DIRECTORIES],
+-+       [1],
+-+       [Define to warn for use of native system library directories])
+-+fi
+-+
+- dnl Use --enable-gold to decide if this linker should be the default.
+- dnl "install_as_default" is set to false if gold is the default linker.
+- dnl "installed_linker" is the installed BFD linker name.
+-diff --git a/ld/ld.h b/ld/ld.h
+-index d84ec4e..3476b26 100644
+---- a/ld/ld.h
+-+++ b/ld/ld.h
+-@@ -164,6 +164,14 @@ typedef struct {
+-   /* If set, display the target memory usage (per memory region).  */
+-   bfd_boolean print_memory_usage;
+- 
+-+  /* If TRUE (the default) warn for uses of system directories when
+-+     cross linking.  */
+-+  bfd_boolean poison_system_directories;
+-+
+-+  /* If TRUE (default FALSE) give an error for uses of system
+-+     directories when cross linking instead of a warning.  */
+-+  bfd_boolean error_poison_system_directories;
+-+
+-   /* Big or little endian as set on command line.  */
+-   enum endian_enum endian;
+- 
+-diff --git a/ld/ld.texinfo b/ld/ld.texinfo
+-index 1dd7492..fb1438e 100644
+---- a/ld/ld.texinfo
+-+++ b/ld/ld.texinfo
+-@@ -2332,6 +2332,18 @@ string identifying the original linked file does not change.
+- 
+- Passing @code{none} for @var{style} disables the setting from any
+- @code{--build-id} options earlier on the command line.
+-+
+-+@kindex --no-poison-system-directories
+-+@item --no-poison-system-directories
+-+Do not warn for @option{-L} options using system directories such as
+-+@file{/usr/lib} when cross linking.  This option is intended for use
+-+in chroot environments when such directories contain the correct
+-+libraries for the target system rather than the host.
+-+
+-+@kindex --error-poison-system-directories
+-+@item --error-poison-system-directories
+-+Give an error instead of a warning for @option{-L} options using
+-+system directories when cross linking.
+- @end table
+- 
+- @c man end
+-diff --git a/ld/ldfile.c b/ld/ldfile.c
+-index 1439309..086b354 100644
+---- a/ld/ldfile.c
+-+++ b/ld/ldfile.c
+-@@ -114,6 +114,23 @@ ldfile_add_library_path (const char *name, bfd_boolean cmdline)
+-     new_dirs->name = concat (ld_sysroot, name + 1, (const char *) NULL);
+-   else
+-     new_dirs->name = xstrdup (name);
+-+
+-+#ifdef ENABLE_POISON_SYSTEM_DIRECTORIES
+-+  if (command_line.poison_system_directories
+-+  && ((!strncmp (name, "/lib", 4))
+-+      || (!strncmp (name, "/usr/lib", 8))
+-+      || (!strncmp (name, "/usr/local/lib", 14))
+-+      || (!strncmp (name, "/usr/X11R6/lib", 14))))
+-+   {
+-+     if (command_line.error_poison_system_directories)
+-+       einfo (_("%X%P: error: library search path \"%s\" is unsafe for "
+-+            "cross-compilation\n"), name);
+-+     else
+-+       einfo (_("%P: warning: library search path \"%s\" is unsafe for "
+-+            "cross-compilation\n"), name);
+-+   }
+-+#endif
+-+
+- }
+- 
+- /* Try to open a BFD for a lang_input_statement.  */
+-diff --git a/ld/ldlex.h b/ld/ldlex.h
+-index 6f11e7b..0ca3110 100644
+---- a/ld/ldlex.h
+-+++ b/ld/ldlex.h
+-@@ -144,6 +144,8 @@ enum option_values
+-   OPTION_PRINT_MEMORY_USAGE,
+-   OPTION_REQUIRE_DEFINED_SYMBOL,
+-   OPTION_ORPHAN_HANDLING,
+-+  OPTION_NO_POISON_SYSTEM_DIRECTORIES,
+-+  OPTION_ERROR_POISON_SYSTEM_DIRECTORIES,
+- };
+- 
+- /* The initial parser states.  */
+-diff --git a/ld/ldmain.c b/ld/ldmain.c
+-index bb0b9cc..a23c56c 100644
+---- a/ld/ldmain.c
+-+++ b/ld/ldmain.c
+-@@ -257,6 +257,8 @@ main (int argc, char **argv)
+-   command_line.warn_mismatch = TRUE;
+-   command_line.warn_search_mismatch = TRUE;
+-   command_line.check_section_addresses = -1;
+-+  command_line.poison_system_directories = TRUE;
+-+  command_line.error_poison_system_directories = FALSE;
+- 
+-   /* We initialize DEMANGLING based on the environment variable
+-      COLLECT_NO_DEMANGLE.  The gcc collect2 program will demangle the
+-diff --git a/ld/lexsup.c b/ld/lexsup.c
+-index 4cad209..be7d584 100644
+---- a/ld/lexsup.c
+-+++ b/ld/lexsup.c
+-@@ -530,6 +530,14 @@ static const struct ld_option ld_options[] =
+-   { {"orphan-handling", required_argument, NULL, OPTION_ORPHAN_HANDLING},
+-     '\0', N_("=MODE"), N_("Control how orphan sections are handled."),
+-     TWO_DASHES },
+-+  { {"no-poison-system-directories", no_argument, NULL,
+-+    OPTION_NO_POISON_SYSTEM_DIRECTORIES},
+-+    '\0', NULL, N_("Do not warn for -L options using system directories"),
+-+    TWO_DASHES },
+-+  { {"error-poison-system-directories", no_argument, NULL,
+-+    OPTION_ERROR_POISON_SYSTEM_DIRECTORIES},
+-+    '\0', NULL, N_("Give an error for -L options using system directories"),
+-+    TWO_DASHES },
+- };
+- 
+- #define OPTION_COUNT ARRAY_SIZE (ld_options)
+-@@ -542,6 +550,7 @@ parse_args (unsigned argc, char **argv)
+-   int ingroup = 0;
+-   char *default_dirlist = NULL;
+-   char *shortopts;
+-+  char *BR_paranoid_env;
+-   struct option *longopts;
+-   struct option *really_longopts;
+-   int last_optind;
+-@@ -1516,6 +1525,14 @@ parse_args (unsigned argc, char **argv)
+-           }
+-           break;
+- 
+-+	case OPTION_NO_POISON_SYSTEM_DIRECTORIES:
+-+	  command_line.poison_system_directories = FALSE;
+-+	  break;
+-+
+-+	case OPTION_ERROR_POISON_SYSTEM_DIRECTORIES:
+-+	  command_line.error_poison_system_directories = TRUE;
+-+	  break;
+-+
+- 	case OPTION_PUSH_STATE:
+- 	  input_flags.pushed = xmemdup (&input_flags,
+- 					sizeof (input_flags),
+-@@ -1559,6 +1576,10 @@ parse_args (unsigned argc, char **argv)
+-       command_line.soname = NULL;
+-     }
+- 
+-+  BR_paranoid_env = getenv("BR_COMPILER_PARANOID_UNSAFE_PATH");
+-+  if (BR_paranoid_env && strlen(BR_paranoid_env) > 0)
+-+    command_line.error_poison_system_directories = TRUE;
+-+
+-   while (ingroup)
+-     {
+-       lang_leave_group ();
+--- 
+-2.4.3
+-
+diff --git a/package/binutils/2.27/0900-Revert-part-Set-dynamic-tag-VMA-and-size-from-dynami.patch b/package/binutils/2.27/0900-Revert-part-Set-dynamic-tag-VMA-and-size-from-dynami.patch
+deleted file mode 100644
+index f1ec259988..0000000000
+--- a/package/binutils/2.27/0900-Revert-part-Set-dynamic-tag-VMA-and-size-from-dynami.patch
++++ /dev/null
+@@ -1,36 +0,0 @@
+-From c646b02fdcae5f37bd88f33a0c4683ef13ad5c82 Mon Sep 17 00:00:00 2001
+-From: Alan Modra <amodra@gmail.com>
+-Date: Mon, 31 Oct 2016 12:46:38 +1030
+-Subject: [PATCH] Revert part "Set dynamic tag VMA and size from dynamic
+- section when possible"
+-
+-	PR 20748
+-	* elf32-microblaze.c (microblaze_elf_finish_dynamic_sections): Revert
+-	2016-05-13 change.
+-
+-Signed-off-by: Alan Modra <amodra@gmail.com>
+-Signed-off-by: Waldemar Brodkorb <wbx@uclibc-ng.org>
+-
+-diff --git a/bfd/elf32-microblaze.c b/bfd/elf32-microblaze.c
+-index 477e7b3..5c66808 100644
+---- a/bfd/elf32-microblaze.c
+-+++ b/bfd/elf32-microblaze.c
+-@@ -3396,13 +3396,13 @@ microblaze_elf_finish_dynamic_sections (bfd *output_bfd,
+-             {
+-               asection *s;
+- 
+--              s = bfd_get_linker_section (dynobj, name);
+-+              s = bfd_get_section_by_name (output_bfd, name);
+-               if (s == NULL)
+-                 dyn.d_un.d_val = 0;
+-               else
+-                 {
+-                   if (! size)
+--                    dyn.d_un.d_ptr = s->output_section->vma + s->output_offset;
+-+                    dyn.d_un.d_ptr = s->vma;
+-                   else
+-                     dyn.d_un.d_val = s->size;
+-                 }
+--- 
+-2.1.4
+-
+diff --git a/package/binutils/2.27/0906-microblaze-pr21180.patch b/package/binutils/2.27/0906-microblaze-pr21180.patch
+deleted file mode 100644
+index 48e5e14b45..0000000000
+--- a/package/binutils/2.27/0906-microblaze-pr21180.patch
++++ /dev/null
+@@ -1,33 +0,0 @@
+-Fix ld segfault for microblaze when --gc-sections is used
+-Upstream: pending
+-https://sourceware.org/bugzilla/show_bug.cgi?id=21180
+-
+-Signed-off-by: Waldemar Brodkorb <wbx@openadk.org>
+-
+-diff -Nur binutils-2.27.orig/bfd/elf32-microblaze.c binutils-2.27/bfd/elf32-microblaze.c
+---- binutils-2.27.orig/bfd/elf32-microblaze.c	2016-08-03 09:36:50.000000000 +0200
+-+++ binutils-2.27/bfd/elf32-microblaze.c	2017-02-23 19:43:12.612313590 +0100
+-@@ -3297,13 +3297,20 @@
+- 	      || h->dynindx == -1))
+-         {
+-           asection *sec = h->root.u.def.section;
+-+	  bfd_vma value;
+-+
+-+	  value = h->root.u.def.value;
+-+	  if (sec->output_section != NULL)
+-+	    /* PR 21180: If the output section is NULL, then the symbol is no
+-+	       longer needed, and in theory the GOT entry is redundant.  But
+-+	       it is too late to change our minds now...  */
+-+	    value += sec->output_section->vma + sec->output_offset;
+-+
+-           microblaze_elf_output_dynamic_relocation (output_bfd,
+-                                                     srela, srela->reloc_count++,
+-                                                     /* symindex= */ 0,
+-                                                     R_MICROBLAZE_REL, offset,
+--                                                    h->root.u.def.value
+--                                                    + sec->output_section->vma
+--                                                    + sec->output_offset);
+-+                                                    value);
+-         }
+-       else
+-         {
+diff --git a/package/binutils/2.27/0907-Automatically-enable-CRC-instructions-on-supported-A.patch b/package/binutils/2.27/0907-Automatically-enable-CRC-instructions-on-supported-A.patch
+deleted file mode 100644
+index 3b7fcfc959..0000000000
+--- a/package/binutils/2.27/0907-Automatically-enable-CRC-instructions-on-supported-A.patch
++++ /dev/null
+@@ -1,88 +0,0 @@
+-From 29a4659015ca7044c2d425d32a0b828e0fbb5ac1 Mon Sep 17 00:00:00 2001
+-From: Richard Earnshaw <Richard.Earnshaw@arm.com>
+-Date: Wed, 7 Sep 2016 17:14:54 +0100
+-Subject: [PATCH] Automatically enable CRC instructions on supported ARMv8-A
+- CPUs.
+-
+-2016-09-07  Richard Earnshaw  <rearnsha@arm.com>
+-
+-	* opcode/arm.h (ARM_ARCH_V8A_CRC): New architecture.
+-
+-2016-09-07  Richard Earnshaw  <rearnsha@arm.com>
+-
+-	* config/tc-arm.c ((arm_cpus): Use ARM_ARCH_V8A_CRC for all
+-	ARMv8-A CPUs except xgene1.
+-
+-Upstream: https://sourceware.org/git/gitweb.cgi?p=binutils-gdb.git;a=patch;h=27e5a270962fb92c07e7d476966ba380fa3bb68e
+-Signed-off-by: Peter Seiderer <ps.report@gmx.net>
+----
+- gas/config/tc-arm.c  | 18 +++++++++---------
+- include/opcode/arm.h |  2 ++
+- 2 files changed, 11 insertions(+), 9 deletions(-)
+-
+-diff --git a/gas/config/tc-arm.c b/gas/config/tc-arm.c
+-index 73d05316..7c86184d 100644
+---- a/gas/config/tc-arm.c
+-+++ b/gas/config/tc-arm.c
+-@@ -25332,17 +25332,17 @@ static const struct arm_cpu_option_table arm_cpus[] =
+- 								  "Cortex-A15"),
+-   ARM_CPU_OPT ("cortex-a17",	ARM_ARCH_V7VE,   FPU_ARCH_NEON_VFP_V4,
+- 								  "Cortex-A17"),
+--  ARM_CPU_OPT ("cortex-a32",    ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+-+  ARM_CPU_OPT ("cortex-a32",    ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+- 								  "Cortex-A32"),
+--  ARM_CPU_OPT ("cortex-a35",    ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+-+  ARM_CPU_OPT ("cortex-a35",    ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+- 								  "Cortex-A35"),
+--  ARM_CPU_OPT ("cortex-a53",    ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+-+  ARM_CPU_OPT ("cortex-a53",    ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+- 								  "Cortex-A53"),
+--  ARM_CPU_OPT ("cortex-a57",    ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+-+  ARM_CPU_OPT ("cortex-a57",    ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+- 								  "Cortex-A57"),
+--  ARM_CPU_OPT ("cortex-a72",    ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+-+  ARM_CPU_OPT ("cortex-a72",    ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+- 								  "Cortex-A72"),
+--  ARM_CPU_OPT ("cortex-a73",    ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+-+  ARM_CPU_OPT ("cortex-a73",    ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+- 								  "Cortex-A73"),
+-   ARM_CPU_OPT ("cortex-r4",	ARM_ARCH_V7R,	 FPU_NONE,	  "Cortex-R4"),
+-   ARM_CPU_OPT ("cortex-r4f",	ARM_ARCH_V7R,	 FPU_ARCH_VFP_V3D16,
+-@@ -25361,10 +25361,10 @@ static const struct arm_cpu_option_table arm_cpus[] =
+-   ARM_CPU_OPT ("cortex-m1",	ARM_ARCH_V6SM,	 FPU_NONE,	  "Cortex-M1"),
+-   ARM_CPU_OPT ("cortex-m0",	ARM_ARCH_V6SM,	 FPU_NONE,	  "Cortex-M0"),
+-   ARM_CPU_OPT ("cortex-m0plus",	ARM_ARCH_V6SM,	 FPU_NONE,	  "Cortex-M0+"),
+--  ARM_CPU_OPT ("exynos-m1",	ARM_ARCH_V8A,	 FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+-+  ARM_CPU_OPT ("exynos-m1",	ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+- 								  "Samsung " \
+- 								  "Exynos M1"),
+--  ARM_CPU_OPT ("qdf24xx",	ARM_ARCH_V8A,	 FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+-+  ARM_CPU_OPT ("qdf24xx",	ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+- 								  "Qualcomm "
+- 								  "QDF24XX"),
+- 
+-@@ -25389,7 +25389,7 @@ static const struct arm_cpu_option_table arm_cpus[] =
+-   /* APM X-Gene family.  */
+-   ARM_CPU_OPT ("xgene1",        ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+- 	                                                          "APM X-Gene 1"),
+--  ARM_CPU_OPT ("xgene2",        ARM_ARCH_V8A,    FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+-+  ARM_CPU_OPT ("xgene2",        ARM_ARCH_V8A_CRC, FPU_ARCH_CRYPTO_NEON_VFP_ARMV8,
+- 	                                                          "APM X-Gene 2"),
+- 
+-   { NULL, 0, ARM_ARCH_NONE, ARM_ARCH_NONE, NULL }
+-diff --git a/include/opcode/arm.h b/include/opcode/arm.h
+-index 60715cf8..feace5cd 100644
+---- a/include/opcode/arm.h
+-+++ b/include/opcode/arm.h
+-@@ -263,6 +263,8 @@
+- #define ARM_ARCH_V7M	ARM_FEATURE_CORE (ARM_AEXT_V7M, ARM_EXT2_V6T2_V8M)
+- #define ARM_ARCH_V7EM	ARM_FEATURE_CORE (ARM_AEXT_V7EM, ARM_EXT2_V6T2_V8M)
+- #define ARM_ARCH_V8A	ARM_FEATURE_CORE (ARM_AEXT_V8A, ARM_AEXT2_V8A)
+-+#define ARM_ARCH_V8A_CRC ARM_FEATURE (ARM_AEXT_V8A, ARM_AEXT2_V8A, \
+-+				      CRC_EXT_ARMV8)
+- #define ARM_ARCH_V8_1A	ARM_FEATURE (ARM_AEXT_V8A, ARM_AEXT2_V8_1A,	\
+- 				     CRC_EXT_ARMV8 | FPU_NEON_EXT_RDMA)
+- #define ARM_ARCH_V8_2A	ARM_FEATURE (ARM_AEXT_V8A, ARM_AEXT2_V8_2A,	\
+--- 
+-2.11.0
+-
+diff --git a/package/ca-certificates/ca-certificates.mk b/package/ca-certificates/ca-certificates.mk
+index cb0e961465..515a4f219b 100644
+--- a/package/ca-certificates/ca-certificates.mk
++++ b/package/ca-certificates/ca-certificates.mk
+@@ -16,7 +16,7 @@ CA_CERTIFICATES_LICENSE = GPL-2.0+ (script), MPL-2.0 (data)
+ CA_CERTIFICATES_LICENSE_FILES = debian/copyright
+ 
+ define CA_CERTIFICATES_BUILD_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) all
++	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) clean all
+ endef
+ 
+ define CA_CERTIFICATES_INSTALL_TARGET_CMDS
+@@ -31,13 +31,17 @@ define CA_CERTIFICATES_INSTALL_TARGET_CMDS
+ 	# Create symlinks to certificates under /etc/ssl/certs
+ 	# and generate the bundle
+ 	cd $(TARGET_DIR) ;\
+-	for i in `find usr/share/ca-certificates -name "*.crt"` ; do \
++	for i in `find usr/share/ca-certificates -name "*.crt" | LC_COLLATE=C sort` ; do \
+ 		ln -sf ../../../$$i etc/ssl/certs/`basename $${i} .crt`.pem ;\
+-		cat $$i >>etc/ssl/certs/ca-certificates.crt ;\
+-	done
++		cat $$i ;\
++	done >$(@D)/ca-certificates.crt
+ 
+ 	# Create symlinks to the certificates by their hash values
+ 	$(HOST_DIR)/bin/c_rehash $(TARGET_DIR)/etc/ssl/certs
++
++	# Install the certificates bundle
++	$(INSTALL) -D -m 644 $(@D)/ca-certificates.crt \
++		$(TARGET_DIR)/etc/ssl/certs/ca-certificates.crt
+ endef
+ 
+ $(eval $(generic-package))
+diff --git a/package/cups-filters/cups-filters.mk b/package/cups-filters/cups-filters.mk
+index 131e58246e..3c5e13da89 100644
+--- a/package/cups-filters/cups-filters.mk
++++ b/package/cups-filters/cups-filters.mk
+@@ -8,7 +8,8 @@ CUPS_FILTERS_VERSION = 1.20.3
+ CUPS_FILTERS_SITE = http://openprinting.org/download/cups-filters
+ CUPS_FILTERS_LICENSE = GPL-2.0, GPL-2.0+, GPL-3.0, GPL-3.0+, LGPL-2, LGPL-2.1+, MIT, BSD-4-Clause
+ CUPS_FILTERS_LICENSE_FILES = COPYING
+-
++# 0001-Replace-relative-linking-with-absolute-linking.patch
++CUPS_FILTERS_AUTORECONF = YES
+ CUPS_FILTERS_DEPENDENCIES = cups libglib2 lcms2 qpdf fontconfig freetype jpeg
+ 
+ CUPS_FILTERS_CONF_OPTS = --disable-imagefilters \
+diff --git a/package/erlang/Config.in b/package/erlang/Config.in
+index bf745555e8..00e8ab14d7 100644
+--- a/package/erlang/Config.in
++++ b/package/erlang/Config.in
+@@ -22,6 +22,7 @@ config BR2_PACKAGE_ERLANG
+ 	depends on BR2_USE_MMU # fork()
+ 	depends on !BR2_STATIC_LIBS
+ 	depends on BR2_PACKAGE_ERLANG_ARCH_SUPPORTS
++	select BR2_PACKAGE_ZLIB
+ 	help
+ 	  Erlang is a programming language used to build massively
+ 	  scalable soft real-time systems with requirements on high
+diff --git a/package/erlang/erlang.mk b/package/erlang/erlang.mk
+index b7fdb6b9ce..a7d7168082 100644
+--- a/package/erlang/erlang.mk
++++ b/package/erlang/erlang.mk
+@@ -69,10 +69,9 @@ else
+ ERLANG_CONF_OPTS += --without-odbc
+ endif
+ 
+-ifeq ($(BR2_PACKAGE_ZLIB),y)
++# Always use Buildroot's zlib
+ ERLANG_CONF_OPTS += --enable-shared-zlib
+ ERLANG_DEPENDENCIES += zlib
+-endif
+ 
+ # Remove source, example, gs and wx files from staging and target.
+ ERLANG_REMOVE_PACKAGES = gs wx
+diff --git a/package/file/file.mk b/package/file/file.mk
+index 422e29b1ce..1f04dad688 100644
+--- a/package/file/file.mk
++++ b/package/file/file.mk
+@@ -12,6 +12,7 @@ FILE_CONF_ENV = ac_cv_prog_cc_c99='-std=gnu99'
+ FILE_INSTALL_STAGING = YES
+ FILE_LICENSE = BSD-2-Clause, BSD-4-Clause (one file), BSD-3-Clause (one file)
+ FILE_LICENSE_FILES = COPYING src/mygetopt.h src/vasprintf.c
++HOST_FILE_CONF_OPTS = --disable-libseccomp
+ 
+ ifeq ($(BR2_PACKAGE_LIBSECCOMP),y)
+ FILE_CONF_OPTS += --enable-libseccomp
+diff --git a/package/freetype/freetype.mk b/package/freetype/freetype.mk
+index 1028664799..e755c82378 100644
+--- a/package/freetype/freetype.mk
++++ b/package/freetype/freetype.mk
+@@ -17,19 +17,6 @@ FREETYPE_CONFIG_SCRIPTS = freetype-config
+ HOST_FREETYPE_DEPENDENCIES = host-pkgconf
+ HOST_FREETYPE_CONF_OPTS = --without-zlib --without-bzip2 --without-png
+ 
+-# Regen required because the tarball ships with an experimental ltmain.sh
+-# that can't be patched by our infra.
+-# autogen.sh is because autotools stuff lives in other directories and
+-# even AUTORECONF with _OPTS doesn't do it properly.
+-# POST_PATCH is because we still need to patch libtool after the regen.
+-define FREETYPE_RUN_AUTOGEN
+-	cd $(@D) && PATH=$(BR_PATH) ./autogen.sh
+-endef
+-FREETYPE_POST_PATCH_HOOKS += FREETYPE_RUN_AUTOGEN
+-HOST_FREETYPE_POST_PATCH_HOOKS += FREETYPE_RUN_AUTOGEN
+-FREETYPE_DEPENDENCIES += host-automake host-autoconf host-libtool
+-HOST_FREETYPE_DEPENDENCIES += host-automake host-autoconf host-libtool
+-
+ ifeq ($(BR2_PACKAGE_ZLIB),y)
+ FREETYPE_DEPENDENCIES += zlib
+ FREETYPE_CONF_OPTS += --with-zlib
+@@ -72,8 +59,3 @@ FREETYPE_POST_INSTALL_STAGING_HOOKS += FREETYPE_FIX_CONFIG_FILE_LIBS
+ 
+ $(eval $(autotools-package))
+ $(eval $(host-autotools-package))
+-
+-# freetype-patch and host-freetype-patch use autogen.sh so add
+-# host-automake as a order-only-prerequisite because it is a phony
+-# target.
+-$(FREETYPE_TARGET_PATCH) $(HOST_FREETYPE_TARGET_PATCH): | host-automake
+diff --git a/package/gcc/gcc-final/gcc-final.mk b/package/gcc/gcc-final/gcc-final.mk
+index 213f3d7b66..c27376ad00 100644
+--- a/package/gcc/gcc-final/gcc-final.mk
++++ b/package/gcc/gcc-final/gcc-final.mk
+@@ -83,6 +83,11 @@ ifeq ($(BR2_sparc),y)
+ HOST_GCC_FINAL_CONF_OPTS += --disable-libcilkrts
+ endif
+ 
++# Pthreads are required to build libcilkrts
++ifeq ($(BR2_PTHREADS_NONE),y)
++HOST_GCC_FINAL_CONF_OPTS += --disable-libcilkrts
++endif
++
+ # Disable shared libs like libstdc++ if we do static since it confuses linking
+ # In that case also disable libcilkrts as there is no static version
+ ifeq ($(BR2_STATIC_LIBS),y)
+diff --git a/package/git/git.hash b/package/git/git.hash
+index 4bcc5ee5d3..35c8774d75 100644
+--- a/package/git/git.hash
++++ b/package/git/git.hash
+@@ -1,4 +1,4 @@
+ # From: https://www.kernel.org/pub/software/scm/git/sha256sums.asc
+-sha256 6e69b0e9c487e5da52a14d4829f0b6a28b2c18a0bb6fb67c0dc8b5b5658bd532  git-2.16.4.tar.xz
++sha256 dfb71b053cbc38a9c5b08c2fe8b5eae210b4e3b63892426923e10cfd6ba63862  git-2.16.5.tar.xz
+ sha256 5b2198d1645f767585e8a88ac0499b04472164c0d2da22e75ecf97ef443ab32e  COPYING
+ sha256 1922f45d2c49e390032c9c0ba6d7cac904087f7cec51af30c2b2ad022ce0e76a  LGPL-2.1
+diff --git a/package/git/git.mk b/package/git/git.mk
+index ac7b8f2e8c..9b176d3661 100644
+--- a/package/git/git.mk
++++ b/package/git/git.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-GIT_VERSION = 2.16.4
++GIT_VERSION = 2.16.5
+ GIT_SOURCE = git-$(GIT_VERSION).tar.xz
+ GIT_SITE = $(BR2_KERNEL_MIRROR)/software/scm/git
+ GIT_LICENSE = GPL-2.0, LGPL-2.1+
+diff --git a/package/gvfs/gvfs.mk b/package/gvfs/gvfs.mk
+index 7110e39083..e272d5c1dc 100644
+--- a/package/gvfs/gvfs.mk
++++ b/package/gvfs/gvfs.mk
+@@ -95,8 +95,8 @@ else
+ GVFS_CONF_OPTS += --disable-nfs
+ endif
+ 
+-ifeq ($(BR2_PACKAGE_LIBSOUP),y)
+-GVFS_DEPENDENCIES += libsoup
++ifeq ($(BR2_PACKAGE_LIBSOUP)$(BR2_PACKAGE_LIBXML2),yy)
++GVFS_DEPENDENCIES += libsoup libxml2
+ GVFS_CONF_OPTS += --enable-http
+ else
+ GVFS_CONF_OPTS += --disable-http
+diff --git a/package/jasper/jasper.hash b/package/jasper/jasper.hash
+index b2b82178eb..8c4f2453ad 100644
+--- a/package/jasper/jasper.hash
++++ b/package/jasper/jasper.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+ sha256 b50413b41bfc82ae419298b41eadcde1aa31f362fb9dc2ac089e5cbc19f60c24  jasper-version-2.0.13.tar.gz
++sha256 4ad1bb42aff888c4403d792e6e2c5f1716d6c279fea70b296333c9d577d30b81  LICENSE
+diff --git a/package/jasper/jasper.mk b/package/jasper/jasper.mk
+index 2aa3f9d554..9dc46b18d6 100644
+--- a/package/jasper/jasper.mk
++++ b/package/jasper/jasper.mk
+@@ -7,7 +7,7 @@
+ JASPER_VERSION = version-2.0.13
+ JASPER_SITE = $(call github,mdadams,jasper,$(JASPER_VERSION))
+ JASPER_INSTALL_STAGING = YES
+-JASPER_LICENSE = JasPer License Version 2.0
++JASPER_LICENSE = JasPer-2.0
+ JASPER_LICENSE_FILES = LICENSE
+ JASPER_SUPPORTS_IN_SOURCE_BUILD = NO
+ JASPER_CONF_OPTS = \
+diff --git a/package/leveldb/0003-fix-parallel-build.patch b/package/leveldb/0003-fix-parallel-build.patch
+new file mode 100644
+index 0000000000..8aafbc2e02
+--- /dev/null
++++ b/package/leveldb/0003-fix-parallel-build.patch
+@@ -0,0 +1,36 @@
++From 293e1b08317567b2e479d24530986676ae4d2221 Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Mon, 8 Oct 2018 23:08:19 +0200
++Subject: [PATCH] fix parallel build
++
++Build of leveldb sometimes fails on:
++Fatal error: can't create out-shared/db/db_bench.o: No such file or directory
++
++Fix this, by creating $(SHARED_OUTDIR) before building
++(SHARED_OUTDIR)/db/db_bench.o
++
++Fixes:
++ - http://autobuild.buildroot.net/results/945bb8096c1f98f307161a6def5a9f7f25b2454a
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Upstream status: not upstreamable as upstream switched to cmake]
++---
++ Makefile | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/Makefile b/Makefile
++index f7cc7d7..edb56a5 100644
++--- a/Makefile
+++++ b/Makefile
++@@ -386,7 +386,7 @@ $(STATIC_OUTDIR)/write_batch_test:db/write_batch_test.cc $(STATIC_LIBOBJECTS) $(
++ $(STATIC_OUTDIR)/memenv_test:$(STATIC_OUTDIR)/helpers/memenv/memenv_test.o $(STATIC_OUTDIR)/libmemenv.a $(STATIC_OUTDIR)/libleveldb.a $(TESTHARNESS)
++ 	$(XCRUN) $(CXX) $(LDFLAGS) $(STATIC_OUTDIR)/helpers/memenv/memenv_test.o $(STATIC_OUTDIR)/libmemenv.a $(STATIC_OUTDIR)/libleveldb.a $(TESTHARNESS) -o $@ $(LIBS)
++ 
++-$(SHARED_OUTDIR)/db_bench:$(SHARED_OUTDIR)/db/db_bench.o $(SHARED_LIBS) $(TESTUTIL)
+++$(SHARED_OUTDIR)/db_bench:$(SHARED_OUTDIR) $(SHARED_OUTDIR)/db/db_bench.o $(SHARED_LIBS) $(TESTUTIL)
++ 	$(XCRUN) $(CXX) $(LDFLAGS) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) $(SHARED_OUTDIR)/db/db_bench.o $(TESTUTIL) $(SHARED_OUTDIR)/$(SHARED_LIB3) -o $@ $(LIBS)
++ 
++ .PHONY: run-shared
++-- 
++2.17.1
++
+diff --git a/package/libarchive/0001-Do-something-sensible-for-empty-strings-to-make-fuzz.patch b/package/libarchive/0001-Do-something-sensible-for-empty-strings-to-make-fuzz.patch
+deleted file mode 100644
+index 1d1d80d708..0000000000
+--- a/package/libarchive/0001-Do-something-sensible-for-empty-strings-to-make-fuzz.patch
++++ /dev/null
+@@ -1,42 +0,0 @@
+-From fa7438a0ff4033e4741c807394a9af6207940d71 Mon Sep 17 00:00:00 2001
+-From: Joerg Sonnenberger <joerg@bec.de>
+-Date: Tue, 5 Sep 2017 18:12:19 +0200
+-Subject: [PATCH] Do something sensible for empty strings to make fuzzers
+- happy.
+-
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: commit fa7438a0ff
+-
+- libarchive/archive_read_support_format_xar.c | 8 +++++++-
+- 1 file changed, 7 insertions(+), 1 deletion(-)
+-
+-diff --git a/libarchive/archive_read_support_format_xar.c b/libarchive/archive_read_support_format_xar.c
+-index 7a22beb9d8e4..93eeacc5e6eb 100644
+---- a/libarchive/archive_read_support_format_xar.c
+-+++ b/libarchive/archive_read_support_format_xar.c
+-@@ -1040,6 +1040,9 @@ atol10(const char *p, size_t char_cnt)
+- 	uint64_t l;
+- 	int digit;
+- 
+-+	if (char_cnt == 0)
+-+		return (0);
+-+
+- 	l = 0;
+- 	digit = *p - '0';
+- 	while (digit >= 0 && digit < 10  && char_cnt-- > 0) {
+-@@ -1054,7 +1057,10 @@ atol8(const char *p, size_t char_cnt)
+- {
+- 	int64_t l;
+- 	int digit;
+--        
+-+
+-+	if (char_cnt == 0)
+-+		return (0);
+-+
+- 	l = 0;
+- 	while (char_cnt-- > 0) {
+- 		if (*p >= '0' && *p <= '7')
+--- 
+-2.14.1
+-
+diff --git a/package/libarchive/0002-iso9660-validate-directory-record-length.patch b/package/libarchive/0002-iso9660-validate-directory-record-length.patch
+deleted file mode 100644
+index 8a0c34f257..0000000000
+--- a/package/libarchive/0002-iso9660-validate-directory-record-length.patch
++++ /dev/null
+@@ -1,78 +0,0 @@
+-From f9569c086ff29259c73790db9cbf39fe8fb9d862 Mon Sep 17 00:00:00 2001
+-From: John Starks <jostarks@microsoft.com>
+-Date: Wed, 25 Jul 2018 12:16:34 -0700
+-Subject: [PATCH] iso9660: validate directory record length
+-
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: commit f9569c086ff
+-
+- .../archive_read_support_format_iso9660.c       | 17 +++++++++++------
+- 1 file changed, 11 insertions(+), 6 deletions(-)
+-
+-diff --git a/libarchive/archive_read_support_format_iso9660.c b/libarchive/archive_read_support_format_iso9660.c
+-index f01d37bf682e..089bb7236cd1 100644
+---- a/libarchive/archive_read_support_format_iso9660.c
+-+++ b/libarchive/archive_read_support_format_iso9660.c
+-@@ -409,7 +409,8 @@ static int	next_entry_seek(struct archive_read *, struct iso9660 *,
+- 		    struct file_info **);
+- static struct file_info *
+- 		parse_file_info(struct archive_read *a,
+--		    struct file_info *parent, const unsigned char *isodirrec);
+-+		    struct file_info *parent, const unsigned char *isodirrec,
+-+		    size_t reclen);
+- static int	parse_rockridge(struct archive_read *a,
+- 		    struct file_info *file, const unsigned char *start,
+- 		    const unsigned char *end);
+-@@ -1022,7 +1023,7 @@ read_children(struct archive_read *a, struct file_info *parent)
+- 			if (*(p + DR_name_len_offset) == 1
+- 			    && *(p + DR_name_offset) == '\001')
+- 				continue;
+--			child = parse_file_info(a, parent, p);
+-+			child = parse_file_info(a, parent, p, b - p);
+- 			if (child == NULL) {
+- 				__archive_read_consume(a, skip_size);
+- 				return (ARCHIVE_FATAL);
+-@@ -1112,7 +1113,7 @@ choose_volume(struct archive_read *a, struct iso9660 *iso9660)
+- 	 */
+- 	seenJoliet = iso9660->seenJoliet;/* Save flag. */
+- 	iso9660->seenJoliet = 0;
+--	file = parse_file_info(a, NULL, block);
+-+	file = parse_file_info(a, NULL, block, vd->size);
+- 	if (file == NULL)
+- 		return (ARCHIVE_FATAL);
+- 	iso9660->seenJoliet = seenJoliet;
+-@@ -1144,7 +1145,7 @@ choose_volume(struct archive_read *a, struct iso9660 *iso9660)
+- 			return (ARCHIVE_FATAL);
+- 		}
+- 		iso9660->seenJoliet = 0;
+--		file = parse_file_info(a, NULL, block);
+-+		file = parse_file_info(a, NULL, block, vd->size);
+- 		if (file == NULL)
+- 			return (ARCHIVE_FATAL);
+- 		iso9660->seenJoliet = seenJoliet;
+-@@ -1749,7 +1750,7 @@ archive_read_format_iso9660_cleanup(struct archive_read *a)
+-  */
+- static struct file_info *
+- parse_file_info(struct archive_read *a, struct file_info *parent,
+--    const unsigned char *isodirrec)
+-+    const unsigned char *isodirrec, size_t reclen)
+- {
+- 	struct iso9660 *iso9660;
+- 	struct file_info *file, *filep;
+-@@ -1763,7 +1764,11 @@ parse_file_info(struct archive_read *a, struct file_info *parent,
+- 
+- 	iso9660 = (struct iso9660 *)(a->format->data);
+- 
+--	dr_len = (size_t)isodirrec[DR_length_offset];
+-+	if (reclen == 0 || reclen < (dr_len = (size_t)isodirrec[DR_length_offset])) {
+-+		archive_set_error(&a->archive, ARCHIVE_ERRNO_MISC,
+-+			"Invalid directory record length");
+-+		return (NULL);
+-+	}
+- 	name_len = (size_t)isodirrec[DR_name_len_offset];
+- 	location = archive_le32dec(isodirrec + DR_extent_offset);
+- 	fsize = toi(isodirrec + DR_size_offset, DR_size_size);
+--- 
+-2.18.0
+-
+diff --git a/package/libarchive/0003-Avoid-a-read-off-by-one-error-for-UTF16-names-in-RAR.patch b/package/libarchive/0003-Avoid-a-read-off-by-one-error-for-UTF16-names-in-RAR.patch
+deleted file mode 100644
+index 13a80d1fb3..0000000000
+--- a/package/libarchive/0003-Avoid-a-read-off-by-one-error-for-UTF16-names-in-RAR.patch
++++ /dev/null
+@@ -1,34 +0,0 @@
+-From 5562545b5562f6d12a4ef991fae158bf4ccf92b6 Mon Sep 17 00:00:00 2001
+-From: Joerg Sonnenberger <joerg@bec.de>
+-Date: Sat, 9 Sep 2017 17:47:32 +0200
+-Subject: [PATCH] Avoid a read off-by-one error for UTF16 names in RAR
+- archives.
+-
+-Reported-By: OSS-Fuzz issue 573
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: commit 5562545b5562
+-
+- libarchive/archive_read_support_format_rar.c | 6 +++++-
+- 1 file changed, 5 insertions(+), 1 deletion(-)
+-
+-diff --git a/libarchive/archive_read_support_format_rar.c b/libarchive/archive_read_support_format_rar.c
+-index cbb14c32dc3b..751de6979ba5 100644
+---- a/libarchive/archive_read_support_format_rar.c
+-+++ b/libarchive/archive_read_support_format_rar.c
+-@@ -1496,7 +1496,11 @@ read_header(struct archive_read *a, struct archive_entry *entry,
+-         return (ARCHIVE_FATAL);
+-       }
+-       filename[filename_size++] = '\0';
+--      filename[filename_size++] = '\0';
+-+      /*
+-+       * Do not increment filename_size here as the computations below
+-+       * add the space for the terminating NUL explicitly.
+-+       */
+-+      filename[filename_size] = '\0';
+- 
+-       /* Decoded unicode form is UTF-16BE, so we have to update a string
+-        * conversion object for it. */
+--- 
+-2.18.0
+-
+diff --git a/package/libarchive/0004-Reject-LHA-archive-entries-with-negative-size.patch b/package/libarchive/0004-Reject-LHA-archive-entries-with-negative-size.patch
+deleted file mode 100644
+index 628e74aed4..0000000000
+--- a/package/libarchive/0004-Reject-LHA-archive-entries-with-negative-size.patch
++++ /dev/null
+@@ -1,32 +0,0 @@
+-From 2c8c83b9731ff822fad6cc8c670ea5519c366a14 Mon Sep 17 00:00:00 2001
+-From: Joerg Sonnenberger <joerg@bec.de>
+-Date: Thu, 19 Jul 2018 21:14:53 +0200
+-Subject: [PATCH] Reject LHA archive entries with negative size.
+-
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: commit 2c8c83b9731
+-
+- libarchive/archive_read_support_format_lha.c | 6 ++++++
+- 1 file changed, 6 insertions(+)
+-
+-diff --git a/libarchive/archive_read_support_format_lha.c b/libarchive/archive_read_support_format_lha.c
+-index b8ef4ae10ece..95c99bb1f31e 100644
+---- a/libarchive/archive_read_support_format_lha.c
+-+++ b/libarchive/archive_read_support_format_lha.c
+-@@ -701,6 +701,12 @@ archive_read_format_lha_read_header(struct archive_read *a,
+- 	 * Prepare variables used to read a file content.
+- 	 */
+- 	lha->entry_bytes_remaining = lha->compsize;
+-+	if (lha->entry_bytes_remaining < 0) {
+-+		archive_set_error(&a->archive,
+-+		    ARCHIVE_ERRNO_FILE_FORMAT,
+-+		    "Invalid LHa entry size");
+-+		return (ARCHIVE_FATAL);
+-+	}
+- 	lha->entry_offset = 0;
+- 	lha->entry_crc_calculated = 0;
+- 
+--- 
+-2.18.0
+-
+diff --git a/package/libarchive/libarchive.hash b/package/libarchive/libarchive.hash
+index 60ea0d1602..cde48c8423 100644
+--- a/package/libarchive/libarchive.hash
++++ b/package/libarchive/libarchive.hash
+@@ -1,3 +1,4 @@
++# From http://www.libarchive.org/downloads/libarchive-3.3.3.sha512.txt
++sha512	9d12b47d6976efa9f98e62c25d8b85fd745d4e9ca7b7e6d36bfe095dfe5c4db017d4e785d110f3758f5938dad6f1a1b009267fd7e82cb7212e93e1aea237bab7  libarchive-3.3.3.tar.gz
+ # Locally computed:
+-sha256  ed2dbd6954792b2c054ccf8ec4b330a54b85904a80cef477a1c74643ddafa0ce  libarchive-3.3.2.tar.gz
+ sha256  ae6f35cc1979beb316e4d6431fc34c6fc59f0dd126b425c8552bb41c86e4825d  COPYING
+diff --git a/package/libarchive/libarchive.mk b/package/libarchive/libarchive.mk
+index 1c8391bda9..b7619b03db 100644
+--- a/package/libarchive/libarchive.mk
++++ b/package/libarchive/libarchive.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBARCHIVE_VERSION = 3.3.2
++LIBARCHIVE_VERSION = 3.3.3
+ LIBARCHIVE_SITE = http://www.libarchive.org/downloads
+ LIBARCHIVE_INSTALL_STAGING = YES
+ LIBARCHIVE_LICENSE = BSD-2-Clause, BSD-3-Clause
+diff --git a/package/libcurl/libcurl.mk b/package/libcurl/libcurl.mk
+index 92c1a1fb7a..7993062c6e 100644
+--- a/package/libcurl/libcurl.mk
++++ b/package/libcurl/libcurl.mk
+@@ -75,6 +75,13 @@ else
+ LIBCURL_CONF_OPTS += --without-libssh2
+ endif
+ 
++ifeq ($(BR2_PACKAGE_BROTLI),y)
++LIBCURL_DEPENDENCIES += brotli
++LIBCURL_CONF_OPTS += --with-brotli
++else
++LIBCURL_CONF_OPTS += --without-brotli
++endif
++
+ define LIBCURL_FIX_DOT_PC
+ 	printf 'Requires: openssl\n' >>$(@D)/libcurl.pc.in
+ endef
+diff --git a/package/libssh/libssh.hash b/package/libssh/libssh.hash
+index 009a335e3b..257b93cb61 100644
+--- a/package/libssh/libssh.hash
++++ b/package/libssh/libssh.hash
+@@ -1,5 +1,5 @@
+-# from https://red.libssh.org/projects/libssh/files/
+-md5	d3fc864208bf607ad87cdee836894feb	libssh-0.7.5.tar.xz
+-# Locally calculated after checking signature on uncompressed libssh-0.7.5.tar
+-# https://red.libssh.org/attachments/download/217/libssh-0.7.5.tar.asc
+-sha256	54e86dd5dc20e5367e58f3caab337ce37675f863f80df85b6b1614966a337095  libssh-0.7.5.tar.xz
++# Locally calculated after checking pgp signature
++# https://www.libssh.org/files/0.8/libssh-0.8.4.tar.xz.asc
++# with key 8DFF53E18F2ABC8D8F3C92237EE0FC4DCC014E3D
++sha256 6bb07713021a8586ba2120b2c36c468dc9ac8096d043f9b1726639aa4275b81b  libssh-0.8.4.tar.xz
++sha256 468cf08f784ef6fd3b3705b60dd8111e2b70fbb8f6549cd503665a6bbb3bc625  COPYING
+diff --git a/package/libssh/libssh.mk b/package/libssh/libssh.mk
+index 902865d73b..1ef09b3a21 100644
+--- a/package/libssh/libssh.mk
++++ b/package/libssh/libssh.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-LIBSSH_VERSION_MAJOR = 0.7
+-LIBSSH_VERSION = $(LIBSSH_VERSION_MAJOR).5
++LIBSSH_VERSION_MAJOR = 0.8
++LIBSSH_VERSION = $(LIBSSH_VERSION_MAJOR).4
+ LIBSSH_SOURCE = libssh-$(LIBSSH_VERSION).tar.xz
+ LIBSSH_SITE = https://www.libssh.org/files/$(LIBSSH_VERSION_MAJOR)
+ LIBSSH_LICENSE = LGPL-2.1
+@@ -17,6 +17,9 @@ LIBSSH_CONF_OPTS = \
+ 	-DWITH_SERVER=OFF \
+ 	-DWITH_EXAMPLES=OFF
+ 
++# cmake older than 3.10 require this to avoid try_run() in FindThreads
++LIBSSH_CONF_OPTS += -DTHREADS_PTHREAD_ARG=OFF
++
+ ifeq ($(BR2_PACKAGE_ZLIB),y)
+ LIBSSH_CONF_OPTS += -DWITH_ZLIB=ON
+ LIBSSH_DEPENDENCIES += zlib
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index 8dc8a4cc38..51b8b3768d 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -250,12 +250,12 @@ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+ 	default "3.2.102"	if BR2_KERNEL_HEADERS_3_2
+ 	default "4.1.52"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.158"	if BR2_KERNEL_HEADERS_4_4
+-	default "4.9.129"	if BR2_KERNEL_HEADERS_4_9
++	default "4.4.161"	if BR2_KERNEL_HEADERS_4_4
++	default "4.9.133"	if BR2_KERNEL_HEADERS_4_9
+ 	default "4.10.17"	if BR2_KERNEL_HEADERS_4_10
+ 	default "4.11.12"	if BR2_KERNEL_HEADERS_4_11
+ 	default "4.12.14"	if BR2_KERNEL_HEADERS_4_12
+ 	default "4.13.16"	if BR2_KERNEL_HEADERS_4_13
+-	default "4.14.72"	if BR2_KERNEL_HEADERS_4_14
++	default "4.14.76"	if BR2_KERNEL_HEADERS_4_14
+ 	default "4.15.18"	if BR2_KERNEL_HEADERS_4_15
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/live555/0001-Add-a-pkg-config-file-for-the-shared-libraries.patch b/package/live555/0001-Add-a-pkg-config-file-for-the-shared-libraries.patch
+new file mode 100644
+index 0000000000..a2ae1c183a
+--- /dev/null
++++ b/package/live555/0001-Add-a-pkg-config-file-for-the-shared-libraries.patch
+@@ -0,0 +1,66 @@
++From: Benjamin Drung <bdrung@debian.org>
++Date: Sat, 16 Sep 2017 11:22:03 +0200
++Subject: Add a pkg-config file for the shared libraries
++
++This patch was downloaded from Debian
++https://sources.debian.org/src/liblivemedia/2018.08.05-1/debian/patches/0002-Add-a-pkg-config-file-for-the-shared-libraries.patch/
++
++The local/ part of PREXIX and LIBDIR was removed to fit into buildroot.
++
++A similar version of this patch is part of the vlc source repo:
++http://git.videolan.org/?p=vlc.git;a=blob;f=contrib/src/live555/add-pkgconfig-file.patch;hb=HEAD
++
++Upstream status: Rejected
++http://lists.live555.com/pipermail/live-devel/2013-January/016374.html
++http://lists.live555.com/pipermail/live-devel/2013-January/016375.html
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++---
++ Makefile.head | 3 +++
++ Makefile.tail | 7 ++++++-
++ live555.pc.in | 9 +++++++++
++ 3 files changed, 18 insertions(+), 1 deletion(-)
++ create mode 100644 live555.pc.in
++
++diff --git a/Makefile.head b/Makefile.head
++index 458c54c..1571037 100644
++--- a/Makefile.head
+++++ b/Makefile.head
++@@ -1 +1,4 @@
+++PREFIX = /usr
+++LIBDIR = /usr/lib
+++VERSION = $(shell grep LIVEMEDIA_LIBRARY_VERSION_STRING liveMedia/include/liveMedia_version.hh | sed 's/.*"\([^"]*\)".*/\1/')
++ ##### Change the following for your environment:
++diff --git a/Makefile.tail b/Makefile.tail
++index fc594ea..a20a527 100644
++--- a/Makefile.tail
+++++ b/Makefile.tail
++@@ -22,7 +22,12 @@ all:
++ 	@echo
++ 	@echo "For more information about this source code (including your obligations under the LGPL), please see our FAQ at http://live555.com/liveMedia/faq.html"
++ 
++-install:
+++install_shared_libraries:
+++	install -d $(DESTDIR)$(LIBDIR)/pkgconfig
+++	sed "s#@PREFIX@#$(PREFIX)#;s#@LIBDIR@#$(LIBDIR)#;s#@VERSION@#$(VERSION)#" live555.pc.in > $(DESTDIR)$(LIBDIR)/pkgconfig/live555.pc
+++	chmod 644 $(DESTDIR)$(LIBDIR)/pkgconfig/live555.pc
+++
+++install: $(INSTALL2)
++ 	cd $(LIVEMEDIA_DIR) ; $(MAKE) install
++ 	cd $(GROUPSOCK_DIR) ; $(MAKE) install
++ 	cd $(USAGE_ENVIRONMENT_DIR) ; $(MAKE) install
++diff --git a/live555.pc.in b/live555.pc.in
++new file mode 100644
++index 0000000..3736944
++--- /dev/null
+++++ b/live555.pc.in
++@@ -0,0 +1,9 @@
+++prefix=@PREFIX@
+++libdir=@LIBDIR@
+++includedir=${prefix}/include
+++
+++Name: live555
+++Description: multimedia RTSP streaming library
+++Version: @VERSION@
+++Cflags: -I${includedir}/liveMedia -I${includedir}/groupsock -I${includedir}/BasicUsageEnvironment -I${includedir}/UsageEnvironment
+++Libs: -L${libdir} -lliveMedia -lgroupsock -lBasicUsageEnvironment -lUsageEnvironment
+diff --git a/package/live555/live555.hash b/package/live555/live555.hash
+index 66a7b7d74c..024dcac124 100644
+--- a/package/live555/live555.hash
++++ b/package/live555/live555.hash
+@@ -1,5 +1,5 @@
+ # From http://live555.com/liveMedia/public/live555-latest-md5.txt
+-md5 a5acd14c4fa7b50f7270304d3b4a70ae live.2017.10.28.tar.gz
++md5 3383dea853735b7a73eda6ddb52b6372 live.2018.10.17.tar.gz
+ # Locally generated
+-sha256 d8eaec9ded34321aa655d3c9007217dd447218c54cb48c97827e58ecd5edb338  live.2017.10.28.tar.gz
++sha256 7c68d9c95b39acd309a2b6a4fc14c3837544a9be3f64062ed38d1ad6f68dc9e8  live.2018.10.17.tar.gz
+ sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  COPYING
+diff --git a/package/live555/live555.mk b/package/live555/live555.mk
+index 0507ee9b1b..6a6d353650 100644
+--- a/package/live555/live555.mk
++++ b/package/live555/live555.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIVE555_VERSION = 2017.10.28
++LIVE555_VERSION = 2018.10.17
+ LIVE555_SOURCE = live.$(LIVE555_VERSION).tar.gz
+ LIVE555_SITE = http://www.live555.com/liveMedia/public
+ LIVE555_LICENSE = LGPL-2.1+
+diff --git a/package/ljlinenoise/Config.in b/package/ljlinenoise/Config.in
+index 61c80df0d1..e6b587e65d 100644
+--- a/package/ljlinenoise/Config.in
++++ b/package/ljlinenoise/Config.in
+@@ -8,7 +8,7 @@ config BR2_PACKAGE_LJLINENOISE
+ 	  ljlinenoise is a pure LuaJIT port of linenoise,
+ 	  a small alternative to readline and libedit.
+ 
+-	  http://fperrad.github.io/ljlinenoise/
++	  https://fperrad.frama.io/ljlinenoise/
+ 
+ comment "ljlinenoise needs LuaJIT"
+ 	depends on !BR2_PACKAGE_LUAJIT
+diff --git a/package/mariadb/mariadb.mk b/package/mariadb/mariadb.mk
+index 23822187c3..e8ccf7a2a9 100644
+--- a/package/mariadb/mariadb.mk
++++ b/package/mariadb/mariadb.mk
+@@ -48,8 +48,12 @@ MARIADB_CONF_OPTS += -DCMAKE_CROSSCOMPILING=1
+ MARIADB_CONF_OPTS += -DENABLE_DTRACE=0
+ 
+ ifeq ($(BR2_PACKAGE_MARIADB_SERVER),y)
++ifeq ($(BR2_PACKAGE_MARIADB_SERVER_EMBEDDED),y)
+ MARIADB_CONF_OPTS += -DWITH_EMBEDDED_SERVER=ON
+ else
++MARIADB_CONF_OPTS += -DWITH_EMBEDDED_SERVER=OFF
++endif
++else
+ MARIADB_CONF_OPTS += -DWITHOUT_SERVER=ON
+ endif
+ 
+diff --git a/package/mongoose/0001-Fix-body-length-calculation-in-mg_handle_cgi.patch b/package/mongoose/0001-Fix-body-length-calculation-in-mg_handle_cgi.patch
+new file mode 100644
+index 0000000000..a696042436
+--- /dev/null
++++ b/package/mongoose/0001-Fix-body-length-calculation-in-mg_handle_cgi.patch
+@@ -0,0 +1,46 @@
++From 9e93f71556f8d5ba62fccec46ee5689e385d6d37 Mon Sep 17 00:00:00 2001
++From: Deomid Ryabkov <rojer@cesanta.com>
++Date: Mon, 13 Aug 2018 15:50:01 +0300
++Subject: [PATCH] Fix body length calculation in mg_handle_cgi
++
++Fixes https://nvd.nist.gov/vuln/detail/CVE-2018-10945
++
++CL: mg: Fix body length calculation in mg_handle_cgi
++
++PUBLISHED_FROM=0c30cf36fdb67c75f6148468701e23d6ee72d953
++
++[Thomas: backported from upstream commit
++f33d3a4e0225d6e009b90193402141025e9ea74d, dropping the changes in
++src/mg_http_cgi.c, because back in 6.7, the initial mongoose sources
++were not in the tree, only the amalgamated version.]
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
++---
++ mongoose.c | 5 ++---
++ 1 file changed, 2 insertions(+), 3 deletions(-)
++
++diff --git a/mongoose.c b/mongoose.c
++index 7e55896..f5b0177 100644
++--- a/mongoose.c
+++++ b/mongoose.c
++@@ -8308,7 +8308,6 @@ MG_INTERNAL void mg_handle_cgi(struct mg_connection *nc, const char *prog,
++ 
++   if (mg_start_process(opts->cgi_interpreter, prog, blk.buf, blk.vars, dir,
++                        fds[1]) != 0) {
++-    size_t n = nc->recv_mbuf.len - (hm->message.len - hm->body.len);
++     struct mg_connection *cgi_nc =
++         mg_add_sock(nc->mgr, fds[0], mg_cgi_ev_handler);
++     struct mg_http_proto_data *cgi_pd = mg_http_get_proto_data(cgi_nc);
++@@ -8316,8 +8315,8 @@ MG_INTERNAL void mg_handle_cgi(struct mg_connection *nc, const char *prog,
++     cgi_pd->cgi.cgi_nc->user_data = nc;
++     nc->flags |= MG_F_USER_1;
++     /* Push POST data to the CGI */
++-    if (n > 0 && n < nc->recv_mbuf.len) {
++-      mg_send(cgi_pd->cgi.cgi_nc, hm->body.p, n);
+++    if (hm->body.len > 0) {
+++      mg_send(cgi_pd->cgi.cgi_nc, hm->body.p, hm->body.len);
++     }
++     mbuf_remove(&nc->recv_mbuf, nc->recv_mbuf.len);
++   } else {
++-- 
++2.14.4
++
+diff --git a/package/mysql/Config.in b/package/mysql/Config.in
+index 2abf5daecb..66bd0faa57 100644
+--- a/package/mysql/Config.in
++++ b/package/mysql/Config.in
+@@ -54,6 +54,12 @@ config BR2_PACKAGE_MARIADB_SERVER
+ 	help
+ 	  Install the mariadb server on the target.
+ 
++config BR2_PACKAGE_MARIADB_SERVER_EMBEDDED
++	depends on BR2_PACKAGE_MARIADB_SERVER
++	bool "mariadb embedded server"
++	help
++	  Install the mariadb embedded server on the target.
++
+ endif
+ 
+ if BR2_PACKAGE_ORACLE_MYSQL
+diff --git a/package/netsnmp/0001-configure-Eliminate-the-hard-coded-libnl-3-include-p.patch b/package/netsnmp/0001-configure-Eliminate-the-hard-coded-libnl-3-include-p.patch
+deleted file mode 100644
+index cf0592233e..0000000000
+--- a/package/netsnmp/0001-configure-Eliminate-the-hard-coded-libnl-3-include-p.patch
++++ /dev/null
+@@ -1,300 +0,0 @@
+-From 57d6c3d36045aab8957ffeb7324728bf17faf8bd Mon Sep 17 00:00:00 2001
+-From: Bart Van Assche <bvanassche@acm.org>
+-Date: Mon, 2 Feb 2015 20:31:29 +0100
+-Subject: [PATCH] configure: Eliminate the hard-coded libnl-3 include path
+-
+-See also commit 3dde41998625fe0e24119a2e1f4509ba3ba2fd9a.
+-
+-(cherry picked from commit 852dcd644cfe4cfc7177649eaec163d6221f2be1)
+-
+-Original commit included modifications to configure script.
+-Do not keep these modifications, since they caused lots of conflicts, and
+-configure script is meant to be automatically generated.
+-
+-Signed-off-by: Julien Floret <julien.floret@6wind.com>
+-
+-Conflicts:
+-	configure
+----
+- aclocal.m4                  |   1 +
+- configure.d/config_os_libs2 |  30 ++++++-
+- m4/pkg.m4                   | 214 ++++++++++++++++++++++++++++++++++++++++++++
+- 3 files changed, 243 insertions(+), 2 deletions(-)
+- create mode 100644 m4/pkg.m4
+-
+-diff --git a/aclocal.m4 b/aclocal.m4
+-index cd80c7486f2f..45e3608ed480 100644
+---- a/aclocal.m4
+-+++ b/aclocal.m4
+-@@ -22,3 +22,4 @@ m4_include([m4/ltversion.m4])
+- m4_include([m4/lt~obsolete.m4])
+- m4_include([m4/netsnmp_arg.m4])
+- m4_include([m4/netsnmp_search_libs.m4])
+-+m4_include([m4/pkg.m4])
+-diff --git a/configure.d/config_os_libs2 b/configure.d/config_os_libs2
+-index 47491e24ce0a..10bd414b879e 100644
+---- a/configure.d/config_os_libs2
+-+++ b/configure.d/config_os_libs2
+-@@ -225,11 +225,37 @@ fi
+- if test "x$with_nl" != "xno"; then
+-     case $target_os in
+-     linux*) # Check for libnl (linux)
+-+        # The test below verifies whether the libnl-3 package been installed.
+-+        # This test works as follows:
+-+        # - If pkg-config was not installed at the time autogen.sh was run,
+-+        #   the definition of the PKG_CHECK_EXISTS() macro will not be found by
+-+        #   autogen.sh. Augogen.sh will generate a configure script that prints
+-+        #   a warning about pkg-config and proceeds as if libnl-3 has not been
+-+        #   installed.
+-+        # - If pkg-config was installed at the time autogen.sh was run,
+-+        #   the generated configure script will try to detect the presence of
+-+        #   the libnl-3 library by looking up compile and linker flags in the
+-+        #   file called libnl-3.pc.
+-+        # - pkg-config settings can be overridden via the configure variables
+-+        #   LIBNL3_CFLAGS and LIBNL3_LIBS (added by the pkg-config m4 macro's to
+-+        #   the configure script -- see also ./configure --help).
+-+        # - The LIBNL3_CFLAGS and LIBNL3_LIBS configure variables can be used
+-+        #   even if the pkg-config executable is not present on the system on
+-+        #   which the configure script is run.
+-+        ifdef(
+-+          [PKG_CHECK_EXISTS],
+-+          [PKG_CHECK_EXISTS([libnl-3.0],
+-+            [PKG_CHECK_MODULES([LIBNL3], [libnl-3.0])])
+-+          ],
+-+          AC_MSG_WARN([pkg-config has not been installed or is too old.])
+-+          AC_MSG_WARN([Detection of libnl-3.0 will be skipped.])
+-+        )
+-+
+-         netsnmp_save_CPPFLAGS="$CPPFLAGS"
+--        CPPFLAGS="-I/usr/include/libnl3 $CPPFLAGS"
+-+        CPPFLAGS="${LIBNL3_CFLAGS} $CPPFLAGS"
+-         NETSNMP_SEARCH_LIBS(nl_connect, nl-3,
+-             [AC_CHECK_HEADERS(netlink/netlink.h)
+--            EXTERNAL_MIBGROUP_INCLUDES="$EXTERNAL_MIBGROUP_INCLUDES -I/usr/include/libnl3"],
+-+            EXTERNAL_MIBGROUP_INCLUDES="$EXTERNAL_MIBGROUP_INCLUDES ${LIBNL3_CFLAGS}"],
+-             [CPPFLAGS="$netsnmp_save_CPPFLAGS"], [], [], [LMIBLIBS])
+-         if test "x$ac_cv_header_netlink_netlink_h" != xyes; then
+-             NETSNMP_SEARCH_LIBS(nl_connect, nl, [
+-diff --git a/m4/pkg.m4 b/m4/pkg.m4
+-new file mode 100644
+-index 000000000000..c5b26b52e6cd
+---- /dev/null
+-+++ b/m4/pkg.m4
+-@@ -0,0 +1,214 @@
+-+# pkg.m4 - Macros to locate and utilise pkg-config.            -*- Autoconf -*-
+-+# serial 1 (pkg-config-0.24)
+-+# 
+-+# Copyright © 2004 Scott James Remnant <scott@netsplit.com>.
+-+#
+-+# This program is free software; you can redistribute it and/or modify
+-+# it under the terms of the GNU General Public License as published by
+-+# the Free Software Foundation; either version 2 of the License, or
+-+# (at your option) any later version.
+-+#
+-+# This program is distributed in the hope that it will be useful, but
+-+# WITHOUT ANY WARRANTY; without even the implied warranty of
+-+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+-+# General Public License for more details.
+-+#
+-+# You should have received a copy of the GNU General Public License
+-+# along with this program; if not, write to the Free Software
+-+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+-+#
+-+# As a special exception to the GNU General Public License, if you
+-+# distribute this file as part of a program that contains a
+-+# configuration script generated by Autoconf, you may include it under
+-+# the same distribution terms that you use for the rest of that program.
+-+
+-+# PKG_PROG_PKG_CONFIG([MIN-VERSION])
+-+# ----------------------------------
+-+AC_DEFUN([PKG_PROG_PKG_CONFIG],
+-+[m4_pattern_forbid([^_?PKG_[A-Z_]+$])
+-+m4_pattern_allow([^PKG_CONFIG(_(PATH|LIBDIR|SYSROOT_DIR|ALLOW_SYSTEM_(CFLAGS|LIBS)))?$])
+-+m4_pattern_allow([^PKG_CONFIG_(DISABLE_UNINSTALLED|TOP_BUILD_DIR|DEBUG_SPEW)$])
+-+AC_ARG_VAR([PKG_CONFIG], [path to pkg-config utility])
+-+AC_ARG_VAR([PKG_CONFIG_PATH], [directories to add to pkg-config's search path])
+-+AC_ARG_VAR([PKG_CONFIG_LIBDIR], [path overriding pkg-config's built-in search path])
+-+
+-+if test "x$ac_cv_env_PKG_CONFIG_set" != "xset"; then
+-+	AC_PATH_TOOL([PKG_CONFIG], [pkg-config])
+-+fi
+-+if test -n "$PKG_CONFIG"; then
+-+	_pkg_min_version=m4_default([$1], [0.9.0])
+-+	AC_MSG_CHECKING([pkg-config is at least version $_pkg_min_version])
+-+	if $PKG_CONFIG --atleast-pkgconfig-version $_pkg_min_version; then
+-+		AC_MSG_RESULT([yes])
+-+	else
+-+		AC_MSG_RESULT([no])
+-+		PKG_CONFIG=""
+-+	fi
+-+fi[]dnl
+-+])# PKG_PROG_PKG_CONFIG
+-+
+-+# PKG_CHECK_EXISTS(MODULES, [ACTION-IF-FOUND], [ACTION-IF-NOT-FOUND])
+-+#
+-+# Check to see whether a particular set of modules exists.  Similar
+-+# to PKG_CHECK_MODULES(), but does not set variables or print errors.
+-+#
+-+# Please remember that m4 expands AC_REQUIRE([PKG_PROG_PKG_CONFIG])
+-+# only at the first occurence in configure.ac, so if the first place
+-+# it's called might be skipped (such as if it is within an "if", you
+-+# have to call PKG_CHECK_EXISTS manually
+-+# --------------------------------------------------------------
+-+AC_DEFUN([PKG_CHECK_EXISTS],
+-+[AC_REQUIRE([PKG_PROG_PKG_CONFIG])dnl
+-+if test -n "$PKG_CONFIG" && \
+-+    AC_RUN_LOG([$PKG_CONFIG --exists --print-errors "$1"]); then
+-+  m4_default([$2], [:])
+-+m4_ifvaln([$3], [else
+-+  $3])dnl
+-+fi])
+-+
+-+# _PKG_CONFIG([VARIABLE], [COMMAND], [MODULES])
+-+# ---------------------------------------------
+-+m4_define([_PKG_CONFIG],
+-+[if test -n "$$1"; then
+-+    pkg_cv_[]$1="$$1"
+-+ elif test -n "$PKG_CONFIG"; then
+-+    PKG_CHECK_EXISTS([$3],
+-+                     [pkg_cv_[]$1=`$PKG_CONFIG --[]$2 "$3" 2>/dev/null`
+-+		      test "x$?" != "x0" && pkg_failed=yes ],
+-+		     [pkg_failed=yes])
+-+ else
+-+    pkg_failed=untried
+-+fi[]dnl
+-+])# _PKG_CONFIG
+-+
+-+# _PKG_SHORT_ERRORS_SUPPORTED
+-+# -----------------------------
+-+AC_DEFUN([_PKG_SHORT_ERRORS_SUPPORTED],
+-+[AC_REQUIRE([PKG_PROG_PKG_CONFIG])
+-+if $PKG_CONFIG --atleast-pkgconfig-version 0.20; then
+-+        _pkg_short_errors_supported=yes
+-+else
+-+        _pkg_short_errors_supported=no
+-+fi[]dnl
+-+])# _PKG_SHORT_ERRORS_SUPPORTED
+-+
+-+
+-+# PKG_CHECK_MODULES(VARIABLE-PREFIX, MODULES, [ACTION-IF-FOUND],
+-+# [ACTION-IF-NOT-FOUND])
+-+#
+-+#
+-+# Note that if there is a possibility the first call to
+-+# PKG_CHECK_MODULES might not happen, you should be sure to include an
+-+# explicit call to PKG_PROG_PKG_CONFIG in your configure.ac
+-+#
+-+#
+-+# --------------------------------------------------------------
+-+AC_DEFUN([PKG_CHECK_MODULES],
+-+[AC_REQUIRE([PKG_PROG_PKG_CONFIG])dnl
+-+AC_ARG_VAR([$1][_CFLAGS], [C compiler flags for $1, overriding pkg-config])dnl
+-+AC_ARG_VAR([$1][_LIBS], [linker flags for $1, overriding pkg-config])dnl
+-+
+-+pkg_failed=no
+-+AC_MSG_CHECKING([for $1])
+-+
+-+_PKG_CONFIG([$1][_CFLAGS], [cflags], [$2])
+-+_PKG_CONFIG([$1][_LIBS], [libs], [$2])
+-+
+-+m4_define([_PKG_TEXT], [Alternatively, you may set the environment variables $1[]_CFLAGS
+-+and $1[]_LIBS to avoid the need to call pkg-config.
+-+See the pkg-config man page for more details.])
+-+
+-+if test $pkg_failed = yes; then
+-+   	AC_MSG_RESULT([no])
+-+        _PKG_SHORT_ERRORS_SUPPORTED
+-+        if test $_pkg_short_errors_supported = yes; then
+-+	        $1[]_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "$2" 2>&1`
+-+        else 
+-+	        $1[]_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "$2" 2>&1`
+-+        fi
+-+	# Put the nasty error message in config.log where it belongs
+-+	echo "$$1[]_PKG_ERRORS" >&AS_MESSAGE_LOG_FD
+-+
+-+	m4_default([$4], [AC_MSG_ERROR(
+-+[Package requirements ($2) were not met:
+-+
+-+$$1_PKG_ERRORS
+-+
+-+Consider adjusting the PKG_CONFIG_PATH environment variable if you
+-+installed software in a non-standard prefix.
+-+
+-+_PKG_TEXT])[]dnl
+-+        ])
+-+elif test $pkg_failed = untried; then
+-+     	AC_MSG_RESULT([no])
+-+	m4_default([$4], [AC_MSG_FAILURE(
+-+[The pkg-config script could not be found or is too old.  Make sure it
+-+is in your PATH or set the PKG_CONFIG environment variable to the full
+-+path to pkg-config.
+-+
+-+_PKG_TEXT
+-+
+-+To get pkg-config, see <http://pkg-config.freedesktop.org/>.])[]dnl
+-+        ])
+-+else
+-+	$1[]_CFLAGS=$pkg_cv_[]$1[]_CFLAGS
+-+	$1[]_LIBS=$pkg_cv_[]$1[]_LIBS
+-+        AC_MSG_RESULT([yes])
+-+	$3
+-+fi[]dnl
+-+])# PKG_CHECK_MODULES
+-+
+-+
+-+# PKG_INSTALLDIR(DIRECTORY)
+-+# -------------------------
+-+# Substitutes the variable pkgconfigdir as the location where a module
+-+# should install pkg-config .pc files. By default the directory is
+-+# $libdir/pkgconfig, but the default can be changed by passing
+-+# DIRECTORY. The user can override through the --with-pkgconfigdir
+-+# parameter.
+-+AC_DEFUN([PKG_INSTALLDIR],
+-+[m4_pushdef([pkg_default], [m4_default([$1], ['${libdir}/pkgconfig'])])
+-+m4_pushdef([pkg_description],
+-+    [pkg-config installation directory @<:@]pkg_default[@:>@])
+-+AC_ARG_WITH([pkgconfigdir],
+-+    [AS_HELP_STRING([--with-pkgconfigdir], pkg_description)],,
+-+    [with_pkgconfigdir=]pkg_default)
+-+AC_SUBST([pkgconfigdir], [$with_pkgconfigdir])
+-+m4_popdef([pkg_default])
+-+m4_popdef([pkg_description])
+-+]) dnl PKG_INSTALLDIR
+-+
+-+
+-+# PKG_NOARCH_INSTALLDIR(DIRECTORY)
+-+# -------------------------
+-+# Substitutes the variable noarch_pkgconfigdir as the location where a
+-+# module should install arch-independent pkg-config .pc files. By
+-+# default the directory is $datadir/pkgconfig, but the default can be
+-+# changed by passing DIRECTORY. The user can override through the
+-+# --with-noarch-pkgconfigdir parameter.
+-+AC_DEFUN([PKG_NOARCH_INSTALLDIR],
+-+[m4_pushdef([pkg_default], [m4_default([$1], ['${datadir}/pkgconfig'])])
+-+m4_pushdef([pkg_description],
+-+    [pkg-config arch-independent installation directory @<:@]pkg_default[@:>@])
+-+AC_ARG_WITH([noarch-pkgconfigdir],
+-+    [AS_HELP_STRING([--with-noarch-pkgconfigdir], pkg_description)],,
+-+    [with_noarch_pkgconfigdir=]pkg_default)
+-+AC_SUBST([noarch_pkgconfigdir], [$with_noarch_pkgconfigdir])
+-+m4_popdef([pkg_default])
+-+m4_popdef([pkg_description])
+-+]) dnl PKG_NOARCH_INSTALLDIR
+-+
+-+
+-+# PKG_CHECK_VAR(VARIABLE, MODULE, CONFIG-VARIABLE,
+-+# [ACTION-IF-FOUND], [ACTION-IF-NOT-FOUND])
+-+# -------------------------------------------
+-+# Retrieves the value of the pkg-config variable for the given module.
+-+AC_DEFUN([PKG_CHECK_VAR],
+-+[AC_REQUIRE([PKG_PROG_PKG_CONFIG])dnl
+-+AC_ARG_VAR([$1], [value of $3 for $2, overriding pkg-config])dnl
+-+
+-+_PKG_CONFIG([$1], [variable="][$3]["], [$2])
+-+AS_VAR_COPY([$1], [pkg_cv_][$1])
+-+
+-+AS_VAR_IF([$1], [""], [$5], [$4])dnl
+-+])# PKG_CHECK_VAR
+--- 
+-2.1.0
+-
+diff --git a/package/netsnmp/0001-configure-static-linking-Fix-SSL-checks.patch b/package/netsnmp/0001-configure-static-linking-Fix-SSL-checks.patch
+new file mode 100644
+index 0000000000..8431d46868
+--- /dev/null
++++ b/package/netsnmp/0001-configure-static-linking-Fix-SSL-checks.patch
+@@ -0,0 +1,142 @@
++From bd59be8e4e339870a1400f6866a7b73ca11f6460 Mon Sep 17 00:00:00 2001
++From: Giulio Benetti <giulio.benetti@micronovasrl.com>
++Date: Wed, 12 Sep 2018 20:16:39 +0200
++Subject: [PATCH 1/3] configure, static linking: Fix SSL checks
++
++During checking of DTLS_method, the stub program is linked only with -ssl
++libssl.a lacks some function from -lcrypto:
++RAND_*()
++ERR_*()
++BUF_MEM_*()
++etc.
++and -lz:
++- inflate()
++- deflate()
++
++Append -lcrypto and -lz to LIBS variable when checking DTLS_method.
++
++See also https://sourceforge.net/p/net-snmp/patches/1374/.
++
++Signed-off-by: Giulio Benetti <giulio.benetti@micronovasrl.com>
++[bvanassche: Edited subject / rewrote this patch]
++---
++ configure                   | 52 ++++++++++++++++++++++++++++++++++---
++ configure.d/config_os_libs2 | 14 +++++++---
++ 2 files changed, 58 insertions(+), 8 deletions(-)
++
++diff --git a/configure b/configure
++index 6504a8e58..1116cecaa 100755
++--- a/configure
+++++ b/configure
++@@ -23228,16 +23228,60 @@ fi
++ { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_crypto_EVP_md5" >&5
++ $as_echo "$ac_cv_lib_crypto_EVP_md5" >&6; }
++ if test "x$ac_cv_lib_crypto_EVP_md5" = xyes; then :
++-  CRYPTO="crypto"
+++  CRYPTO="crypto"; LIBCRYPTO="-lcrypto"
+++else
+++
+++		{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for EVP_md5 in -lcrypto" >&5
+++$as_echo_n "checking for EVP_md5 in -lcrypto... " >&6; }
+++if ${ac_cv_lib_crypto_EVP_md5+:} false; then :
+++  $as_echo_n "(cached) " >&6
+++else
+++  ac_check_lib_save_LIBS=$LIBS
+++LIBS="-lcrypto -lz $LIBS"
+++cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+++/* end confdefs.h.  */
+++
+++/* Override any GCC internal prototype to avoid an error.
+++   Use char because int might match the return type of a GCC
+++   builtin and then its argument prototype would still apply.  */
+++#ifdef __cplusplus
+++extern "C"
+++#endif
+++char EVP_md5 ();
+++int
+++main ()
+++{
+++return EVP_md5 ();
+++  ;
+++  return 0;
+++}
+++_ACEOF
+++if ac_fn_c_try_link "$LINENO"; then :
+++  ac_cv_lib_crypto_EVP_md5=yes
+++else
+++  ac_cv_lib_crypto_EVP_md5=no
+++fi
+++rm -f core conftest.err conftest.$ac_objext \
+++    conftest$ac_exeext conftest.$ac_ext
+++LIBS=$ac_check_lib_save_LIBS
+++fi
+++{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_crypto_EVP_md5" >&5
+++$as_echo "$ac_cv_lib_crypto_EVP_md5" >&6; }
+++if test "x$ac_cv_lib_crypto_EVP_md5" = xyes; then :
+++  CRYPTO="crypto"; LIBCRYPTO="-lcrypto -lz"
++ fi
++ 
++-        fi
+++
+++fi
+++
+++	else
+++	    LIBCRYPTO="-l${CRYPTO}"
+++	fi
++ 
++         if test x$CRYPTO != x; then
++ 
++ $as_echo "#define HAVE_LIBCRYPTO 1" >>confdefs.h
++ 
++-            LIBCRYPTO="-l${CRYPTO}"
++             netsnmp_save_LIBS="$LIBS"
++             LIBS="$LIBCRYPTO"
++             for ac_func in AES_cfb128_encrypt                           EVP_sha224        EVP_sha384                                   EVP_MD_CTX_create EVP_MD_CTX_destroy                           EVP_MD_CTX_new    EVP_MD_CTX_free                              DH_set0_pqg DH_get0_pqg DH_get0_key                           ASN1_STRING_get0_data X509_NAME_ENTRY_get_object                           X509_NAME_ENTRY_get_data X509_get_signature_nid
++@@ -23291,7 +23335,7 @@ _ACEOF
++             LIBS="$netsnmp_save_LIBS"
++         fi
++         netsnmp_save_LIBS="$LIBS"
++-        LIBS="-lssl"
+++        LIBS="-lssl $LIBCRYPTO"
++         for ac_func in TLS_method TLSv1_method DTLS_method DTLSv1_method                       SSL_library_init SSL_load_error_strings
++ do :
++   as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
++diff --git a/configure.d/config_os_libs2 b/configure.d/config_os_libs2
++index 4a1ad1551..75214cfff 100644
++--- a/configure.d/config_os_libs2
+++++ b/configure.d/config_os_libs2
++@@ -306,13 +306,19 @@ if test "x$tryopenssl" != "xno" -a "x$tryopenssl" != "xinternal"; then
++         LIBS="$netsnmp_save_LIBS"
++ 
++         if test x$CRYPTO = x; then
++-            AC_CHECK_LIB([crypto], [EVP_md5], [CRYPTO="crypto"])
++-        fi
+++            AC_CHECK_LIB([crypto], [EVP_md5],
+++			 [CRYPTO="crypto"; LIBCRYPTO="-lcrypto"], [
+++		AC_CHECK_LIB([crypto], [EVP_md5],
+++			     [CRYPTO="crypto"; LIBCRYPTO="-lcrypto -lz"], [],
+++			     [-lz])
+++	    ])
+++	else
+++	    LIBCRYPTO="-l${CRYPTO}"
+++	fi
++ 
++         if test x$CRYPTO != x; then
++             AC_DEFINE(HAVE_LIBCRYPTO, 1,
++                 [Define to 1 if you have the OpenSSL library (-lcrypto or -leay32).])
++-            LIBCRYPTO="-l${CRYPTO}"
++             netsnmp_save_LIBS="$LIBS"
++             LIBS="$LIBCRYPTO"
++             AC_CHECK_FUNCS([AES_cfb128_encrypt]dnl
++@@ -342,7 +348,7 @@ if test "x$tryopenssl" != "xno" -a "x$tryopenssl" != "xinternal"; then
++             LIBS="$netsnmp_save_LIBS"
++         fi
++         netsnmp_save_LIBS="$LIBS"
++-        LIBS="-lssl"
+++        LIBS="-lssl $LIBCRYPTO"
++         AC_CHECK_FUNCS([TLS_method TLSv1_method DTLS_method DTLSv1_method]dnl
++                        [SSL_library_init SSL_load_error_strings])
++         LIBS="$netsnmp_save_LIBS"
++-- 
++2.17.1
++
+diff --git a/package/netsnmp/0002-configure-Fix-lcrypto-lz-test.patch b/package/netsnmp/0002-configure-Fix-lcrypto-lz-test.patch
+new file mode 100644
+index 0000000000..3ec0c2278f
+--- /dev/null
++++ b/package/netsnmp/0002-configure-Fix-lcrypto-lz-test.patch
+@@ -0,0 +1,41 @@
++From d8694929b12b47febb0f7f43f46041387874fe52 Mon Sep 17 00:00:00 2001
++From: Bart Van Assche <bvanassche@acm.org>
++Date: Mon, 17 Sep 2018 07:33:34 -0700
++Subject: [PATCH 2/3] configure: Fix -lcrypto -lz test
++
++Avoid that the second crypto library test uses the cached result from
++the first test by explicitly clearing the cached test result.
++
++Signed-off-by: Giulio Benetti <giulio.benetti@micronovasrl.com>
++---
++ configure                   | 1 +
++ configure.d/config_os_libs2 | 1 +
++ 2 files changed, 2 insertions(+)
++
++diff --git a/configure b/configure
++index 1116cecaa..33b8c93e5 100755
++--- a/configure
+++++ b/configure
++@@ -23231,6 +23231,7 @@ if test "x$ac_cv_lib_crypto_EVP_md5" = xyes; then :
++   CRYPTO="crypto"; LIBCRYPTO="-lcrypto"
++ else
++ 
+++		unset ac_cv_lib_crypto_EVP_md5
++ 		{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for EVP_md5 in -lcrypto" >&5
++ $as_echo_n "checking for EVP_md5 in -lcrypto... " >&6; }
++ if ${ac_cv_lib_crypto_EVP_md5+:} false; then :
++diff --git a/configure.d/config_os_libs2 b/configure.d/config_os_libs2
++index 75214cfff..81788a209 100644
++--- a/configure.d/config_os_libs2
+++++ b/configure.d/config_os_libs2
++@@ -308,6 +308,7 @@ if test "x$tryopenssl" != "xno" -a "x$tryopenssl" != "xinternal"; then
++         if test x$CRYPTO = x; then
++             AC_CHECK_LIB([crypto], [EVP_md5],
++ 			 [CRYPTO="crypto"; LIBCRYPTO="-lcrypto"], [
+++		unset ac_cv_lib_crypto_EVP_md5
++ 		AC_CHECK_LIB([crypto], [EVP_md5],
++ 			     [CRYPTO="crypto"; LIBCRYPTO="-lcrypto -lz"], [],
++ 			     [-lz])
++-- 
++2.17.1
++
+diff --git a/package/netsnmp/0003-configure-fix-AC_CHECK_FUNCS-EVP_sha224-EVP_sha384-..patch b/package/netsnmp/0003-configure-fix-AC_CHECK_FUNCS-EVP_sha224-EVP_sha384-..patch
+new file mode 100644
+index 0000000000..0829042128
+--- /dev/null
++++ b/package/netsnmp/0003-configure-fix-AC_CHECK_FUNCS-EVP_sha224-EVP_sha384-..patch
+@@ -0,0 +1,39 @@
++From 8e273c688aa235ed9c68570a700d31596bac14df Mon Sep 17 00:00:00 2001
++From: Giulio Benetti <giulio.benetti@micronovasrl.com>
++Date: Mon, 15 Oct 2018 19:07:05 +0200
++Subject: [PATCH 1/2] configure: fix AC_CHECK_FUNCS(EVP_sha224 EVP_sha384 ...)
++ failure on static linking
++
++If building as static lib, AC_CHECK_FUNCS(EVP_sha224 EVP_sha384 ...)
++fails due to missing -lz in $LIBS.
++At the moment, $LIBS contains $LIBCRYPTO only discarding previous $LIBS
++content.
++
++Add $LIBS to:
++LIBS="$LIBCRYPTO"
++as:
++LIBS="$LIBCRYPTO $LIBS"
++This way $LIBS will contain -lz at the end of linking command that in
++static linking build is mandatory.
++
++Signed-off-by: Giulio Benetti <giulio.benetti@micronovasrl.com>
++---
++ configure.d/config_os_libs2 | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/configure.d/config_os_libs2 b/configure.d/config_os_libs2
++index 81788a209..93044000b 100644
++--- a/configure.d/config_os_libs2
+++++ b/configure.d/config_os_libs2
++@@ -321,7 +321,7 @@ if test "x$tryopenssl" != "xno" -a "x$tryopenssl" != "xinternal"; then
++             AC_DEFINE(HAVE_LIBCRYPTO, 1,
++                 [Define to 1 if you have the OpenSSL library (-lcrypto or -leay32).])
++             netsnmp_save_LIBS="$LIBS"
++-            LIBS="$LIBCRYPTO"
+++            LIBS="$LIBCRYPTO $LIBS"
++             AC_CHECK_FUNCS([AES_cfb128_encrypt]dnl
++                            [EVP_sha224        EVP_sha384        ]dnl
++                            [EVP_MD_CTX_create EVP_MD_CTX_destroy]dnl
++-- 
++2.17.1
++
+diff --git a/package/netsnmp/0004-configure-fix-AC_CHECK_FUNCS-TLS_method-TLSv1_method.patch b/package/netsnmp/0004-configure-fix-AC_CHECK_FUNCS-TLS_method-TLSv1_method.patch
+new file mode 100644
+index 0000000000..a731f25761
+--- /dev/null
++++ b/package/netsnmp/0004-configure-fix-AC_CHECK_FUNCS-TLS_method-TLSv1_method.patch
+@@ -0,0 +1,39 @@
++From 1ab6e3fc3cf61fa5a7b7363e59095e868474524b Mon Sep 17 00:00:00 2001
++From: Giulio Benetti <giulio.benetti@micronovasrl.com>
++Date: Mon, 15 Oct 2018 19:34:26 +0200
++Subject: [PATCH 2/2] configure: fix AC_CHECK_FUNCS(TLS_method TLSv1_method
++ ...) failure on static linking
++
++If building as static lib, AC_CHECK_FUNCS(TLS_method TLSv1_method ...)
++fails due to missing -lz in $LIBS.
++At the moment, $LIBS contains "-lssl $LIBCRYPTO" only discarding
++previous $LIBS content.
++
++Add $LIBS to:
++LIBS="-lssl $LIBCRYPTO"
++as:
++LIBS="-lssl $LIBCRYPTO $LIBS"
++This way $LIBS will contain -lz at the end of linking command that in
++static linking build is mandatory.
++
++Signed-off-by: Giulio Benetti <giulio.benetti@micronovasrl.com>
++---
++ configure.d/config_os_libs2 | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/configure.d/config_os_libs2 b/configure.d/config_os_libs2
++index 93044000b..c811c63ec 100644
++--- a/configure.d/config_os_libs2
+++++ b/configure.d/config_os_libs2
++@@ -349,7 +349,7 @@ if test "x$tryopenssl" != "xno" -a "x$tryopenssl" != "xinternal"; then
++             LIBS="$netsnmp_save_LIBS"
++         fi
++         netsnmp_save_LIBS="$LIBS"
++-        LIBS="-lssl $LIBCRYPTO"
+++        LIBS="-lssl $LIBCRYPTO $LIBS"
++         AC_CHECK_FUNCS([TLS_method TLSv1_method DTLS_method DTLSv1_method]dnl
++                        [SSL_library_init SSL_load_error_strings])
++         LIBS="$netsnmp_save_LIBS"
++-- 
++2.17.1
++
+diff --git a/package/netsnmp/netsnmp.hash b/package/netsnmp/netsnmp.hash
+index fc77926023..d05a7de9da 100644
+--- a/package/netsnmp/netsnmp.hash
++++ b/package/netsnmp/netsnmp.hash
+@@ -1,3 +1,6 @@
+-# From http://sourceforge.net/projects/net-snmp/files/net-snmp/5.7.3/
+-md5	d4a3459e1577d0efa8d96ca70a885e53	net-snmp-5.7.3.tar.gz
+-sha1	97dc25077257680815de44e34128d365c76bd839	net-snmp-5.7.3.tar.gz
++# From http://sourceforge.net/projects/net-snmp/files/net-snmp/5.8/
++md5	63bfc65fbb86cdb616598df1aff6458a		net-snmp-5.8.tar.gz
++sha1	78f70731df9dcdb13fe8f60eb7d80d7583da4d2c	net-snmp-5.8.tar.gz
++# Locally computed
++sha256 b2fc3500840ebe532734c4786b0da4ef0a5f67e51ef4c86b3345d697e4976adf  net-snmp-5.8.tar.gz
++sha256 ed869ea395a1f125819a56676385ab0557a21507764bf56f2943302011381e59  COPYING
+diff --git a/package/netsnmp/netsnmp.mk b/package/netsnmp/netsnmp.mk
+index 742fa6e3b3..65a3f16a4d 100644
+--- a/package/netsnmp/netsnmp.mk
++++ b/package/netsnmp/netsnmp.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-NETSNMP_VERSION = 5.7.3
+-NETSNMP_SITE = http://downloads.sourceforge.net/project/net-snmp/net-snmp/$(NETSNMP_VERSION)
++NETSNMP_VERSION = 5.8
++NETSNMP_SITE = https://downloads.sourceforge.net/project/net-snmp/net-snmp/$(NETSNMP_VERSION)
+ NETSNMP_SOURCE = net-snmp-$(NETSNMP_VERSION).tar.gz
+ NETSNMP_LICENSE = Various BSD-like
+ NETSNMP_LICENSE_FILES = COPYING
+diff --git a/package/nmap/Config.in b/package/nmap/Config.in
+index 79f587afd1..1f2f996a64 100644
+--- a/package/nmap/Config.in
++++ b/package/nmap/Config.in
+@@ -3,6 +3,7 @@ config BR2_PACKAGE_NMAP
+ 	depends on BR2_INSTALL_LIBSTDCPP
+ 	depends on BR2_USE_MMU # fork()
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS
++	select BR2_PACKAGE_LIBLINEAR
+ 	select BR2_PACKAGE_LIBPCAP
+ 	select BR2_PACKAGE_PCRE
+ 	help
+diff --git a/package/nmap/nmap.mk b/package/nmap/nmap.mk
+index ceb08ec006..3110dfeba9 100644
+--- a/package/nmap/nmap.mk
++++ b/package/nmap/nmap.mk
+@@ -7,11 +7,11 @@
+ NMAP_VERSION = 7.60
+ NMAP_SITE = https://nmap.org/dist
+ NMAP_SOURCE = nmap-$(NMAP_VERSION).tar.bz2
+-NMAP_DEPENDENCIES = libpcap pcre host-autoconf
++NMAP_DEPENDENCIES = libpcap liblinear pcre host-autoconf
+ NMAP_CONF_OPTS = --without-liblua --without-zenmap \
+-	--with-libdnet=included --with-liblinear=included \
++	--with-libdnet=included \
+ 	--with-libpcre="$(STAGING_DIR)/usr" --without-ncat
+-NMAP_LICENSE = GPL-2.0
++NMAP_LICENSE = nmap license
+ NMAP_LICENSE_FILES = COPYING
+ 
+ # nmap doesn't autoreconf properly, so we just re-generate the
+diff --git a/package/nodejs/nodejs.mk b/package/nodejs/nodejs.mk
+index e2c94ba8db..3c5e40a4d6 100644
+--- a/package/nodejs/nodejs.mk
++++ b/package/nodejs/nodejs.mk
+@@ -154,6 +154,7 @@ NPM = $(TARGET_CONFIGURE_OPTS) \
+ 	npm_config_build_from_source=true \
+ 	npm_config_nodedir=$(BUILD_DIR)/nodejs-$(NODEJS_VERSION) \
+ 	npm_config_prefix=$(TARGET_DIR)/usr \
++	npm_config_cache=$(BUILD_DIR)/.npm-cache \
+ 	$(HOST_DIR)/bin/npm
+ 
+ #
+diff --git a/package/ntp/0003-fix-nommu.patch b/package/ntp/0003-fix-nommu.patch
+new file mode 100644
+index 0000000000..0959fa0ba5
+--- /dev/null
++++ b/package/ntp/0003-fix-nommu.patch
+@@ -0,0 +1,29 @@
++Fix no-MMU build
++
++The detach_from_terminal() is unused for no-MMU, but it depends on symbols
++that are not defined for no-MMU. Don't define detach_from_terminal() when
++HAVE_WORKING_FORK is not defined.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: http://bugs.ntp.org/show_bug.cgi?id=3538
++
++diff -Nuar ntp-4.2.8p12.orig/ntpd/ntpd.c ntp-4.2.8p12/ntpd/ntpd.c
++--- ntp-4.2.8p12.orig/ntpd/ntpd.c	2018-08-14 14:51:30.000000000 +0300
+++++ ntp-4.2.8p12/ntpd/ntpd.c	2018-10-13 21:25:25.858261249 +0300
++@@ -534,6 +534,7 @@
++  * Detach from terminal (much like daemon())
++  * Nothe that this function calls exit()
++  */
+++# ifdef HAVE_WORKING_FORK
++ static void
++ detach_from_terminal(
++ 	int pipe_fds[2],
++@@ -617,6 +618,7 @@
++ 
++ 	return;
++ }
+++# endif /* HAVE_WORKING_FORK */
++ 
++ #ifdef HAVE_DROPROOT
++ /*
+diff --git a/package/ntp/0004-fix-work-fork-without-droproot.patch b/package/ntp/0004-fix-work-fork-without-droproot.patch
+new file mode 100644
+index 0000000000..cb6fec0125
+--- /dev/null
++++ b/package/ntp/0004-fix-work-fork-without-droproot.patch
+@@ -0,0 +1,26 @@
++Fix work_fork build when droproot is disabled
++
++The set_user_group_ids() depends on HAVE_DROPROOT. When HAVE_DROPROOT is not
++enabled, work_fork.c code causes a link failure:
++
++../libntp/libntp.a(work_fork.o): In function `send_blocking_req_internal':
++work_fork.c:(.text+0x498): undefined reference to `set_user_group_ids'
++
++Make the set_user_group_ids() call depend on HAVE_DROPROOT.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: http://bugs.ntp.org/show_bug.cgi?id=3539
++
++--- ntp-4.2.8p12.orig/libntp/work_fork.c	2018-08-14 14:51:06.000000000 +0300
+++++ ntp-4.2.8p12/libntp/work_fork.c	2018-10-15 21:10:54.580917962 +0300
++@@ -594,7 +594,9 @@
++ 	init_logging("ntp_intres", 0, FALSE);
++ 	setup_logfile(NULL);
++ 
+++#if defined(HAVE_DROPROOT)
++ 	(void) set_user_group_ids();
+++#endif
++ 
++ 	/*
++ 	 * And now back to the portable code
+diff --git a/package/ntp/ntp.hash b/package/ntp/ntp.hash
+index ea86c1586f..2fd8a8322b 100644
+--- a/package/ntp/ntp.hash
++++ b/package/ntp/ntp.hash
+@@ -1,5 +1,5 @@
+-# From https://www.eecis.udel.edu/~ntp/ntp_spool/ntp4/ntp-4.2/ntp-4.2.8p11.tar.gz.md5
+-md5 00950ca2855579541896513e78295361  ntp-4.2.8p11.tar.gz
++# From https://www.eecis.udel.edu/~ntp/ntp_spool/ntp4/ntp-4.2/ntp-4.2.8p12.tar.gz.md5
++md5 1522d66574bae14abb2622746dad2bdc  ntp-4.2.8p12.tar.gz
+ # Calculated based on the hash above
+-sha256 f14a39f753688252d683ff907035ffff106ba8d3db21309b742e09b5c3cd278e  ntp-4.2.8p11.tar.gz
++sha256 709b222b5013d77d26bfff532b5ea470a8039497ef29d09363931c036cb30454  ntp-4.2.8p12.tar.gz
+ sha256 62c87b269365b38b55359b16dfde7ec28c683c722ef489db90afd0f2e478e4a1  COPYRIGHT
+diff --git a/package/ntp/ntp.mk b/package/ntp/ntp.mk
+index b5e2c1e026..edd3d521aa 100644
+--- a/package/ntp/ntp.mk
++++ b/package/ntp/ntp.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ NTP_VERSION_MAJOR = 4.2
+-NTP_VERSION = $(NTP_VERSION_MAJOR).8p11
++NTP_VERSION = $(NTP_VERSION_MAJOR).8p12
+ NTP_SITE = https://www.eecis.udel.edu/~ntp/ntp_spool/ntp4/ntp-$(NTP_VERSION_MAJOR)
+ NTP_DEPENDENCIES = host-pkgconf libevent $(if $(BR2_PACKAGE_BUSYBOX),busybox)
+ NTP_LICENSE = NTP
+diff --git a/package/open-plc-utils/open-plc-utils.mk b/package/open-plc-utils/open-plc-utils.mk
+index d45bb9d4f5..e1e66bf7e0 100644
+--- a/package/open-plc-utils/open-plc-utils.mk
++++ b/package/open-plc-utils/open-plc-utils.mk
+@@ -15,8 +15,14 @@ OPEN_PLC_UTILS_LICENSE_FILES = LICENSE
+ # Yes, we're passing __UCLIBC__ in EXTRA_CFLAGS, as it fixes a build
+ # issue for non-uClibc toolchains. It is the very crappy solution
+ # suggested at https://github.com/qca/open-plc-utils/issues/36.
++OPEN_PLC_UTILS_MAKE_OPTS = \
++	EXTRA_CFLAGS="$(TARGET_CFLAGS) -D__UCLIBC__" \
++	EXTRA_CXXFLAGS="$(TARGET_CXXFLAGS)" \
++	EXTRA_LDFLAGS="$(TARGET_LDFLAGS)"
++
+ define OPEN_PLC_UTILS_BUILD_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) CROSS=$(TARGET_CROSS) EXTRA_CFLAGS="-D__UCLIBC__" -C $(@D)
++	$(TARGET_MAKE_ENV) $(MAKE) CROSS=$(TARGET_CROSS) \
++		$(OPEN_PLC_UTILS_MAKE_OPTS) -C $(@D)
+ endef
+ 
+ define OPEN_PLC_UTILS_INSTALL_TARGET_CMDS
+diff --git a/package/poco/poco.mk b/package/poco/poco.mk
+index 3dddb435e9..fd3db6f52f 100644
+--- a/package/poco/poco.mk
++++ b/package/poco/poco.mk
+@@ -37,6 +37,11 @@ ifeq ($(BR2_sh4a)$(BR2_nios2),y)
+ POCO_CONF_OPTS += --no-fpenvironment
+ endif
+ 
++# disable fpenvironment for soft floating point configuration
++ifeq ($(BR2_SOFT_FLOAT),y)
++POCO_CONF_OPTS += --no-fpenvironment
++endif
++
+ ifeq ($(BR2_STATIC_LIBS),y)
+ POCO_MAKE_TARGET = static_release
+ else ifeq ($(BR2_SHARED_LIBS),y)
+diff --git a/package/psmisc/psmisc.mk b/package/psmisc/psmisc.mk
+index 3d9a80462d..6c343a4f2e 100644
+--- a/package/psmisc/psmisc.mk
++++ b/package/psmisc/psmisc.mk
+@@ -7,7 +7,7 @@
+ PSMISC_VERSION = 23.1
+ PSMISC_SITE = http://downloads.sourceforge.net/project/psmisc/psmisc
+ PSMISC_SOURCE = psmisc-$(PSMISC_VERSION).tar.xz
+-PSMISC_LICENSE = GPL-2.0
++PSMISC_LICENSE = GPL-2.0+
+ PSMISC_LICENSE_FILES = COPYING
+ PSMISC_DEPENDENCIES = ncurses $(TARGET_NLS_DEPENDENCIES)
+ # Patching Makefile.am
+diff --git a/package/ptpd2/0002-ntp_isc_md5-rename-EVP_MD_CTX-into-PTPD_EVP_MD_CTX.patch b/package/ptpd2/0002-ntp_isc_md5-rename-EVP_MD_CTX-into-PTPD_EVP_MD_CTX.patch
+new file mode 100644
+index 0000000000..e655ff3354
+--- /dev/null
++++ b/package/ptpd2/0002-ntp_isc_md5-rename-EVP_MD_CTX-into-PTPD_EVP_MD_CTX.patch
+@@ -0,0 +1,46 @@
++From af1d16d90ff273413a57cd02689f4fb005403609 Mon Sep 17 00:00:00 2001
++From: Giulio Benetti <giulio.benetti@micronovasrl.com>
++Date: Fri, 31 Aug 2018 18:46:56 +0200
++Subject: [PATCH] ntp_isc_md5: rename EVP_MD_CTX into PTPD_EVP_MD_CTX
++
++EVP_MD_CTX can conflict with openssl that defines a completely different
++typedef with same name.
++
++Since this typedef is used only twice in the entire ptpd,
++substitute EVP_MD_CTX with PTPD_EVP_MD_CTX.
++
++Signed-off-by: Giulio Benetti <giulio.benetti@micronovasrl.com>
++---
++ src/dep/ntpengine/ntp_isc_md5.c | 2 +-
++ src/dep/ntpengine/ntp_isc_md5.h | 2 +-
++ 2 files changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/src/dep/ntpengine/ntp_isc_md5.c b/src/dep/ntpengine/ntp_isc_md5.c
++index 850d004..3216de8 100644
++--- a/src/dep/ntpengine/ntp_isc_md5.c
+++++ b/src/dep/ntpengine/ntp_isc_md5.c
++@@ -262,7 +262,7 @@ MD5authencrypt(
++ {
++ 	u_char	digest[64];
++ 	u_int	len;
++-	EVP_MD_CTX ctx;
+++	PTPD_EVP_MD_CTX ctx;
++         pkt[length / 4] = htonl(keyid); 
++ 	EVP_DigestInit(&ctx);
++ 	EVP_DigestUpdate(&ctx, (u_char *)key, (u_int)strlen(key));
++diff --git a/src/dep/ntpengine/ntp_isc_md5.h b/src/dep/ntpengine/ntp_isc_md5.h
++index fa6e2ee..236c0e4 100644
++--- a/src/dep/ntpengine/ntp_isc_md5.h
+++++ b/src/dep/ntpengine/ntp_isc_md5.h
++@@ -80,7 +80,7 @@ isc_md5_final(isc_md5_t *ctx, unsigned char *digest);
++ # define MD5Init(c)             isc_md5_init(c)
++ # define MD5Update(c, p, s)     isc_md5_update(c, p, s)
++ # define MD5Final(d, c)         isc_md5_final((c), (d)) /* swapped */
++-  typedef MD5_CTX                       EVP_MD_CTX;
+++  typedef MD5_CTX                       PTPD_EVP_MD_CTX;
++ # define EVP_DigestInit(c)              MD5Init(c)
++ # define EVP_DigestUpdate(c, p, s)      MD5Update(c, p, s)
++ # define EVP_DigestFinal(c, d, pdl)     \
++-- 
++2.14.4
++
+diff --git a/package/ptpd2/0003-Solve-issue-25-Removing-type-U64-from-net-snmp-relat.patch b/package/ptpd2/0003-Solve-issue-25-Removing-type-U64-from-net-snmp-relat.patch
+new file mode 100644
+index 0000000000..f952755d36
+--- /dev/null
++++ b/package/ptpd2/0003-Solve-issue-25-Removing-type-U64-from-net-snmp-relat.patch
+@@ -0,0 +1,28 @@
++From 84157b11e8f27318f7291823c657f6313c3b60af Mon Sep 17 00:00:00 2001
++From: Jan Breuer <jan.breuer@jaybee.cz>
++Date: Tue, 12 Jul 2016 18:07:08 +0200
++Subject: [PATCH] Solve issue #25 - Removing type U64 from net-snmp related
++ code
++
++[Thomas: Backport to 2.3.1.]
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
++---
++ src/dep/snmp.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/src/dep/snmp.c b/src/dep/snmp.c
++index 5c08aaa..3086c86 100644
++--- a/src/dep/snmp.c
+++++ b/src/dep/snmp.c
++@@ -221,7 +221,7 @@ snmpHeaderIndexBest(struct snmpHeaderIndex *idx)
++ 
++ #define SNMP_LOCAL_VARIABLES			\
++ 	static unsigned long long_ret;		\
++-	static U64 counter64_ret;		\
+++	static struct counter64 counter64_ret;	\
++ 	static uint32_t ipaddr;			\
++ 	Integer64 bigint;			\
++ 	struct snmpHeaderIndex idx;		\
++-- 
++2.14.4
++
+diff --git a/package/python-enum34/python-enum34.mk b/package/python-enum34/python-enum34.mk
+index c612cb65e2..09d1143ab9 100644
+--- a/package/python-enum34/python-enum34.mk
++++ b/package/python-enum34/python-enum34.mk
+@@ -12,3 +12,4 @@ PYTHON_ENUM34_LICENSE = BSD-3-Clause
+ PYTHON_ENUM34_LICENSE_FILES = enum/LICENSE
+ 
+ $(eval $(python-package))
++$(eval $(host-python-package))
+diff --git a/package/qemu/0001-user-exec-fix-usage-of-mcontext-structure-on-ARM-uCl.patch b/package/qemu/0001-user-exec-fix-usage-of-mcontext-structure-on-ARM-uCl.patch
+index 6d6d024d9d..a0c4a6203c 100644
+--- a/package/qemu/0001-user-exec-fix-usage-of-mcontext-structure-on-ARM-uCl.patch
++++ b/package/qemu/0001-user-exec-fix-usage-of-mcontext-structure-on-ARM-uCl.patch
+@@ -17,11 +17,11 @@ Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+  user-exec.c | 2 +-
+  1 file changed, 1 insertion(+), 1 deletion(-)
+ 
+-diff --git a/user-exec.c b/user-exec.c
++diff --git a/accel/tcg/user-exec.c b/accel/tcg/user-exec.c
+ index 6db0758..2b3d116 100644
+---- a/user-exec.c
+-+++ b/user-exec.c
+-@@ -409,7 +409,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
++--- a/accel/tcg/user-exec.c
+++++ b/accel/tcg/user-exec.c
++@@ -463,7 +463,7 @@ int cpu_signal_handler(int host_signum, void *pinfo,
+  
+  #if defined(__NetBSD__)
+      pc = uc->uc_mcontext.__gregs[_REG_R15];
+diff --git a/package/qemu/0002-memfd-fix-configure-test.patch b/package/qemu/0002-memfd-fix-configure-test.patch
+deleted file mode 100644
+index 3e06c0e932..0000000000
+--- a/package/qemu/0002-memfd-fix-configure-test.patch
++++ /dev/null
+@@ -1,58 +0,0 @@
+-From 75e5b70e6b5dcc4f2219992d7cffa462aa406af0 Mon Sep 17 00:00:00 2001
+-From: Paolo Bonzini <pbonzini@redhat.com>
+-Date: Tue, 28 Nov 2017 11:51:27 +0100
+-Subject: [PATCH] memfd: fix configure test
+-MIME-Version: 1.0
+-Content-Type: text/plain; charset=UTF-8
+-Content-Transfer-Encoding: 8bit
+-
+-Recent glibc added memfd_create in sys/mman.h.  This conflicts with
+-the definition in util/memfd.c:
+-
+-    /builddir/build/BUILD/qemu-2.11.0-rc1/util/memfd.c:40:12: error: static declaration of memfd_create follows non-static declaration
+-
+-Fix the configure test, and remove the sys/memfd.h inclusion since the
+-file actually does not exist---it is a typo in the memfd_create(2) man
+-page.
+-
+-Cc: Marc-André Lureau <marcandre.lureau@redhat.com>
+-Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: commit 75e5b70e6b5
+-
+- configure    | 2 +-
+- util/memfd.c | 4 +---
+- 2 files changed, 2 insertions(+), 4 deletions(-)
+-
+-diff --git a/configure b/configure
+-index 9c8aa5a98bd4..99ccc1725ace 100755
+---- a/configure
+-+++ b/configure
+-@@ -3923,7 +3923,7 @@ fi
+- # check if memfd is supported
+- memfd=no
+- cat > $TMPC << EOF
+--#include <sys/memfd.h>
+-+#include <sys/mman.h>
+- 
+- int main(void)
+- {
+-diff --git a/util/memfd.c b/util/memfd.c
+-index 4571d1aba866..412e94a405fc 100644
+---- a/util/memfd.c
+-+++ b/util/memfd.c
+-@@ -31,9 +31,7 @@
+- 
+- #include "qemu/memfd.h"
+- 
+--#ifdef CONFIG_MEMFD
+--#include <sys/memfd.h>
+--#elif defined CONFIG_LINUX
+-+#if defined CONFIG_LINUX && !defined CONFIG_MEMFD
+- #include <sys/syscall.h>
+- #include <asm/unistd.h>
+- 
+--- 
+-2.16.2
+-
+diff --git a/package/qemu/Config.in.host b/package/qemu/Config.in.host
+index f14bcec6d6..957c7d2ae1 100644
+--- a/package/qemu/Config.in.host
++++ b/package/qemu/Config.in.host
+@@ -1,13 +1,39 @@
++config BR2_PACKAGE_HOST_QEMU_ARCH_SUPPORTS
++	bool
++	default y if BR2_arm
++	default y if BR2_armeb
++	default y if BR2_aarch64
++	default y if BR2_i386
++	default y if BR2_m68k
++	default y if BR2_microblazeel
++	default y if BR2_microblazebe
++	default y if BR2_mips
++	default y if BR2_mipsel
++	default y if BR2_powerpc
++	default y if BR2_powerpc64
++	default y if BR2_powerpc64le
++	default y if BR2_sh
++	default y if BR2_sparc
++	default y if BR2_x86_64
++	depends on !BR2_powerpc_620 && !BR2_powerpc_630 && !BR2_powerpc_970
++
++config BR2_PACKAGE_HOST_QEMU_SYSTEM_ARCH_SUPPORTS
++	bool
++	default y if BR2_PACKAGE_HOST_QEMU_ARCH_SUPPORTS
++	default y if BR2_mips64
++	default y if BR2_mips64el
++
++config BR2_PACKAGE_HOST_QEMU_USER_ARCH_SUPPORTS
++	bool
++	default y if BR2_PACKAGE_HOST_QEMU_ARCH_SUPPORTS
++
+ config BR2_PACKAGE_HOST_QEMU
+ 	bool "host qemu"
+-	depends on BR2_arm       || BR2_armeb       || BR2_aarch64      || \
+-		BR2_i386         || BR2_m68k        || BR2_microblazeel || \
+-		BR2_microblazebe || BR2_mips        || BR2_mipsel       || \
+-		BR2_mips64       || BR2_mips64el    || BR2_powerpc      || \
+-		BR2_powerpc64    || BR2_powerpc64le || BR2_sh           || \
+-		BR2_sparc        || BR2_x86_64
++	depends on BR2_PACKAGE_HOST_QEMU_SYSTEM_ARCH_SUPPORTS || BR2_PACKAGE_HOST_QEMU_USER_ARCH_SUPPORTS
+ 	select BR2_PACKAGE_HOST_QEMU_LINUX_USER_MODE \
+-		if !BR2_PACKAGE_HOST_QEMU_SYSTEM_MODE
++		if !BR2_PACKAGE_HOST_QEMU_SYSTEM_MODE && BR2_PACKAGE_HOST_QEMU_USER_ARCH_SUPPORTS
++	select BR2_PACKAGE_HOST_QEMU_SYSTEM_MODE \
++		if !BR2_PACKAGE_HOST_QEMU_USER_ARCH_SUPPORTS
+ 	help
+ 	  QEMU is a generic and open source machine emulator and
+ 	  virtualizer.
+@@ -22,12 +48,14 @@ comment "Emulators selection"
+ 
+ config BR2_PACKAGE_HOST_QEMU_SYSTEM_MODE
+ 	bool "Enable system emulation"
++	depends on BR2_PACKAGE_HOST_QEMU_SYSTEM_ARCH_SUPPORTS
+ 	help
+ 	  Enables the build of the system emulator, which allows to
+ 	  boot an entire system in Qemu.
+ 
+ config BR2_PACKAGE_HOST_QEMU_LINUX_USER_MODE
+ 	bool "Enable Linux user-land emulation"
++	depends on BR2_PACKAGE_HOST_QEMU_USER_ARCH_SUPPORTS
+ 	help
+ 	  Enables the build of the user-land emulator, which allows to
+ 	  run user-space applications.
+diff --git a/package/qemu/qemu.hash b/package/qemu/qemu.hash
+index 1173c1bf3d..2b27008b73 100644
+--- a/package/qemu/qemu.hash
++++ b/package/qemu/qemu.hash
+@@ -1,4 +1,4 @@
+ # Locally computed, tarball verified with GPG signature
+-sha256 fcfdaa1ecdaac8aead616fe811bfb8fe4a8f2cd59796aa446c5175b5af0e829f  qemu-2.10.2.tar.xz
++sha256 33583800e0006cd00b78226b85be5a27c8e3b156bed2e60e83ecbeb7b9b8364f  qemu-2.12.1.tar.xz
+ sha256 6f04ae8364d0079a192b14635f4b1da294ce18724c034c39a6a41d1b09df6100  COPYING
+ sha256 48ffe9fc7f1d5462dbd19340bc4dd1d8a9e37c61ed535813e614cbe4a5f0d4df  COPYING.LIB
+diff --git a/package/qemu/qemu.mk b/package/qemu/qemu.mk
+index c3a7e7738e..5496a5f025 100644
+--- a/package/qemu/qemu.mk
++++ b/package/qemu/qemu.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-QEMU_VERSION = 2.10.2
++QEMU_VERSION = 2.12.1
+ QEMU_SOURCE = qemu-$(QEMU_VERSION).tar.xz
+ QEMU_SITE = http://download.qemu.org
+ QEMU_LICENSE = GPL-2.0, LGPL-2.1, MIT, BSD-3-Clause, BSD-2-Clause, Others/BSD-1c
+@@ -13,6 +13,136 @@ QEMU_LICENSE_FILES = COPYING COPYING.LIB
+ #       the non-(L)GPL license texts are specified in the affected
+ #       individual source files.
+ 
++#-------------------------------------------------------------
++# Target-qemu
++
++QEMU_DEPENDENCIES = host-pkgconf host-python libglib2 zlib pixman
++
++# Need the LIBS variable because librt and libm are
++# not automatically pulled. :-(
++QEMU_LIBS = -lrt -lm
++
++QEMU_OPTS =
++
++QEMU_VARS = \
++	LIBTOOL=$(HOST_DIR)/bin/libtool \
++	PYTHON=$(HOST_DIR)/bin/python2 \
++	PYTHONPATH=$(TARGET_DIR)/usr/lib/python$(PYTHON_VERSION_MAJOR)/site-packages
++
++# If we want to specify only a subset of targets, we must still enable all
++# of them, so that QEMU properly builds its list of default targets, from
++# which it then checks if the specified sub-set is valid. That's what we
++# do in the first part of the if-clause.
++# Otherwise, if we do not want to pass a sub-set of targets, we then need
++# to either enable or disable -user and/or -system emulation appropriately.
++# That's what we do in the else-clause.
++ifneq ($(call qstrip,$(BR2_PACKAGE_QEMU_CUSTOM_TARGETS)),)
++QEMU_OPTS += --enable-system --enable-linux-user
++QEMU_OPTS += --target-list="$(call qstrip,$(BR2_PACKAGE_QEMU_CUSTOM_TARGETS))"
++else
++
++ifeq ($(BR2_PACKAGE_QEMU_SYSTEM),y)
++QEMU_OPTS += --enable-system
++else
++QEMU_OPTS += --disable-system
++endif
++
++ifeq ($(BR2_PACKAGE_QEMU_LINUX_USER),y)
++QEMU_OPTS += --enable-linux-user
++else
++QEMU_OPTS += --disable-linux-user
++endif
++
++endif
++
++ifeq ($(BR2_PACKAGE_QEMU_SDL),y)
++QEMU_OPTS += --enable-sdl
++QEMU_DEPENDENCIES += sdl
++QEMU_VARS += SDL_CONFIG=$(BR2_STAGING_DIR)/usr/bin/sdl-config
++else
++QEMU_OPTS += --disable-sdl
++endif
++
++ifeq ($(BR2_PACKAGE_QEMU_FDT),y)
++QEMU_OPTS += --enable-fdt
++QEMU_DEPENDENCIES += dtc
++else
++QEMU_OPTS += --disable-fdt
++endif
++
++ifeq ($(BR2_PACKAGE_QEMU_TOOLS),y)
++QEMU_OPTS += --enable-tools
++else
++QEMU_OPTS += --disable-tools
++endif
++
++ifeq ($(BR2_PACKAGE_LIBSSH2),y)
++QEMU_OPTS += --enable-libssh2
++QEMU_DEPENDENCIES += libssh2
++else
++QEMU_OPTS += --disable-libssh2
++endif
++
++# Override CPP, as it expects to be able to call it like it'd
++# call the compiler.
++define QEMU_CONFIGURE_CMDS
++	( cd $(@D); \
++		LIBS='$(QEMU_LIBS)' \
++		$(TARGET_CONFIGURE_OPTS) \
++		$(TARGET_CONFIGURE_ARGS) \
++		CPP="$(TARGET_CC) -E" \
++		$(QEMU_VARS) \
++		./configure \
++			--prefix=/usr \
++			--cross-prefix=$(TARGET_CROSS) \
++			--audio-drv-list= \
++			--enable-kvm \
++			--enable-attr \
++			--enable-vhost-net \
++			--disable-bsd-user \
++			--disable-xen \
++			--disable-slirp \
++			--disable-vnc \
++			--disable-virtfs \
++			--disable-brlapi \
++			--disable-curses \
++			--disable-curl \
++			--disable-bluez \
++			--disable-vde \
++			--disable-linux-aio \
++			--disable-cap-ng \
++			--disable-docs \
++			--disable-spice \
++			--disable-rbd \
++			--disable-libiscsi \
++			--disable-usb-redir \
++			--disable-strip \
++			--disable-seccomp \
++			--disable-sparse \
++			--disable-mpath \
++			--disable-sanitizers \
++			--disable-hvf \
++			--disable-whpx \
++			--disable-malloc-trim \
++			--disable-membarrier \
++			--disable-vhost-crypto \
++			--disable-libxml2 \
++			--disable-capstone \
++			--disable-git-update \
++			$(QEMU_OPTS) \
++	)
++endef
++
++define QEMU_BUILD_CMDS
++	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D)
++endef
++
++define QEMU_INSTALL_TARGET_CMDS
++	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) $(QEMU_MAKE_ENV) DESTDIR=$(TARGET_DIR) install
++endef
++
++$(eval $(generic-package))
++
+ #-------------------------------------------------------------
+ # Host-qemu
+ 
+@@ -148,124 +278,3 @@ $(eval $(host-generic-package))
+ 
+ # variable used by other packages
+ QEMU_USER = $(HOST_DIR)/bin/qemu-$(HOST_QEMU_ARCH)
+-
+-#-------------------------------------------------------------
+-# Target-qemu
+-
+-QEMU_DEPENDENCIES = host-pkgconf host-python libglib2 zlib pixman
+-
+-# Need the LIBS variable because librt and libm are
+-# not automatically pulled. :-(
+-QEMU_LIBS = -lrt -lm
+-
+-QEMU_OPTS =
+-
+-QEMU_VARS = \
+-	LIBTOOL=$(HOST_DIR)/bin/libtool \
+-	PYTHON=$(HOST_DIR)/bin/python2 \
+-	PYTHONPATH=$(TARGET_DIR)/usr/lib/python$(PYTHON_VERSION_MAJOR)/site-packages
+-
+-# If we want to specify only a subset of targets, we must still enable all
+-# of them, so that QEMU properly builds its list of default targets, from
+-# which it then checks if the specified sub-set is valid. That's what we
+-# do in the first part of the if-clause.
+-# Otherwise, if we do not want to pass a sub-set of targets, we then need
+-# to either enable or disable -user and/or -system emulation appropriately.
+-# That's what we do in the else-clause.
+-ifneq ($(call qstrip,$(BR2_PACKAGE_QEMU_CUSTOM_TARGETS)),)
+-QEMU_OPTS += --enable-system --enable-linux-user
+-QEMU_OPTS += --target-list="$(call qstrip,$(BR2_PACKAGE_QEMU_CUSTOM_TARGETS))"
+-else
+-
+-ifeq ($(BR2_PACKAGE_QEMU_SYSTEM),y)
+-QEMU_OPTS += --enable-system
+-else
+-QEMU_OPTS += --disable-system
+-endif
+-
+-ifeq ($(BR2_PACKAGE_QEMU_LINUX_USER),y)
+-QEMU_OPTS += --enable-linux-user
+-else
+-QEMU_OPTS += --disable-linux-user
+-endif
+-
+-endif
+-
+-ifeq ($(BR2_PACKAGE_QEMU_SDL),y)
+-QEMU_OPTS += --enable-sdl
+-QEMU_DEPENDENCIES += sdl
+-QEMU_VARS += SDL_CONFIG=$(BR2_STAGING_DIR)/usr/bin/sdl-config
+-else
+-QEMU_OPTS += --disable-sdl
+-endif
+-
+-ifeq ($(BR2_PACKAGE_QEMU_FDT),y)
+-QEMU_OPTS += --enable-fdt
+-QEMU_DEPENDENCIES += dtc
+-else
+-QEMU_OPTS += --disable-fdt
+-endif
+-
+-ifeq ($(BR2_PACKAGE_QEMU_TOOLS),y)
+-QEMU_OPTS += --enable-tools
+-else
+-QEMU_OPTS += --disable-tools
+-endif
+-
+-ifeq ($(BR2_PACKAGE_LIBSSH2),y)
+-QEMU_OPTS += --enable-libssh2
+-QEMU_DEPENDENCIES += libssh2
+-else
+-QEMU_OPTS += --disable-libssh2
+-endif
+-
+-# Override CPP, as it expects to be able to call it like it'd
+-# call the compiler.
+-define QEMU_CONFIGURE_CMDS
+-	( cd $(@D); \
+-		LIBS='$(QEMU_LIBS)' \
+-		$(TARGET_CONFIGURE_OPTS) \
+-		$(TARGET_CONFIGURE_ARGS) \
+-		CPP="$(TARGET_CC) -E" \
+-		$(QEMU_VARS) \
+-		./configure \
+-			--prefix=/usr \
+-			--cross-prefix=$(TARGET_CROSS) \
+-			--with-system-pixman \
+-			--audio-drv-list= \
+-			--enable-kvm \
+-			--enable-attr \
+-			--enable-vhost-net \
+-			--disable-bsd-user \
+-			--disable-xen \
+-			--disable-slirp \
+-			--disable-vnc \
+-			--disable-virtfs \
+-			--disable-brlapi \
+-			--disable-curses \
+-			--disable-curl \
+-			--disable-bluez \
+-			--disable-vde \
+-			--disable-linux-aio \
+-			--disable-cap-ng \
+-			--disable-docs \
+-			--disable-spice \
+-			--disable-rbd \
+-			--disable-libiscsi \
+-			--disable-usb-redir \
+-			--disable-strip \
+-			--disable-seccomp \
+-			--disable-sparse \
+-			$(QEMU_OPTS) \
+-	)
+-endef
+-
+-define QEMU_BUILD_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D)
+-endef
+-
+-define QEMU_INSTALL_TARGET_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) $(QEMU_MAKE_ENV) DESTDIR=$(TARGET_DIR) install
+-endef
+-
+-$(eval $(generic-package))
+diff --git a/package/qt/qt.mk b/package/qt/qt.mk
+index 921ff13d29..23cb94c11f 100644
+--- a/package/qt/qt.mk
++++ b/package/qt/qt.mk
+@@ -7,7 +7,7 @@
+ QT_VERSION_MAJOR = 4.8
+ QT_VERSION = $(QT_VERSION_MAJOR).7
+ QT_SOURCE = qt-everywhere-opensource-src-$(QT_VERSION).tar.gz
+-QT_SITE = http://download.qt-project.org/official_releases/qt/$(QT_VERSION_MAJOR)/$(QT_VERSION)
++QT_SITE = http://download.qt.io/archive/qt/$(QT_VERSION_MAJOR)/$(QT_VERSION)
+ QT_DEPENDENCIES = host-pkgconf
+ QT_INSTALL_STAGING = YES
+ 
+diff --git a/package/qt5/qt5base/qt5base.mk b/package/qt5/qt5base/qt5base.mk
+index 53c98ce490..b79059c2a4 100644
+--- a/package/qt5/qt5base/qt5base.mk
++++ b/package/qt5/qt5base/qt5base.mk
+@@ -35,12 +35,19 @@ endif
+ 
+ QT5BASE_CONFIGURE_OPTS += $(call qstrip,$(BR2_PACKAGE_QT5BASE_CUSTOM_CONF_OPTS))
+ 
++ifeq ($(BR2_PACKAGE_LIBDRM),y)
++QT5BASE_CONFIGURE_OPTS += -kms
++QT5BASE_DEPENDENCIES += libdrm
++else
++QT5BASE_CONFIGURE_OPTS += -no-kms
++endif
++
+ # Uses libgbm from mesa3d
+ ifeq ($(BR2_PACKAGE_MESA3D_OPENGL_EGL),y)
+-QT5BASE_CONFIGURE_OPTS += -kms -gbm
++QT5BASE_CONFIGURE_OPTS += -gbm
+ QT5BASE_DEPENDENCIES += mesa3d
+ else
+-QT5BASE_CONFIGURE_OPTS += -no-kms
++QT5BASE_CONFIGURE_OPTS += -no-gbm
+ endif
+ 
+ ifeq ($(BR2_ENABLE_DEBUG),y)
+diff --git a/package/setools/setools.mk b/package/setools/setools.mk
+index 6748c95c23..c152e541c1 100644
+--- a/package/setools/setools.mk
++++ b/package/setools/setools.mk
+@@ -18,6 +18,7 @@ SETOOLS_PYLIBVER = python$(PYTHON3_VERSION_MAJOR)
+ else
+ SETOOLS_PYLIBVER = python$(PYTHON_VERSION_MAJOR)
+ SETOOLS_DEPENDENCIES += python-enum34
++HOST_SETOOLS_DEPENDENCIES += host-python-enum34
+ endif
+ 
+ define SETOOLS_FIX_SETUP
+diff --git a/package/spice-protocol/spice-protocol.hash b/package/spice-protocol/spice-protocol.hash
+index c75c095cbf..e72bb2d712 100644
+--- a/package/spice-protocol/spice-protocol.hash
++++ b/package/spice-protocol/spice-protocol.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated after checking pgp signature
+-sha256	788f0d7195bec5b14371732b562eb55ca82712aab12273b0e87529fb30532efb	spice-protocol-0.12.10.tar.bz2
++sha256	20350bc4309039fdf0d29ee4fd0033cde27bccf33501e13b3c1befafde9d0c9c	spice-protocol-0.12.14.tar.bz2
+diff --git a/package/spice-protocol/spice-protocol.mk b/package/spice-protocol/spice-protocol.mk
+index dcc6feeb13..7392e9533d 100644
+--- a/package/spice-protocol/spice-protocol.mk
++++ b/package/spice-protocol/spice-protocol.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SPICE_PROTOCOL_VERSION = 0.12.10
++SPICE_PROTOCOL_VERSION = 0.12.14
+ SPICE_PROTOCOL_SOURCE = spice-protocol-$(SPICE_PROTOCOL_VERSION).tar.bz2
+ SPICE_PROTOCOL_SITE = http://www.spice-space.org/download/releases
+ SPICE_PROTOCOL_LICENSE = BSD-3-Clause
+diff --git a/package/spice/0001-Prevent-possible-DoS-attempts-during-protocol-handsh.patch b/package/spice/0001-Prevent-possible-DoS-attempts-during-protocol-handsh.patch
+deleted file mode 100644
+index 57a64d96b7..0000000000
+--- a/package/spice/0001-Prevent-possible-DoS-attempts-during-protocol-handsh.patch
++++ /dev/null
+@@ -1,60 +0,0 @@
+-From 1c6517973095a67c8cb57f3550fc1298404ab556 Mon Sep 17 00:00:00 2001
+-From: Frediano Ziglio <fziglio@redhat.com>
+-Date: Tue, 13 Dec 2016 14:39:48 +0000
+-Subject: [PATCH] Prevent possible DoS attempts during protocol handshake
+-
+-The limit for link message is specified using a 32 bit unsigned integer.
+-This could cause possible DoS due to excessive memory allocations and
+-some possible crashes.
+-For instance a value >= 2^31 causes a spice_assert to be triggered in
+-async_read_handler (reds-stream.c) due to an integer overflow at this
+-line:
+-
+-   int n = async->end - async->now;
+-
+-This could be easily triggered with a program like
+-
+-  #!/usr/bin/env python
+-
+-  import socket
+-  import time
+-  from struct import pack
+-
+-  server = '127.0.0.1'
+-  port = 5900
+-
+-  s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+-  s.connect((server, port))
+-  data = pack('<4sIII', 'REDQ', 2, 2, 0xaaaaaaaa)
+-  s.send(data)
+-
+-  time.sleep(1)
+-
+-without requiring any authentication (the same can be done
+-with TLS).
+-
+-[Peter: fixes CVE-2016-9578]
+-Signed-off-by: Frediano Ziglio <fziglio@redhat.com>
+-Acked-by: Christophe Fergeau <cfergeau@redhat.com>
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- server/reds.c | 3 ++-
+- 1 file changed, 2 insertions(+), 1 deletion(-)
+-
+-diff --git a/server/reds.c b/server/reds.c
+-index f40b65c1..86a33d53 100644
+---- a/server/reds.c
+-+++ b/server/reds.c
+-@@ -2202,7 +2202,8 @@ static void reds_handle_read_header_done(void *opaque)
+- 
+-     reds->peer_minor_version = header->minor_version;
+- 
+--    if (header->size < sizeof(SpiceLinkMess)) {
+-+    /* the check for 4096 is to avoid clients to cause arbitrary big memory allocations */
+-+    if (header->size < sizeof(SpiceLinkMess) || header->size > 4096) {
+-         reds_send_link_error(link, SPICE_LINK_ERR_INVALID_DATA);
+-         spice_warning("bad size %u", header->size);
+-         reds_link_free(link);
+--- 
+-2.11.0
+-
+diff --git a/package/spice/0002-Prevent-integer-overflows-in-capability-checks.patch b/package/spice/0002-Prevent-integer-overflows-in-capability-checks.patch
+deleted file mode 100644
+index 5bf9b89d17..0000000000
+--- a/package/spice/0002-Prevent-integer-overflows-in-capability-checks.patch
++++ /dev/null
+@@ -1,43 +0,0 @@
+-From f66dc643635518e53dfbe5262f814a64eec54e4a Mon Sep 17 00:00:00 2001
+-From: Frediano Ziglio <fziglio@redhat.com>
+-Date: Tue, 13 Dec 2016 14:40:10 +0000
+-Subject: [PATCH] Prevent integer overflows in capability checks
+-
+-The limits for capabilities are specified using 32 bit unsigned integers.
+-This could cause possible integer overflows causing buffer overflows.
+-For instance the sum of num_common_caps and num_caps can be 0 avoiding
+-additional checks.
+-As the link message is now capped to 4096 and the capabilities are
+-contained in the link message limit the capabilities to 1024
+-(capabilities are expressed in number of uint32_t items).
+-
+-[Peter: fixes CVE-2016-9578]
+-Signed-off-by: Frediano Ziglio <fziglio@redhat.com>
+-Acked-by: Christophe Fergeau <cfergeau@redhat.com>
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- server/reds.c | 8 ++++++++
+- 1 file changed, 8 insertions(+)
+-
+-diff --git a/server/reds.c b/server/reds.c
+-index 86a33d53..91504544 100644
+---- a/server/reds.c
+-+++ b/server/reds.c
+-@@ -2110,6 +2110,14 @@ static void reds_handle_read_link_done(void *opaque)
+-     link_mess->num_channel_caps = GUINT32_FROM_LE(link_mess->num_channel_caps);
+-     link_mess->num_common_caps = GUINT32_FROM_LE(link_mess->num_common_caps);
+- 
+-+    /* Prevent DoS. Currently we defined only 13 capabilities,
+-+     * I expect 1024 to be valid for quite a lot time */
+-+    if (link_mess->num_channel_caps > 1024 || link_mess->num_common_caps > 1024) {
+-+        reds_send_link_error(link, SPICE_LINK_ERR_INVALID_DATA);
+-+        reds_link_free(link);
+-+        return;
+-+    }
+-+
+-     num_caps = link_mess->num_common_caps + link_mess->num_channel_caps;
+-     caps = (uint32_t *)((uint8_t *)link_mess + link_mess->caps_offset);
+- 
+--- 
+-2.11.0
+-
+diff --git a/package/spice/0003-main-channel-Prevent-overflow-reading-messages-from-.patch b/package/spice/0003-main-channel-Prevent-overflow-reading-messages-from-.patch
+deleted file mode 100644
+index f602d5f3b1..0000000000
+--- a/package/spice/0003-main-channel-Prevent-overflow-reading-messages-from-.patch
++++ /dev/null
+@@ -1,33 +0,0 @@
+-From 5f96b596353d73bdf4bb3cd2de61e48a7fd5b4c3 Mon Sep 17 00:00:00 2001
+-From: Frediano Ziglio <fziglio@redhat.com>
+-Date: Tue, 29 Nov 2016 16:46:56 +0000
+-Subject: [PATCH] main-channel: Prevent overflow reading messages from client
+-
+-Caller is supposed the function return a buffer able to store
+-size bytes.
+-
+-[Peter: fixes CVE-2016-9577]
+-Signed-off-by: Frediano Ziglio <fziglio@redhat.com>
+-Acked-by: Christophe Fergeau <cfergeau@redhat.com>
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- server/main_channel.c | 3 +++
+- 1 file changed, 3 insertions(+)
+-
+-diff --git a/server/main_channel.c b/server/main_channel.c
+-index 0ecc9df8..1fc39155 100644
+---- a/server/main_channel.c
+-+++ b/server/main_channel.c
+-@@ -1026,6 +1026,9 @@ static uint8_t *main_channel_alloc_msg_rcv_buf(RedChannelClient *rcc,
+- 
+-     if (type == SPICE_MSGC_MAIN_AGENT_DATA) {
+-         return reds_get_agent_data_buffer(mcc, size);
+-+    } else if (size > sizeof(main_chan->recv_buf)) {
+-+        /* message too large, caller will log a message and close the connection */
+-+        return NULL;
+-     } else {
+-         return main_chan->recv_buf;
+-     }
+--- 
+-2.11.0
+-
+diff --git a/package/spice/0004-reds-Disconnect-when-receiving-overly-big-ClientMoni.patch b/package/spice/0004-reds-Disconnect-when-receiving-overly-big-ClientMoni.patch
+deleted file mode 100644
+index 070259f2bb..0000000000
+--- a/package/spice/0004-reds-Disconnect-when-receiving-overly-big-ClientMoni.patch
++++ /dev/null
+@@ -1,75 +0,0 @@
+-From f1e7ec03e26ab6b8ca9b7ec060846a5b706a963d Mon Sep 17 00:00:00 2001
+-From: Frediano Ziglio <fziglio@redhat.com>
+-Date: Mon, 15 May 2017 15:57:28 +0100
+-Subject: [PATCH] reds: Disconnect when receiving overly big
+- ClientMonitorsConfig
+-
+-Total message size received from the client was unlimited. There is
+-a 2kiB size check on individual agent messages, but the MonitorsConfig
+-message can be split in multiple chunks, and the size of the
+-non-chunked MonitorsConfig message was never checked. This could easily
+-lead to memory exhaustion on the host.
+-
+-Signed-off-by: Frediano Ziglio <fziglio@redhat.com>
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- server/reds.c | 25 +++++++++++++++++++++++--
+- 1 file changed, 23 insertions(+), 2 deletions(-)
+-
+-diff --git a/server/reds.c b/server/reds.c
+-index f439a366..7be85fdf 100644
+---- a/server/reds.c
+-+++ b/server/reds.c
+-@@ -993,19 +993,34 @@ static void reds_client_monitors_config_cleanup(void)
+- static void reds_on_main_agent_monitors_config(
+-         MainChannelClient *mcc, void *message, size_t size)
+- {
+-+    const unsigned int MAX_MONITORS = 256;
+-+    const unsigned int MAX_MONITOR_CONFIG_SIZE =
+-+       sizeof(VDAgentMonitorsConfig) + MAX_MONITORS * sizeof(VDAgentMonConfig);
+-+
+-     VDAgentMessage *msg_header;
+-     VDAgentMonitorsConfig *monitors_config;
+-     RedsClientMonitorsConfig *cmc = &reds->client_monitors_config;
+- 
+-+    // limit size of message sent by the client as this can cause a DoS through
+-+    // memory exhaustion, or potentially some integer overflows
+-+    if (sizeof(VDAgentMessage) + MAX_MONITOR_CONFIG_SIZE - cmc->buffer_size < size) {
+-+        goto overflow;
+-+    }
+-     cmc->buffer_size += size;
+-     cmc->buffer = realloc(cmc->buffer, cmc->buffer_size);
+-     spice_assert(cmc->buffer);
+-     cmc->mcc = mcc;
+-     memcpy(cmc->buffer + cmc->buffer_pos, message, size);
+-     cmc->buffer_pos += size;
+-+    if (sizeof(VDAgentMessage) > cmc->buffer_size) {
+-+        spice_debug("not enough data yet. %d", cmc->buffer_size);
+-+        return;
+-+    }
+-     msg_header = (VDAgentMessage *)cmc->buffer;
+--    if (sizeof(VDAgentMessage) > cmc->buffer_size ||
+--            msg_header->size > cmc->buffer_size - sizeof(VDAgentMessage)) {
+-+    if (msg_header->size > MAX_MONITOR_CONFIG_SIZE) {
+-+        goto overflow;
+-+    }
+-+    if (msg_header->size > cmc->buffer_size - sizeof(VDAgentMessage)) {
+-         spice_debug("not enough data yet. %d", cmc->buffer_size);
+-         return;
+-     }
+-@@ -1013,6 +1028,12 @@ static void reds_on_main_agent_monitors_config(
+-     spice_debug("%s: %d", __func__, monitors_config->num_of_monitors);
+-     red_dispatcher_client_monitors_config(monitors_config);
+-     reds_client_monitors_config_cleanup();
+-+    return;
+-+
+-+overflow:
+-+    spice_warning("received invalid MonitorsConfig request from client, disconnecting");
+-+    red_channel_client_disconnect(main_channel_client_get_base(mcc));
+-+    reds_client_monitors_config_cleanup();
+- }
+- 
+- void reds_on_main_agent_data(MainChannelClient *mcc, void *message, size_t size)
+--- 
+-2.11.0
+-
+diff --git a/package/spice/0005-reds-Avoid-integer-overflows-handling-monitor-config.patch b/package/spice/0005-reds-Avoid-integer-overflows-handling-monitor-config.patch
+deleted file mode 100644
+index 98740520c1..0000000000
+--- a/package/spice/0005-reds-Avoid-integer-overflows-handling-monitor-config.patch
++++ /dev/null
+@@ -1,31 +0,0 @@
+-From ec6229c79abe05d731953df5f7e9a05ec9f6df79 Mon Sep 17 00:00:00 2001
+-From: Frediano Ziglio <fziglio@redhat.com>
+-Date: Mon, 15 May 2017 15:57:28 +0100
+-Subject: [PATCH] reds: Avoid integer overflows handling monitor
+- configuration
+-
+-Avoid VDAgentMessage::size integer overflows.
+-
+-Signed-off-by: Frediano Ziglio <fziglio@redhat.com>
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- server/reds.c | 3 +++
+- 1 file changed, 3 insertions(+)
+-
+-diff --git a/server/reds.c b/server/reds.c
+-index 7be85fdf..e1c8c108 100644
+---- a/server/reds.c
+-+++ b/server/reds.c
+-@@ -1024,6 +1024,9 @@ static void reds_on_main_agent_monitors_config(
+-         spice_debug("not enough data yet. %d", cmc->buffer_size);
+-         return;
+-     }
+-+    if (msg_header->size < sizeof(VDAgentMonitorsConfig)) {
+-+        goto overflow;
+-+    }
+-     monitors_config = (VDAgentMonitorsConfig *)(cmc->buffer + sizeof(*msg_header));
+-     spice_debug("%s: %d", __func__, monitors_config->num_of_monitors);
+-     red_dispatcher_client_monitors_config(monitors_config);
+--- 
+-2.11.0
+-
+diff --git a/package/spice/0006-reds-Avoid-buffer-overflows-handling-monitor-configu.patch b/package/spice/0006-reds-Avoid-buffer-overflows-handling-monitor-configu.patch
+deleted file mode 100644
+index 212645b44f..0000000000
+--- a/package/spice/0006-reds-Avoid-buffer-overflows-handling-monitor-configu.patch
++++ /dev/null
+@@ -1,48 +0,0 @@
+-From a957a90baf2c62d31f3547e56bba7d0e812d2331 Mon Sep 17 00:00:00 2001
+-From: Frediano Ziglio <fziglio@redhat.com>
+-Date: Mon, 15 May 2017 15:57:28 +0100
+-Subject: [PATCH] reds: Avoid buffer overflows handling monitor
+- configuration
+-
+-It was also possible for a malicious client to set
+-VDAgentMonitorsConfig::num_of_monitors to a number larger
+-than the actual size of VDAgentMOnitorsConfig::monitors.
+-This would lead to buffer overflows, which could allow the guest to
+-read part of the host memory. This might cause write overflows in the
+-host as well, but controlling the content of such buffers seems
+-complicated.
+-
+-Signed-off-by: Frediano Ziglio <fziglio@redhat.com>
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- server/reds.c | 7 +++++++
+- 1 file changed, 7 insertions(+)
+-
+-diff --git a/server/reds.c b/server/reds.c
+-index e1c8c108..3a42c375 100644
+---- a/server/reds.c
+-+++ b/server/reds.c
+-@@ -1000,6 +1000,7 @@ static void reds_on_main_agent_monitors_config(
+-     VDAgentMessage *msg_header;
+-     VDAgentMonitorsConfig *monitors_config;
+-     RedsClientMonitorsConfig *cmc = &reds->client_monitors_config;
+-+    uint32_t max_monitors;
+- 
+-     // limit size of message sent by the client as this can cause a DoS through
+-     // memory exhaustion, or potentially some integer overflows
+-@@ -1028,6 +1029,12 @@ static void reds_on_main_agent_monitors_config(
+-         goto overflow;
+-     }
+-     monitors_config = (VDAgentMonitorsConfig *)(cmc->buffer + sizeof(*msg_header));
+-+    // limit the monitor number to avoid buffer overflows
+-+    max_monitors = (msg_header->size - sizeof(VDAgentMonitorsConfig)) /
+-+                   sizeof(VDAgentMonConfig);
+-+    if (monitors_config->num_of_monitors > max_monitors) {
+-+        goto overflow;
+-+    }
+-     spice_debug("%s: %d", __func__, monitors_config->num_of_monitors);
+-     red_dispatcher_client_monitors_config(monitors_config);
+-     reds_client_monitors_config_cleanup();
+--- 
+-2.11.0
+-
+diff --git a/package/spice/spice.hash b/package/spice/spice.hash
+index c9b591f41d..1a25926ab2 100644
+--- a/package/spice/spice.hash
++++ b/package/spice/spice.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated
+-sha256	f901a5c5873d61acac84642f9eea5c4d6386fc3e525c2b68792322794e1c407d	spice-0.12.8.tar.bz2
++sha256	1ead5de63d06eededed4017db37240f07bef0abffbaf621899647e7e685a1519	spice-0.14.1.tar.bz2
+diff --git a/package/spice/spice.mk b/package/spice/spice.mk
+index 7b09f39fe7..16e57441a8 100644
+--- a/package/spice/spice.mk
++++ b/package/spice/spice.mk
+@@ -4,13 +4,14 @@
+ #
+ ################################################################################
+ 
+-SPICE_VERSION = 0.12.8
++SPICE_VERSION = 0.14.1
+ SPICE_SOURCE = spice-$(SPICE_VERSION).tar.bz2
+-SPICE_SITE = http://www.spice-space.org/download/releases
++SPICE_SITE = http://www.spice-space.org/download/releases/spice-server
+ SPICE_LICENSE = LGPL-2.1+
+ SPICE_LICENSE_FILES = COPYING
+ SPICE_INSTALL_STAGING = YES
+ SPICE_DEPENDENCIES = \
++	host-pkgconf \
+ 	jpeg \
+ 	libglib2 \
+ 	openssl \
+@@ -20,9 +21,9 @@ SPICE_DEPENDENCIES = \
+ # We disable everything for now, because the dependency tree can become
+ # quite deep if we try to enable some features, and I have not tested that.
+ SPICE_CONF_OPTS = \
++	--disable-gstreamer \
+ 	--disable-opengl \
+ 	--disable-smartcard \
+-	--disable-automated-tests \
+ 	--without-sasl \
+ 	--disable-manual
+ 
+@@ -42,6 +43,13 @@ else
+ SPICE_CONF_OPTS += --disable-lz4
+ endif
+ 
++ifeq ($(BR2_PACKAGE_OPUS),y)
++SPICE_CONF_OPTS += --enable-opus
++SPICE_DEPENDENCIES += opus
++else
++SPICE_CONF_OPTS += --disable-opus
++endif
++
+ # no enable/disable, detected using pkg-config
+ ifeq ($(BR2_PACKAGE_OPUS),y)
+ SPICE_DEPENDENCIES += opus
+diff --git a/package/tinc/tinc.hash b/package/tinc/tinc.hash
+index b0cdde834a..0daeb324e9 100644
+--- a/package/tinc/tinc.hash
++++ b/package/tinc/tinc.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated after checking pgp signature
+-sha256	7f6f5dc6444bc651ac635c81f4745bcce581bbd1d45ed60cbdc4ee11bebb10f4 tinc-1.0.33.tar.gz
+-sha256  10618781fe68ee0958d627f9f4b279b55eaff6c852f7742bbef64dc470c0077c COPYING
++sha256  18c83b147cc3e2133a7ac2543eeb014d52070de01c7474287d3ccecc9b16895e tinc-1.0.35.tar.gz
++sha256  3a112fd37b47d624e89b130d0e158bb8d14ec5bc9ecf5f18b448d2c07626e43d COPYING
+ sha256  9bf76a8aa304d807df20bf3d221c21d259764be63e39b58f299b80ba3ac14b5b COPYING.README
+diff --git a/package/tinc/tinc.mk b/package/tinc/tinc.mk
+index 002785307e..ae7ce97bfa 100644
+--- a/package/tinc/tinc.mk
++++ b/package/tinc/tinc.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-TINC_VERSION = 1.0.33
++TINC_VERSION = 1.0.35
+ TINC_SITE = http://www.tinc-vpn.org/packages
+ TINC_DEPENDENCIES = lzo openssl zlib
+ TINC_LICENSE = GPL-2.0+ with OpenSSL exception
+diff --git a/package/ustr/ustr.mk b/package/ustr/ustr.mk
+index 8346adbcf2..c99ada5276 100644
+--- a/package/ustr/ustr.mk
++++ b/package/ustr/ustr.mk
+@@ -28,5 +28,12 @@ USTR_MAKE_OPTS = all all-shared
+ USTR_CONF_OPTS += LDCONFIG=/bin/true
+ HOST_USTR_CONF_OPTS += LDCONFIG=/bin/true
+ 
++# for some reason, ustr finds it useful to install its source code in
++# /usr/share, which is totally useless on the target
++define USTR_REMOVE_SOURCE_CODE
++	$(RM) -rf $(TARGET_DIR)/usr/share/ustr-$(USTR_VERSION)
++endef
++USTR_POST_INSTALL_TARGET_HOOKS += USTR_REMOVE_SOURCE_CODE
++
+ $(eval $(autotools-package))
+ $(eval $(host-autotools-package))
+diff --git a/package/wireshark/wireshark.hash b/package/wireshark/wireshark.hash
+index 30b00b4dd0..8b2d7bc985 100644
+--- a/package/wireshark/wireshark.hash
++++ b/package/wireshark/wireshark.hash
+@@ -1,4 +1,4 @@
+-# From: https://www.wireshark.org/download/src/all-versions/SIGNATURES-2.2.16.txt
+-sha256 7dcc4e9f29ad8dd75849aa3b6f70b6ec82ab6899cb168096572775a6d97ced8a  wireshark-2.2.16.tar.bz2
++# From: https://www.wireshark.org/download/src/all-versions/SIGNATURES-2.2.17.txt
++sha256 923d39ff9c6df83b9594868542061da33bf330e12526778a8cb3adcf912eebb0  wireshark-2.2.17.tar.bz2
+ # Locally calculated
+ sha256 7cdbed2b697efaa45576a033f1ac0e73cd045644a91c79bbf41d4a7d81dac7bf  COPYING
+diff --git a/package/wireshark/wireshark.mk b/package/wireshark/wireshark.mk
+index 3d729ae090..fb90f2b940 100644
+--- a/package/wireshark/wireshark.mk
++++ b/package/wireshark/wireshark.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WIRESHARK_VERSION = 2.2.16
++WIRESHARK_VERSION = 2.2.17
+ WIRESHARK_SOURCE = wireshark-$(WIRESHARK_VERSION).tar.bz2
+ WIRESHARK_SITE = https://www.wireshark.org/download/src/all-versions
+ WIRESHARK_LICENSE = wireshark license
+diff --git a/utils/diffconfig b/utils/diffconfig
+index 5862a62f25..f1af23cfce 100755
+--- a/utils/diffconfig
++++ b/utils/diffconfig
+@@ -28,14 +28,14 @@ If no config files are specified, .config and .config.old are used.
+ 
+ Example usage:
+  $ diffconfig .config config-with-some-changes
+--LINUX_KERNEL_INTREE_DTS_NAME "vexpress-v2p-ca9"
+- LINUX_KERNEL_DTS_SUPPORT y -> n
+- LINUX_KERNEL_USE_INTREE_DTS y -> n
+- PACKAGE_DFU_UTIL n -> y
+- PACKAGE_LIBUSB n -> y
+- TARGET_GENERIC_HOSTNAME "buildroot" -> "Tuxie"
+- TARGET_GENERIC_ISSUE "Welcome to Buildroot" -> "Welcome to CustomBoard"
+-+PACKAGE_LIBUSB_COMPAT n
++-BR2_LINUX_KERNEL_INTREE_DTS_NAME "vexpress-v2p-ca9"
++ BR2_LINUX_KERNEL_DTS_SUPPORT y -> n
++ BR2_LINUX_KERNEL_USE_INTREE_DTS y -> n
++ BR2_PACKAGE_DFU_UTIL n -> y
++ BR2_PACKAGE_LIBUSB n -> y
++ BR2_TARGET_GENERIC_HOSTNAME "buildroot" -> "Tuxie"
++ BR2_TARGET_GENERIC_ISSUE "Welcome to Buildroot" -> "Welcome to CustomBoard"
+++BR2_PACKAGE_LIBUSB_COMPAT n
+ 
+ """)
+     sys.exit(0)
+@@ -44,12 +44,14 @@ Example usage:
+ def readconfig(config_file):
+     d = {}
+     for line in config_file:
+-        line = line[:-1]
+-        if line[:4] == "BR2_":
+-            name, val = line[4:].split("=", 1)
+-            d[name] = val
++        line = line.strip()
++        if len(line) == 0:
++            continue
+         if line[-11:] == " is not set":
+-            d[line[6:-11]] = "n"
++            d[line[2:-11]] = "n"
++        elif line[0] != "#":
++            name, val = line.split("=", 1)
++            d[name] = val
+     return d
+ 
+ def print_config(op, config, value, new_value):
+@@ -58,9 +60,9 @@ def print_config(op, config, value, new_value):
+     if merge_style:
+         if new_value:
+             if new_value=="n":
+-                print("# BR2_%s is not set" % config)
++                print("# %s is not set" % config)
+             else:
+-                print("BR2_%s=%s" % (config, new_value))
++                print("%s=%s" % (config, new_value))
+     else:
+         if op=="-":
+             print("-%s %s" % (config, value))
+diff --git a/utils/get-developers b/utils/get-developers
+index f525ff2226..c887938859 100755
+--- a/utils/get-developers
++++ b/utils/get-developers
+@@ -18,11 +18,15 @@ def parse_args():
+                         help='find developers in charge of these files')
+     parser.add_argument('-c', dest='check', action='store_const',
+                         const=True, help='list files not handled by any developer')
++    parser.add_argument('-e', dest='email', action='store_const',
++                        const=True, help='only list affected developer email addresses')
+     return parser.parse_args()
+ 
+ 
+ def __main__():
+-    devs = getdeveloperlib.parse_developers()
++    # DEVELOPERS is one level up from here
++    devs_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
++    devs = getdeveloperlib.parse_developers(devs_dir)
+     if devs is None:
+         sys.exit(1)
+     args = parse_args()
+@@ -48,7 +52,7 @@ def __main__():
+ 
+     # Handle the check action
+     if args.check:
+-        files = getdeveloperlib.check_developers(devs)
++        files = getdeveloperlib.check_developers(devs, devs_dir)
+         for f in files:
+             print(f)
+ 
+@@ -90,12 +94,16 @@ def __main__():
+                 if i in dev.infras:
+                     matching_devs.add(dev.name)
+ 
+-        result = "--to buildroot@buildroot.org"
+-        for dev in matching_devs:
+-            result += " --cc \"%s\"" % dev
++        if args.email:
++            for dev in matching_devs:
++                print(dev)
++        else:
++            result = "--to buildroot@buildroot.org"
++            for dev in matching_devs:
++                result += " --cc \"%s\"" % dev
+ 
+-        if result != "":
+-            print("git send-email %s" % result)
++            if result != "":
++                print("git send-email %s" % result)
+ 
+ 
+ __main__()
+diff --git a/utils/getdeveloperlib.py b/utils/getdeveloperlib.py
+index 2c8d477583..84665520c6 100644
+--- a/utils/getdeveloperlib.py
++++ b/utils/getdeveloperlib.py
+@@ -158,6 +158,8 @@ def parse_developers(basepath=None):
+     linen = 0
+     if basepath is None:
+         basepath = os.getcwd()
++    else:
++        basepath = os.path.abspath(basepath)
+     with open(os.path.join(basepath, "DEVELOPERS"), "r") as f:
+         files = []
+         name = None
+diff --git a/utils/scanpypi b/utils/scanpypi
+index bc593e0e89..56b9f420ff 100755
+--- a/utils/scanpypi
++++ b/utils/scanpypi
+@@ -379,7 +379,7 @@ class BuildrootPackage():
+         """
+         Try to determine the related license name.
+ 
+-        There are two possibilities. Either the scripts tries to
++        There are two possibilities. Either the script tries to
+         get license name from package's metadata or, if spdx_lookup
+         package is available, the script compares license files with
+         SPDX database.
+@@ -388,7 +388,7 @@ class BuildrootPackage():
+         if liclookup is None:
+             license_dict = {
+                 'Apache Software License': 'Apache-2.0',
+-                'BSD License': 'BSD',
++                'BSD License': 'FIXME: please specify the exact BSD version',
+                 'European Union Public Licence 1.0': 'EUPL-1.0',
+                 'European Union Public Licence 1.1': 'EUPL-1.1',
+                 "GNU General Public License": "GPL",

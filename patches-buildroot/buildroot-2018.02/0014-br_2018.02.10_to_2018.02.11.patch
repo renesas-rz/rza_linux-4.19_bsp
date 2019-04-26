@@ -1,0 +1,3875 @@
+diff --git a/CHANGES b/CHANGES
+index 2bc4258a06..819950ee5b 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,25 @@
++2018.02.11, Released February 23th, 2019
++
++	Important / security related fixes.
++
++	Ensure the PLATFORM and OS environment variables are not set,
++	as they cause build issues for some packages.
++
++	The package list infrastructure now correctly handles packages
++	installing files with old mtime.
++
++	Linux: Skip hash checks for user supplied downloadable
++	patches, as no hash checksums are available for those.
++
++	scanpypi: protect against zip-slip vulnerability in zip/tar
++	handling
++
++	Updated/fixed packages: bind, dhcpcd, dovecot, ghostscript,
++	gnuradio, imagemagick, jpeg-turbo, libarchive, libb64,
++	libcurl, libid3tag, madplay, mosquitto, openssh, php,
++	postgresql, proftpd, python, python-django, python3, qt5base,
++	sqlcipher, swupdate, systemd, unzip, webkitgtk
++
+ 2018.02.10, Released January 31th, 2019
+ 
+ 	Important / security related fixes.
+diff --git a/DEVELOPERS b/DEVELOPERS
+index ba16b4667a..19423e6360 100644
+--- a/DEVELOPERS
++++ b/DEVELOPERS
+@@ -711,7 +711,7 @@ F:	package/qt5/qt5virtualkeyboard/
+ F:	package/qt5/qt5webengine/
+ F:	package/qt5/qt5webkit-examples/
+ 
+-N:	Gary Bisson <gary.bisson@boundarydevices.com>
++N:	Gary Bisson <bisson.gary@gmail.com>
+ F:	board/boundarydevices/
+ F:	configs/nitrogen*
+ F:	package/freescale-imx/
+diff --git a/Makefile b/Makefile
+index c07ff3dae5..37504ae1ce 100644
+--- a/Makefile
++++ b/Makefile
+@@ -92,9 +92,9 @@ all:
+ .PHONY: all
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2018.02.10
++export BR2_VERSION := 2018.02.11
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1548952000
++BR2_VERSION_EPOCH = 1550952000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+@@ -431,6 +431,8 @@ unexport TERMINFO
+ unexport MACHINE
+ unexport O
+ unexport GCC_COLORS
++unexport PLATFORM
++unexport OS
+ 
+ GNU_HOST_NAME := $(shell support/gnuconfig/config.guess)
+ 
+diff --git a/linux/Config.in b/linux/Config.in
+index e931bd4136..fd1dec3722 100644
+--- a/linux/Config.in
++++ b/linux/Config.in
+@@ -33,7 +33,7 @@ config BR2_LINUX_KERNEL_LATEST_VERSION
+ 	bool "Latest version (4.15)"
+ 
+ config BR2_LINUX_KERNEL_LATEST_CIP_VERSION
+-	bool "Latest CIP SLTS version (v4.4.138-cip25)"
++	bool "Latest CIP SLTS version (v4.4.171-cip30)"
+ 	help
+ 	  CIP launched in the spring of 2016 to address the needs of
+ 	  organizations in industries such as power generation and
+@@ -121,7 +121,7 @@ endif
+ config BR2_LINUX_KERNEL_VERSION
+ 	string
+ 	default "4.15.16" if BR2_LINUX_KERNEL_LATEST_VERSION
+-	default "v4.4.138-cip25" if BR2_LINUX_KERNEL_LATEST_CIP_VERSION
++	default "v4.4.171-cip30" if BR2_LINUX_KERNEL_LATEST_CIP_VERSION
+ 	default BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE \
+ 		if BR2_LINUX_KERNEL_CUSTOM_VERSION
+ 	default "custom" if BR2_LINUX_KERNEL_CUSTOM_TARBALL
+diff --git a/linux/linux.mk b/linux/linux.mk
+index f1a34d4fe0..1da4b36c4a 100644
+--- a/linux/linux.mk
++++ b/linux/linux.mk
+@@ -30,7 +30,7 @@ else ifeq ($(BR2_LINUX_KERNEL_CUSTOM_SVN),y)
+ LINUX_SITE = $(call qstrip,$(BR2_LINUX_KERNEL_CUSTOM_REPO_URL))
+ LINUX_SITE_METHOD = svn
+ else ifeq ($(BR2_LINUX_KERNEL_LATEST_CIP_VERSION),y)
+-LINUX_SITE = git://git.kernel.org/pub/scm/linux/kernel/git/bwh/linux-cip.git
++LINUX_SITE = git://git.kernel.org/pub/scm/linux/kernel/git/cip/linux-cip.git
+ else ifneq ($(findstring -rc,$(LINUX_VERSION)),)
+ # Since 4.12-rc1, -rc kernels are generated from cgit. This also works for
+ # older -rc kernels.
+@@ -55,6 +55,9 @@ endif
+ 
+ LINUX_PATCHES = $(call qstrip,$(BR2_LINUX_KERNEL_PATCH))
+ 
++# We have no way to know the hashes for user-supplied patches.
++BR_NO_CHECK_HASH_FOR += $(notdir $(LINUX_PATCHES))
++
+ # We rely on the generic package infrastructure to download and apply
+ # remote patches (downloaded from ftp, http or https). For local
+ # patches, we can't rely on that infrastructure, because there might
+diff --git a/package/bind/bind.hash b/package/bind/bind.hash
+index ea76108cc0..3072d2d2a0 100644
+--- a/package/bind/bind.hash
++++ b/package/bind/bind.hash
+@@ -1,4 +1,4 @@
+-# Verified from https://ftp.isc.org/isc/bind9/9.11.5/bind-9.11.5.tar.gz.asc
++# Verified from https://ftp.isc.org/isc/bind9/9.11.5-P4/bind-9.11.5-P4.tar.gz.asc
+ # with key BE0E9748B718253A28BB89FFF1B11BF05CF02E57
+-sha256 a4cae11dad954bdd4eb592178f875bfec09fcc7e29fe0f6b7a4e5b5c6bc61322 bind-9.11.5.tar.gz
+-sha256 336f3c40e37a1a13690efb4c63e20908faa4c40498cc02f3579fb67d3a1933a5 COPYRIGHT
++sha256 7e8c08192bcbaeb6e9f2391a70e67583b027b90e8c4bc1605da6eb126edde434 bind-9.11.5-P4.tar.gz
++sha256 cd02c93b8dcda794f55dfd1231828d69633072a98eee4874f9cf732d22d9dcde COPYRIGHT
+diff --git a/package/bind/bind.mk b/package/bind/bind.mk
+index b5424a99f0..7f24c2d029 100644
+--- a/package/bind/bind.mk
++++ b/package/bind/bind.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-BIND_VERSION = 9.11.5
+-BIND_SITE = http://ftp.isc.org/isc/bind9/$(BIND_VERSION)
++BIND_VERSION = 9.11.5-P4
++BIND_SITE = https://ftp.isc.org/isc/bind9/$(BIND_VERSION)
+ # bind does not support parallel builds.
+ BIND_MAKE = $(MAKE1)
+ BIND_INSTALL_STAGING = YES
+diff --git a/package/dhcpcd/dhcpcd.mk b/package/dhcpcd/dhcpcd.mk
+index dc5c69b86b..28cc1f0eb6 100644
+--- a/package/dhcpcd/dhcpcd.mk
++++ b/package/dhcpcd/dhcpcd.mk
+@@ -36,6 +36,10 @@ define DHCPCD_INSTALL_TARGET_CMDS
+ 	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) install DESTDIR=$(TARGET_DIR)
+ endef
+ 
++# When network-manager is enabled together with dhcpcd, it will use
++# dhcpcd as a DHCP client, and will be in charge of running, so we
++# don't want the init script or service file to be installed.
++ifeq ($(BR2_PACKAGE_NETWORK_MANAGER),)
+ define DHCPCD_INSTALL_INIT_SYSV
+ 	$(INSTALL) -m 755 -D package/dhcpcd/S41dhcpcd \
+ 		$(TARGET_DIR)/etc/init.d/S41dhcpcd
+@@ -48,6 +52,7 @@ define DHCPCD_INSTALL_INIT_SYSTEMD
+ 	ln -sf ../../../../usr/lib/systemd/system/dhcpcd.service \
+ 		$(TARGET_DIR)/etc/systemd/system/multi-user.target.wants/dhcpcd.service
+ endef
++endif
+ 
+ # NOTE: Even though this package has a configure script, it is not generated
+ # using the autotools, so we have to use the generic package infrastructure.
+diff --git a/package/dovecot/dovecot.hash b/package/dovecot/dovecot.hash
+index fef0746089..1e21278b9d 100644
+--- a/package/dovecot/dovecot.hash
++++ b/package/dovecot/dovecot.hash
+@@ -1,5 +1,5 @@
+ # Locally computed after checking signature
+-sha256 5e92a4325409e66b343f6aaa67174b8921ce83d0df792c6eeb0b7b7e2c808353  dovecot-2.2.34.tar.gz
++sha256 38c7304a02246f80709fac72a81685082de8873fd94d67d2bf02cf1cbeb12f03  dovecot-2.2.36.1.tar.gz
+ sha256 a363b132e494f662d98c820d1481297e6ae72f194c2c91b6c39e1518b86240a8  COPYING
+ sha256 dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551  COPYING.LGPL
+ sha256 52b8c95fabb19575281874b661ef7968ea47e8f5d74ba0dd40ce512e52b3fc97  COPYING.MIT
+diff --git a/package/dovecot/dovecot.mk b/package/dovecot/dovecot.mk
+index e1b4bb21b8..d19c87df64 100644
+--- a/package/dovecot/dovecot.mk
++++ b/package/dovecot/dovecot.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ DOVECOT_VERSION_MAJOR = 2.2
+-DOVECOT_VERSION = $(DOVECOT_VERSION_MAJOR).34
++DOVECOT_VERSION = $(DOVECOT_VERSION_MAJOR).36.1
+ DOVECOT_SITE = http://www.dovecot.org/releases/$(DOVECOT_VERSION_MAJOR)
+ DOVECOT_INSTALL_STAGING = YES
+ DOVECOT_LICENSE = LGPL-2.1, MIT, Public Domain, BSD-3-Clause, Unicode-DFS-2015
+diff --git a/package/ghostscript/0002-Sanitize-op-stack-for-error-conditions.patch b/package/ghostscript/0002-Sanitize-op-stack-for-error-conditions.patch
+new file mode 100644
+index 0000000000..7909cfec70
+--- /dev/null
++++ b/package/ghostscript/0002-Sanitize-op-stack-for-error-conditions.patch
+@@ -0,0 +1,176 @@
++From a1de1e6ab51ab37a17975aad1193f2523e7e7e84 Mon Sep 17 00:00:00 2001
++From: Chris Liddell <chris.liddell@artifex.com>
++Date: Wed, 5 Dec 2018 12:22:13 +0000
++Subject: [PATCH] Sanitize op stack for error conditions
++
++We save the stacks to an array and store the array for the error handler to
++access.
++
++For SAFER, we traverse the array, and deep copy any op arrays (procedures). As
++we make these copies, we check for operators that do *not* exist in systemdict,
++when we find one, we replace the operator with a name object (of the form
++"/--opname--").
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit 13b0a36f818
++
++ psi/int.mak  |  3 +-
++ psi/interp.c |  8 ++++++
++ psi/istack.c | 78 ++++++++++++++++++++++++++++++++++++++++++++++++++++
++ psi/istack.h |  3 ++
++ 4 files changed, 91 insertions(+), 1 deletion(-)
++
++diff --git a/psi/int.mak b/psi/int.mak
++index 6ab5bf0069dd..6b349cb042dd 100644
++--- a/psi/int.mak
+++++ b/psi/int.mak
++@@ -204,7 +204,8 @@ $(PSOBJ)iparam.$(OBJ) : $(PSSRC)iparam.c $(GH)\
++ $(PSOBJ)istack.$(OBJ) : $(PSSRC)istack.c $(GH) $(memory__h)\
++  $(ierrors_h) $(gsstruct_h) $(gsutil_h)\
++  $(ialloc_h) $(istack_h) $(istkparm_h) $(istruct_h) $(iutil_h) $(ivmspace_h)\
++- $(store_h) $(INT_MAK) $(MAKEDIRS)
+++ $(store_h) $(icstate_h) $(iname_h) $(dstack_h) $(idict_h) \
+++ $(INT_MAK) $(MAKEDIRS)
++ 	$(PSCC) $(PSO_)istack.$(OBJ) $(C_) $(PSSRC)istack.c
++ 
++ $(PSOBJ)iutil.$(OBJ) : $(PSSRC)iutil.c $(GH) $(math__h) $(memory__h) $(string__h)\
++diff --git a/psi/interp.c b/psi/interp.c
++index 6dc0ddae1b3c..aa5779c51420 100644
++--- a/psi/interp.c
+++++ b/psi/interp.c
++@@ -761,6 +761,7 @@ copy_stack(i_ctx_t *i_ctx_p, const ref_stack_t * pstack, int skip, ref * arr)
++     uint size = ref_stack_count(pstack) - skip;
++     uint save_space = ialloc_space(idmemory);
++     int code, i;
+++    ref *safety, *safe;
++ 
++     if (size > 65535)
++         size = 65535;
++@@ -778,6 +779,13 @@ copy_stack(i_ctx_t *i_ctx_p, const ref_stack_t * pstack, int skip, ref * arr)
++                 make_null(&arr->value.refs[i]);
++         }
++     }
+++    if (pstack == &o_stack && dict_find_string(systemdict, "SAFETY", &safety) > 0 &&
+++        dict_find_string(safety, "safe", &safe) > 0 && r_has_type(safe, t_boolean) &&
+++        safe->value.boolval == true) {
+++        code = ref_stack_array_sanitize(i_ctx_p, arr, arr);
+++        if (code < 0)
+++            return code;
+++    }
++     ialloc_set_space(idmemory, save_space);
++     return code;
++ }
++diff --git a/psi/istack.c b/psi/istack.c
++index 8fe151fa5628..f1a3e511534d 100644
++--- a/psi/istack.c
+++++ b/psi/istack.c
++@@ -27,6 +27,10 @@
++ #include "iutil.h"
++ #include "ivmspace.h"		/* for local/global test */
++ #include "store.h"
+++#include "icstate.h"
+++#include "iname.h"
+++#include "dstack.h"
+++#include "idict.h"
++ 
++ /* Forward references */
++ static void init_block(ref_stack_t *pstack, const ref *pblock_array,
++@@ -294,6 +298,80 @@ ref_stack_store_check(const ref_stack_t *pstack, ref *parray, uint count,
++     return 0;
++ }
++ 
+++int
+++ref_stack_array_sanitize(i_ctx_t *i_ctx_p, ref *sarr, ref *darr)
+++{
+++    int i, code;
+++    ref obj, arr2;
+++    ref *pobj2;
+++    gs_memory_t *mem = (gs_memory_t *)idmemory->current;
+++
+++    if (!r_is_array(sarr) || !r_has_type(darr, t_array))
+++        return_error(gs_error_typecheck);
+++
+++    for (i = 0; i < r_size(sarr); i++) {
+++        code = array_get(mem, sarr, i, &obj);
+++        if (code < 0)
+++            make_null(&obj);
+++        switch(r_type(&obj)) {
+++          case t_operator:
+++          {
+++            int index = op_index(&obj);
+++
+++            if (index > 0 && index < op_def_count) {
+++                const byte *data = (const byte *)(op_index_def(index)->oname + 1);
+++                if (dict_find_string(systemdict, (const char *)data, &pobj2) <= 0) {
+++                    byte *s = gs_alloc_bytes(mem, strlen((char *)data) + 5, "ref_stack_array_sanitize");
+++                    if (s) {
+++                        s[0] =  '\0';
+++                        strcpy((char *)s, "--");
+++                        strcpy((char *)s + 2, (char *)data);
+++                        strcpy((char *)s + strlen((char *)data) + 2, "--");
+++                    }
+++                    else {
+++                        s = (byte *)data;
+++                    }
+++                    code = name_ref(imemory, s, strlen((char *)s), &obj, 1);
+++                    if (code < 0) make_null(&obj);
+++                    if (s != data)
+++                        gs_free_object(mem, s, "ref_stack_array_sanitize");
+++                }
+++            }
+++            else {
+++                make_null(&obj);
+++            }
+++            ref_assign(darr->value.refs + i, &obj);
+++            break;
+++          }
+++          case t_array:
+++          case t_shortarray:
+++          case t_mixedarray:
+++          {
+++            int attrs = r_type_attrs(&obj) & (a_write | a_read | a_execute | a_executable);
+++            /* We only want to copy executable arrays */
+++            if (attrs & (a_execute | a_executable)) {
+++                code = ialloc_ref_array(&arr2, attrs, r_size(&obj), "ref_stack_array_sanitize");
+++                if (code < 0) {
+++                    make_null(&arr2);
+++                }
+++                else {
+++                    code = ref_stack_array_sanitize(i_ctx_p, &obj, &arr2);
+++                }
+++                ref_assign(darr->value.refs + i, &arr2);
+++            }
+++            else {
+++                ref_assign(darr->value.refs + i, &obj);
+++            }
+++            break;
+++          }
+++          default:
+++            ref_assign(darr->value.refs + i, &obj);
+++        }
+++    }
+++    return 0;
+++}
+++
+++
++ /*
++  * Store the top 'count' elements of a stack, starting 'skip' elements below
++  * the top, into an array, with or without store/undo checking.  age=-1 for
++diff --git a/psi/istack.h b/psi/istack.h
++index 051dcbe216cf..54be405adfb3 100644
++--- a/psi/istack.h
+++++ b/psi/istack.h
++@@ -129,6 +129,9 @@ int ref_stack_store(const ref_stack_t *pstack, ref *parray, uint count,
++                     uint skip, int age, bool check,
++                     gs_dual_memory_t *idmem, client_name_t cname);
++ 
+++int
+++ref_stack_array_sanitize(i_ctx_t *i_ctx_p, ref *sarr, ref *darr);
+++
++ /*
++  * Pop the top N elements off a stack.
++  * The number must not exceed the number of elements in use.
++-- 
++2.20.1
++
+diff --git a/package/ghostscript/0003-Any-transient-procedures-that-call-.force-operators.patch b/package/ghostscript/0003-Any-transient-procedures-that-call-.force-operators.patch
+new file mode 100644
+index 0000000000..f4c1db11f0
+--- /dev/null
++++ b/package/ghostscript/0003-Any-transient-procedures-that-call-.force-operators.patch
+@@ -0,0 +1,441 @@
++From f0397dbfbe5eea325613ff375b30eb0db5551ffe Mon Sep 17 00:00:00 2001
++From: Chris Liddell <chris.liddell@artifex.com>
++Date: Thu, 13 Dec 2018 15:28:34 +0000
++Subject: [PATCH] Any transient procedures that call .force* operators
++
++(i.e. for conditionals or loops) make them executeonly.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit 2db98f9c661
++
++ Resource/Init/gs_diskn.ps |  2 +-
++ Resource/Init/gs_dps1.ps  |  4 ++--
++ Resource/Init/gs_fntem.ps |  4 ++--
++ Resource/Init/gs_fonts.ps | 12 ++++++------
++ Resource/Init/gs_init.ps  |  4 ++--
++ Resource/Init/gs_lev2.ps  | 11 ++++++-----
++ Resource/Init/gs_pdfwr.ps |  2 +-
++ Resource/Init/gs_res.ps   |  4 ++--
++ Resource/Init/gs_setpd.ps |  2 +-
++ Resource/Init/pdf_base.ps | 13 ++++++++-----
++ Resource/Init/pdf_draw.ps | 16 +++++++++-------
++ Resource/Init/pdf_font.ps |  6 +++---
++ Resource/Init/pdf_main.ps |  4 ++--
++ Resource/Init/pdf_ops.ps  |  7 ++++---
++ 14 files changed, 49 insertions(+), 42 deletions(-)
++
++diff --git a/Resource/Init/gs_diskn.ps b/Resource/Init/gs_diskn.ps
++index fd694bc44b5a..8bf20542040d 100644
++--- a/Resource/Init/gs_diskn.ps
+++++ b/Resource/Init/gs_diskn.ps
++@@ -51,7 +51,7 @@ systemdict begin
++     mark 5 1 roll ] mark exch { { } forall } forall ]
++     //systemdict /.searchabledevs 2 index .forceput
++     exch .setglobal
++-  }
+++  } executeonly
++   if
++ } .bind executeonly odef % must be bound and hidden for .forceput
++ 
++diff --git a/Resource/Init/gs_dps1.ps b/Resource/Init/gs_dps1.ps
++index ec5db61b9f03..4fae2839940c 100644
++--- a/Resource/Init/gs_dps1.ps
+++++ b/Resource/Init/gs_dps1.ps
++@@ -78,7 +78,7 @@ level2dict begin
++    .currentglobal
++     {		% Current mode is global; delete from local directory too.
++       //systemdict /LocalFontDirectory .knownget
++-       { 1 index .forceundef }		% LocalFontDirectory is readonly
+++       { 1 index .forceundef } executeonly		% LocalFontDirectory is readonly
++       if
++     }
++     {		% Current mode is local; if there was a shadowed global
++@@ -126,7 +126,7 @@ level2dict begin
++           }
++          ifelse
++        } forall
++-      pop counttomark 2 idiv { .forceundef } repeat pop		% readonly
+++      pop counttomark 2 idiv { .forceundef } executeonly repeat pop		% readonly
++     }
++    if
++    //SharedFontDirectory exch .forcecopynew pop
++diff --git a/Resource/Init/gs_fntem.ps b/Resource/Init/gs_fntem.ps
++index c1f7651f18cc..6eb672a6840e 100644
++--- a/Resource/Init/gs_fntem.ps
+++++ b/Resource/Init/gs_fntem.ps
++@@ -401,12 +401,12 @@ currentdict end def
++       .forceput % FontInfo can be read-only.
++       pop                                                        % bool <font>
++       exit
++-    } if
+++    } executeonly if
++     dup /FontInfo get                                            % bool <font> <FI>
++     /GlyphNames2Unicode /Unicode /Decoding findresource
++     .forceput % FontInfo can be read-only.
++     exit
++-  } loop
+++  } executeonly loop
++   exch setglobal
++ } .bind executeonly odef % must be bound and hidden for .forceput
++ 
++diff --git a/Resource/Init/gs_fonts.ps b/Resource/Init/gs_fonts.ps
++index 803faca4918d..290da0cd6819 100644
++--- a/Resource/Init/gs_fonts.ps
+++++ b/Resource/Init/gs_fonts.ps
++@@ -374,7 +374,7 @@ FONTPATH length 0 eq { (%END FONTPATH) .skipeof } if
++ /.setnativefontmapbuilt { % set whether we've been run
++   dup type /booleantype eq {
++       systemdict exch /.nativefontmapbuilt exch .forceput
++-  }
+++  } executeonly
++   {pop}
++   ifelse
++ } .bind executeonly odef
++@@ -1007,11 +1007,11 @@ $error /SubstituteFont { } put
++ { 2 index gcheck currentglobal
++   2 copy eq {
++     pop pop .forceput
++-  } {
+++  } executeonly {
++     5 1 roll setglobal
++     dup length string copy
++     .forceput setglobal
++-  } ifelse
+++  } executeonly ifelse
++ } .bind executeonly odef % must be bound and hidden for .forceput
++ 
++ % Attempt to load a font from a file.
++@@ -1084,7 +1084,7 @@ $error /SubstituteFont { } put
++            .FontDirectory 3 index .forceundef		% readonly
++            1 index (r) file .loadfont .FontDirectory exch
++            /.setglobal .systemvar exec
++-         }
+++         } executeonly
++          { .loadfont .FontDirectory
++          }
++         ifelse
++@@ -1105,7 +1105,7 @@ $error /SubstituteFont { } put
++         dup 3 index .fontknownget
++          { dup /PathLoad 4 index .putgstringcopy
++            4 1 roll pop pop pop //true exit
++-         } if
+++         } executeonly if
++ 
++                 % Maybe the file had a different FontName.
++                 % See if we can get a FontName from the file, and if so,
++@@ -1134,7 +1134,7 @@ $error /SubstituteFont { } put
++               ifelse  % Stack: origfontname fontdict
++               exch pop //true exit
++                       % Stack: fontdict
++-            }
+++            } executeonly
++            if pop % Stack: origfontname fontdirectory path
++          }
++         if pop pop  % Stack: origfontname
++diff --git a/Resource/Init/gs_init.ps b/Resource/Init/gs_init.ps
++index d733124b96d1..56c0bd268b53 100644
++--- a/Resource/Init/gs_init.ps
+++++ b/Resource/Init/gs_init.ps
++@@ -2357,7 +2357,7 @@ SAFER { .setsafeglobal } if
++         % Update the copy of the user parameters.
++   mark .currentuserparams counttomark 2 idiv {
++     userparams 3 1 roll .forceput	% userparams is read-only
++-  } repeat pop
+++  } executeonly repeat pop
++         % Turn on idiom recognition, if available.
++   currentuserparams /IdiomRecognition known {
++     /IdiomRecognition //true .definepsuserparam
++@@ -2376,7 +2376,7 @@ SAFER { .setsafeglobal } if
++         % Remove real system params from pssystemparams.
++   mark .currentsystemparams counttomark 2 idiv {
++     pop pssystemparams exch .forceundef
++-  } repeat pop
+++  } executeonly repeat pop
++ } if
++ 
++ % Set up AlignToPixels :
++diff --git a/Resource/Init/gs_lev2.ps b/Resource/Init/gs_lev2.ps
++index 44fe61956659..0f0d57331c23 100644
++--- a/Resource/Init/gs_lev2.ps
+++++ b/Resource/Init/gs_lev2.ps
++@@ -154,7 +154,8 @@ end
++       % protect top level of parameters that we copied
++       dup type dup /arraytype eq exch /stringtype eq or { readonly } if
++       /userparams .systemvar 3 1 roll .forceput  % userparams is read-only
++-    } {
+++    } executeonly
+++    {
++       pop pop
++     } ifelse
++   } forall
++@@ -224,7 +225,7 @@ end
++          % protect top level parameters that we copied
++          dup type dup /arraytype eq exch /stringtype eq or { readonly } if
++          //pssystemparams 3 1 roll .forceput	% pssystemparams is read-only
++-       }
+++       } executeonly
++        { pop pop
++        }
++       ifelse
++@@ -934,7 +935,7 @@ mark
++   dup /PaintProc get
++   1 index /Implementation known not {
++     1 index dup /Implementation //null .forceput readonly pop
++-  } if
+++  } executeonly if
++   exec
++ }.bind odef
++ 
++@@ -958,7 +959,7 @@ mark
++   dup /PaintProc get
++   1 index /Implementation known not {
++     1 index dup /Implementation //null .forceput readonly pop
++-  } if
+++  } executeonly if
++   /UNROLLFORMS where {/UNROLLFORMS get}{false}ifelse not
++   %% [CTM] <<Form>> PaintProc .beginform -
++   {
++@@ -1005,7 +1006,7 @@ mark
++         %% Form dictioanry using the /Implementation key).
++         1 dict dup /FormID 4 -1 roll put
++         1 index exch /Implementation exch .forceput readonly pop
++-      }
+++      } executeonly
++       ifelse
++     }
++     {
++diff --git a/Resource/Init/gs_pdfwr.ps b/Resource/Init/gs_pdfwr.ps
++index 58e75d3a4831..b425103d1cf3 100644
++--- a/Resource/Init/gs_pdfwr.ps
+++++ b/Resource/Init/gs_pdfwr.ps
++@@ -650,7 +650,7 @@ currentdict /.pdfmarkparams .undef
++             } ifelse
++           } bind .makeoperator .forceput
++           systemdict /.pdf_hooked_DSC_Creator //true .forceput
++-        } if
+++        } executeonly if
++         pop
++       } if
++     } {
++diff --git a/Resource/Init/gs_res.ps b/Resource/Init/gs_res.ps
++index 8eb8bb0e5829..d9b34599e7c2 100644
++--- a/Resource/Init/gs_res.ps
+++++ b/Resource/Init/gs_res.ps
++@@ -152,7 +152,7 @@ setglobal
++                 % use .forceput / .forcedef later to replace the dummy,
++                 % empty .Instances dictionary with the real one later.
++           readonly
++-        } {
+++        }{
++           /defineresource cvx /typecheck signaloperror
++         } ifelse
++ } bind executeonly odef
++@@ -424,7 +424,7 @@ status {
++                         % As noted above, Category dictionaries are read-only,
++                         % so we have to use .forcedef here.
++                   /.Instances 1 index .forcedef	% Category dict is read-only
++-                } if
+++                } executeonly if
++               }
++               { .LocalInstances dup //.emptydict eq
++                  { pop 3 dict localinstancedict Category 2 index put
++diff --git a/Resource/Init/gs_setpd.ps b/Resource/Init/gs_setpd.ps
++index e22597ebb5f3..7875d1f2f131 100644
++--- a/Resource/Init/gs_setpd.ps
+++++ b/Resource/Init/gs_setpd.ps
++@@ -634,7 +634,7 @@ NOMEDIAATTRS {
++   SETPDDEBUG { (Rolling back.) = pstack flush } if
++   3 index 2 index 3 -1 roll .forceput
++   4 index 1 index .knownget
++-  { 4 index 3 1 roll .forceput }
+++  { 4 index 3 1 roll .forceput } executeonly
++   { 3 index exch .undef }
++   ifelse
++ } bind executeonly odef
++diff --git a/Resource/Init/pdf_base.ps b/Resource/Init/pdf_base.ps
++index b45e9803165e..73127296c221 100644
++--- a/Resource/Init/pdf_base.ps
+++++ b/Resource/Init/pdf_base.ps
++@@ -130,26 +130,29 @@ currentdict /num-chars-dict .undef
++ 
++ /.pdfexectoken {		% <count> <opdict> <exectoken> .pdfexectoken ?
++   PDFDEBUG {
++-    pdfdict /PDFSTEPcount known not { pdfdict /PDFSTEPcount 1 .forceput } if
+++    pdfdict /PDFSTEPcount known not { pdfdict /PDFSTEPcount 1 .forceput } executeonly if
++     PDFSTEP {
++       pdfdict /PDFtokencount 2 copy .knownget { 1 add } { 1 } ifelse .forceput
++       PDFSTEPcount 1 gt {
++         pdfdict /PDFSTEPcount PDFSTEPcount 1 sub .forceput
++-      } {
+++      } executeonly
+++      {
++         dup ==only
++         (    step # ) print PDFtokencount =only
++         ( ? ) print flush 1 //false .outputpage
++         (%stdin) (r) file 255 string readline {
++           token {
++             exch pop pdfdict /PDFSTEPcount 3 -1 roll .forceput
++-          } {
+++          } executeonly
+++          {
++             pdfdict /PDFSTEPcount 1 .forceput
++-          } ifelse % token
+++          } executeonly ifelse % token
++         } {
++           pop /PDFSTEP //false def	 % EOF on stdin
++         } ifelse % readline
++       } ifelse % PDFSTEPcount > 1
++-    } {
+++    } executeonly
+++    {
++       dup ==only () = flush
++     } ifelse % PDFSTEP
++   } if % PDFDEBUG
++diff --git a/Resource/Init/pdf_draw.ps b/Resource/Init/pdf_draw.ps
++index 6b0ba93e1e73..40c6ac80acce 100644
++--- a/Resource/Init/pdf_draw.ps
+++++ b/Resource/Init/pdf_draw.ps
++@@ -1118,14 +1118,14 @@ currentdict end readonly def
++           pdfdict /.Qqwarning_issued //true .forceput
++           .setglobal
++           pdfformaterror
++-        } ifelse
+++        } executeonly ifelse
++       }
++       {
++         currentglobal pdfdict gcheck .setglobal
++         pdfdict /.Qqwarning_issued //true .forceput
++         .setglobal
++         pdfformaterror
++-      } ifelse
+++      } executeonly ifelse
++       end
++     } ifelse
++   } loop
++@@ -1141,14 +1141,14 @@ currentdict end readonly def
++         pdfdict /.Qqwarning_issued //true .forceput
++         .setglobal
++         pdfformaterror
++-      } ifelse
+++      } executeonly ifelse
++     }
++     {
++       currentglobal pdfdict gcheck .setglobal
++       pdfdict /.Qqwarning_issued //true .forceput
++       .setglobal
++       pdfformaterror
++-    } ifelse
+++    } executeonly ifelse
++   } if
++   pop
++ 
++@@ -2350,9 +2350,10 @@ currentdict /last-ditch-bpc-csp undef
++ /IncrementAppearanceNumber {
++   pdfdict /AppearanceNumber .knownget {
++     1 add pdfdict /AppearanceNumber 3 -1 roll .forceput
++-  }{
+++  } executeonly
+++  {
++     pdfdict /AppearanceNumber 0 .forceput
++-  } ifelse
+++  } executeonly ifelse
++ }bind executeonly odef
++ 
++ /MakeAppearanceName {
++@@ -2510,7 +2511,8 @@ currentdict /last-ditch-bpc-csp undef
++     %% want to preserve it.
++     pdfdict /.PreservePDFForm false .forceput
++     /q cvx /execform cvx 5 -2 roll
++-  }{
+++  } executeonly
+++  {
++     /q cvx /PDFexecform cvx 5 -2 roll
++   } ifelse
++ 
++diff --git a/Resource/Init/pdf_font.ps b/Resource/Init/pdf_font.ps
++index bea9ea95ad1d..4cd62b9d9bb4 100644
++--- a/Resource/Init/pdf_font.ps
+++++ b/Resource/Init/pdf_font.ps
++@@ -714,7 +714,7 @@ currentdict end readonly def
++     pop pop pop
++     currentdict /.stackdepth .forceundef
++     currentdict /.dstackdepth .forceundef
++-  }
+++  } executeonly
++   {pop pop pop}
++   ifelse
++ 
++@@ -1232,7 +1232,7 @@ currentdict /eexec_pdf_param_dict .undef
++                 (\n   **** Warning: Type 3 glyph has unbalanced q/Q operators \(too many q's\)\n               Output may be incorrect.\n)
++                 pdfformatwarning
++                 pdfdict /.Qqwarning_issued //true .forceput
++-              } if
+++              } executeonly if
++               Q
++             } repeat
++             Q
++@@ -2016,7 +2016,7 @@ currentdict /CMap_read_dict undef
++               /CIDFallBack /CIDFont findresource
++             } if
++             exit
++-          } if
+++          } executeonly if
++         } if
++       } if
++ 
++diff --git a/Resource/Init/pdf_main.ps b/Resource/Init/pdf_main.ps
++index 00da47a48711..37e69b39ac98 100644
++--- a/Resource/Init/pdf_main.ps
+++++ b/Resource/Init/pdf_main.ps
++@@ -2701,14 +2701,14 @@ currentdict /PDF2PS_matrix_key undef
++           pdfdict /.Qqwarning_issued //true .forceput
++           .setglobal
++           pdfformaterror
++-        } ifelse
+++        } executeonly ifelse
++       }
++       {
++         currentglobal pdfdict gcheck .setglobal
++         pdfdict /.Qqwarning_issued //true .forceput
++         .setglobal
++         pdfformaterror
++-      } ifelse
+++      } executeonly ifelse
++     } if
++   } if
++   pop
++diff --git a/Resource/Init/pdf_ops.ps b/Resource/Init/pdf_ops.ps
++index 8672d617f363..aa0964139a56 100644
++--- a/Resource/Init/pdf_ops.ps
+++++ b/Resource/Init/pdf_ops.ps
++@@ -184,14 +184,14 @@ currentdict /gput_always_allow .undef
++         pdfdict /.Qqwarning_issued //true .forceput
++         .setglobal
++         pdfformaterror
++-      } ifelse
+++      } executeonly ifelse
++     }
++     {
++       currentglobal pdfdict gcheck .setglobal
++       pdfdict /.Qqwarning_issued //true .forceput
++       .setglobal
++       pdfformaterror
++-    } ifelse
+++    } executeonly ifelse
++   } if
++ } bind executeonly odef
++ 
++@@ -439,7 +439,8 @@ currentdict /gput_always_allow .undef
++   dup type /booleantype eq {
++     .currentSMask type /dicttype eq {
++       .currentSMask /Processed 2 index .forceput
++-    } {
+++  } executeonly
+++  {
++       .setSMask
++   }ifelse
++   }{
++-- 
++2.20.1
++
+diff --git a/package/ghostscript/0004-Bug700317-Fix-logic-for-an-older-change.patch b/package/ghostscript/0004-Bug700317-Fix-logic-for-an-older-change.patch
+new file mode 100644
+index 0000000000..65ebd44df2
+--- /dev/null
++++ b/package/ghostscript/0004-Bug700317-Fix-logic-for-an-older-change.patch
+@@ -0,0 +1,31 @@
++From af9a9dceb7be7df743d55c4d078a1ae846b6f556 Mon Sep 17 00:00:00 2001
++From: Chris Liddell <chris.liddell@artifex.com>
++Date: Sat, 15 Dec 2018 09:08:32 +0000
++Subject: [PATCH] Bug700317: Fix logic for an older change
++
++Unlike almost every other function in gs, dict_find_string() returns 1 on
++success 0 or <0 on failure. The logic for this case was wrong.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit 99f13091a3
++
++ psi/interp.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/psi/interp.c b/psi/interp.c
++index aa5779c51420..f6c45bbe24dc 100644
++--- a/psi/interp.c
+++++ b/psi/interp.c
++@@ -703,7 +703,7 @@ again:
++                  * i.e. it's an internal operator we have hidden
++                  */
++                 code = dict_find_string(systemdict, (const char *)bufptr, &tobj);
++-                if (code < 0) {
+++                if (code <= 0) {
++                     buf[0] = buf[1] = buf[rlen + 2] = buf[rlen + 3] = '-';
++                     rlen += 4;
++                     bufptr = buf;
++-- 
++2.20.1
++
+diff --git a/package/ghostscript/0005-Harden-some-uses-of-.force-operators.patch b/package/ghostscript/0005-Harden-some-uses-of-.force-operators.patch
+new file mode 100644
+index 0000000000..f5a70ac467
+--- /dev/null
++++ b/package/ghostscript/0005-Harden-some-uses-of-.force-operators.patch
+@@ -0,0 +1,135 @@
++From b197ea0e528c20b7ee67785c50b4e06e0aa990f8 Mon Sep 17 00:00:00 2001
++From: Chris Liddell <chris.liddell@artifex.com>
++Date: Tue, 18 Dec 2018 10:42:10 +0000
++Subject: [PATCH] Harden some uses of .force* operators
++
++by adding a few immediate evalutions
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit 59d8f4deef90
++
++ Resource/Init/gs_dps1.ps  |  4 ++--
++ Resource/Init/gs_fonts.ps | 20 ++++++++++----------
++ Resource/Init/gs_init.ps  |  6 +++---
++ 3 files changed, 15 insertions(+), 15 deletions(-)
++
++diff --git a/Resource/Init/gs_dps1.ps b/Resource/Init/gs_dps1.ps
++index 4fae2839940c..b75ea14e77a3 100644
++--- a/Resource/Init/gs_dps1.ps
+++++ b/Resource/Init/gs_dps1.ps
++@@ -74,7 +74,7 @@ level2dict begin
++  } odef
++ % undefinefont has to take local/global VM into account.
++ /undefinefont		% <fontname> undefinefont -
++- { .FontDirectory 1 .argindex .forceundef	% FontDirectory is readonly
+++ { //.FontDirectory 1 .argindex .forceundef	% FontDirectory is readonly
++    .currentglobal
++     {		% Current mode is global; delete from local directory too.
++       //systemdict /LocalFontDirectory .knownget
++@@ -85,7 +85,7 @@ level2dict begin
++                 % definition, copy it into the local directory.
++       //systemdict /SharedFontDirectory .knownget
++        { 1 index .knownget
++-          { .FontDirectory 2 index 3 -1 roll { put } systemdict /superexec known {//superexec}{1183615869 internaldict /superexec get exec} ifelse } % readonly
+++          { //.FontDirectory 2 index 3 -1 roll { put } systemdict /superexec known {//superexec}{1183615869 internaldict /superexec get exec} ifelse } % readonly
++          if
++        }
++       if
++diff --git a/Resource/Init/gs_fonts.ps b/Resource/Init/gs_fonts.ps
++index 290da0cd6819..c13a2fcc2d43 100644
++--- a/Resource/Init/gs_fonts.ps
+++++ b/Resource/Init/gs_fonts.ps
++@@ -516,7 +516,7 @@ buildfontdict 3 /.buildfont3 cvx put
++       if
++     }
++    if
++-   dup .FontDirectory 4 -2 roll { .growput } systemdict /superexec known {//superexec}{1183615869 internaldict /superexec get exec} ifelse	% readonly
+++   dup //.FontDirectory 4 -2 roll { .growput } systemdict /superexec known {//superexec}{1183615869 internaldict /superexec get exec} ifelse	% readonly
++                 % If the font originated as a resource, register it.
++    currentfile .currentresourcefile eq { dup .registerfont } if
++    readonly
++@@ -943,7 +943,7 @@ $error /SubstituteFont { } put
++ % Try to find a font using only the present contents of Fontmap.
++ /.tryfindfont {         % <fontname> .tryfindfont <font> true
++                         % <fontname> .tryfindfont false
++-  .FontDirectory 1 index .fontknownget
+++  //.FontDirectory 1 index .fontknownget
++     {                   % Already loaded
++       exch pop //true
++     }
++@@ -975,7 +975,7 @@ $error /SubstituteFont { } put
++                {                % Font with a procedural definition
++                  exec           % The procedure will load the font.
++                                 % Check to make sure this really happened.
++-                 .FontDirectory 1 index .knownget
+++                 //.FontDirectory 1 index .knownget
++                   { exch pop //true exit }
++                  if
++                }
++@@ -1081,11 +1081,11 @@ $error /SubstituteFont { } put
++                 % because it's different depending on language level.
++            .currentglobal exch /.setglobal .systemvar exec
++                 % Remove the fake definition, if any.
++-           .FontDirectory 3 index .forceundef		% readonly
++-           1 index (r) file .loadfont .FontDirectory exch
+++           //.FontDirectory 3 index .forceundef		% readonly
+++           1 index (r) file .loadfont //.FontDirectory exch
++            /.setglobal .systemvar exec
++          } executeonly
++-         { .loadfont .FontDirectory
+++         { .loadfont //.FontDirectory
++          }
++         ifelse
++                 % Stack: fontname fontfilename fontdirectory
++@@ -1119,8 +1119,8 @@ $error /SubstituteFont { } put
++                       % Stack: origfontname fontdirectory filefontname fontdict
++               3 -1 roll pop
++                       % Stack: origfontname filefontname fontdict
++-              dup /FontName get dup FontDirectory exch .forceundef
++-              GlobalFontDirectory exch .forceundef
+++              dup /FontName get dup //.FontDirectory exch .forceundef
+++              /GlobalFontDirectory .systemvar exch .forceundef
++               dup length dict .copydict dup 3 index /FontName exch put
++               2 index exch definefont
++               exch
++@@ -1176,10 +1176,10 @@ currentdict /.putgstringcopy .undef
++       {
++         {
++           pop dup type /stringtype eq { cvn } if
++-          .FontDirectory 1 index known not {
+++          //.FontDirectory 1 index known not {
++             2 dict dup /FontName 3 index put
++             dup /FontType 1 put
++-            .FontDirectory 3 1 roll { put } systemdict /superexec known {//superexec}{1183615869 internaldict /superexec get exec} ifelse   % readonly
+++            //.FontDirectory 3 1 roll { put } systemdict /superexec known {//superexec}{1183615869 internaldict /superexec get exec} ifelse   % readonly
++           } {
++             pop
++           } ifelse
++diff --git a/Resource/Init/gs_init.ps b/Resource/Init/gs_init.ps
++index 56c0bd268b53..d9a0829f7f97 100644
++--- a/Resource/Init/gs_init.ps
+++++ b/Resource/Init/gs_init.ps
++@@ -1168,8 +1168,8 @@ errordict /unknownerror .undef
++     }ifelse
++   }forall
++   noaccess pop
++-  systemdict /.setsafeerrors .forceundef
++-  systemdict /.SAFERERRORLIST .forceundef
+++  //systemdict /.setsafeerrors .forceundef
+++  //systemdict /.SAFERERRORLIST .forceundef
++ } bind executeonly odef
++ 
++ SAFERERRORS {.setsafererrors} if
++@@ -2114,7 +2114,7 @@ currentdict /tempfilepaths undef
++ 
++ /.locksafe {
++   .locksafe_userparams
++-  systemdict /getenv {pop //false} .forceput
+++  //systemdict /getenv {pop //false} .forceput
++   % setpagedevice has the side effect of clearing the page, but
++   % we will just document that. Using setpagedevice keeps the device
++   % properties and pagedevice .LockSafetyParams in agreement even
++-- 
++2.20.1
++
+diff --git a/package/ghostscript/0006-Undefine-a-bunch-of-gs_fonts.ps-specific-procs.patch b/package/ghostscript/0006-Undefine-a-bunch-of-gs_fonts.ps-specific-procs.patch
+new file mode 100644
+index 0000000000..4bbdef9dd1
+--- /dev/null
++++ b/package/ghostscript/0006-Undefine-a-bunch-of-gs_fonts.ps-specific-procs.patch
+@@ -0,0 +1,587 @@
++From 5628be1c41d23298aa5fce2f6dd48e2eb81f4be1 Mon Sep 17 00:00:00 2001
++From: Chris Liddell <chris.liddell@artifex.com>
++Date: Wed, 9 Jan 2019 14:24:07 +0000
++Subject: [PATCH] Undefine a bunch of gs_fonts.ps specific procs
++
++Also reorder and add some immediate evaluation, so it still works with the
++undefining.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit 2768d1a6dddb
++
++ Resource/Init/gs_dps1.ps  |   3 +-
++ Resource/Init/gs_fonts.ps | 275 +++++++++++++++++++++-----------------
++ Resource/Init/gs_res.ps   |   6 +-
++ 3 files changed, 156 insertions(+), 128 deletions(-)
++
++diff --git a/Resource/Init/gs_dps1.ps b/Resource/Init/gs_dps1.ps
++index b75ea14e77a3..8700c8cb304b 100644
++--- a/Resource/Init/gs_dps1.ps
+++++ b/Resource/Init/gs_dps1.ps
++@@ -67,7 +67,8 @@ level2dict begin
++ 
++ /selectfont		% <fontname> <size> selectfont -
++  {
++-   { 1 .argindex findfont
+++   {
+++     1 .argindex findfont
++      1 index dup type /arraytype eq { makefont } { scalefont } ifelse
++      setfont pop pop
++    } stopped { /selectfont .systemvar $error /errorname get signalerror } if
++diff --git a/Resource/Init/gs_fonts.ps b/Resource/Init/gs_fonts.ps
++index c13a2fcc2d43..056223544340 100644
++--- a/Resource/Init/gs_fonts.ps
+++++ b/Resource/Init/gs_fonts.ps
++@@ -100,7 +100,7 @@ userdict /.nativeFontmap .FontDirectory maxlength dict put
++        { 2 index token not
++           { (Fontmap entry for ) print 1 index =only
++             ( ends prematurely!  Giving up.) = flush
++-            {.loadFontmap} 0 get 1 .quit
+++            {//.loadFontmap exec} 0 get 1 .quit
++           } if
++          dup /; eq { pop 3 index 3 1 roll .growput exit } if
++          pop
++@@ -202,6 +202,14 @@ NOFONTPATH { /FONTPATH () def } if
++  { pop }
++  { /FONTPATH (GS_FONTPATH) getenv not { () } if def }
++ ifelse
+++
+++% The following are dummy definitions that, if we have a FONTPATH, will
+++% be replaced in the following section.
+++% They are here so immediately evaulation will work, and allow them to
+++% undefined at the bottom of the file.
+++/.scanfontbegin{} bind def
+++/.scanfontdir {} bind def
+++
++ FONTPATH length 0 eq { (%END FONTPATH) .skipeof } if
++ /FONTPATH [ FONTPATH .pathlist ] def
++ 
++@@ -242,12 +250,12 @@ FONTPATH length 0 eq { (%END FONTPATH) .skipeof } if
++ /.scanfontbegin
++  {      % Construct the table of all file names already in Fontmap.
++    currentglobal //true setglobal
++-   .scanfontdict dup maxlength Fontmap length 2 add .max .setmaxlength
+++   //.scanfontdict dup maxlength Fontmap length 2 add .max .setmaxlength
++    Fontmap
++     { exch pop
++        { dup type /stringtype eq
++-          { .splitfilename pop .fonttempstring copy .lowerstring cvn
++-            .scanfontdict exch //true put
+++          { //.splitfilename exec pop //.fonttempstring copy //.lowerstring exec cvn
+++            //.scanfontdict exch //true put
++           }
++           { pop
++           }
++@@ -280,9 +288,9 @@ FONTPATH length 0 eq { (%END FONTPATH) .skipeof } if
++   /txt //true
++ .dicttomark def
++ /.scan1fontstring 8192 string def
++-% %%BeginFont: is not per Adobe documentation, but a few fonts have it.
+++% BeginFont: is not per Adobe documentation, but a few fonts have it.
++ /.scanfontheaders [(%!PS-Adobe*) (%!FontType*) (%%BeginFont:*)] def
++-0 .scanfontheaders { length .max } forall 6 add % extra for PFB header
+++0 //.scanfontheaders { length .max } forall 6 add % extra for PFB header
++ /.scan1fontfirst exch string def
++ /.scanfontdir           % <dirname> .scanfontdir -
++  { currentglobal exch //true setglobal
++@@ -291,10 +299,10 @@ FONTPATH length 0 eq { (%END FONTPATH) .skipeof } if
++    0 0 0 4 -1 roll      % found scanned files
++     {           % stack: <fontcount> <scancount> <filecount> <filename>
++       exch 1 add exch                   % increment filecount
++-      dup .splitfilename .fonttempstring copy .lowerstring
+++      dup //.splitfilename exec //.fonttempstring copy //.lowerstring exec
++                 % stack: <fontcount> <scancount> <filecount+1> <filename>
++                 %       <BASE> <ext>
++-      .scanfontskip exch known exch .scanfontdict exch known or
+++      //.scanfontskip exch known exch //.scanfontdict exch known or
++        { pop
++                 % stack: <fontcount> <scancount> <filecount+1>
++        }
++@@ -309,7 +317,7 @@ FONTPATH length 0 eq { (%END FONTPATH) .skipeof } if
++                 % On some platforms, the file operator will open directories,
++                 % but an error will occur if we try to read from one.
++                 % Handle this possibility here.
++-            dup .scan1fontfirst { readstring } .internalstopped
+++            dup //.scan1fontfirst { readstring } .internalstopped
++              { pop pop () }
++              { pop }
++             ifelse
++@@ -322,7 +330,7 @@ FONTPATH length 0 eq { (%END FONTPATH) .skipeof } if
++           { dup length 6 sub 6 exch getinterval }
++          if
++                 % Check for font file headers.
++-         //false .scanfontheaders
+++         //false //.scanfontheaders
++           { 2 index exch .stringmatch or
++           }
++          forall exch pop
++@@ -335,7 +343,7 @@ FONTPATH length 0 eq { (%END FONTPATH) .skipeof } if
++                 { exch copystring exch
++                   DEBUG { ( ) print dup =only flush } if
++                   1 index .definenativefontmap
++-                  .splitfilename pop //true .scanfontdict 3 1 roll .growput
+++                  //.splitfilename exec pop //true //.scanfontdict 3 1 roll .growput
++                         % Increment fontcount.
++                   3 -1 roll 1 add 3 1 roll
++                 }
++@@ -352,7 +360,7 @@ FONTPATH length 0 eq { (%END FONTPATH) .skipeof } if
++        }
++       ifelse
++     }
++-   .scan1fontstring filenameforall
+++   //.scan1fontstring filenameforall
++    QUIET
++     { pop pop pop }
++     { ( ) print =only ( files, ) print =only ( scanned, ) print
++@@ -422,7 +430,6 @@ systemdict /NONATIVEFONTMAP known .setnativefontmapbuilt
++     //true .setnativefontmapbuilt
++   } ifelse
++ } bind def
++-currentdict /.setnativefontmapbuilt .forceundef
++ 
++ % Create the dictionary that registers the .buildfont procedure
++ % (called by definefont) for each FontType.
++@@ -526,7 +533,8 @@ buildfontdict 3 /.buildfont3 cvx put
++ % We use this only for explicitly aliased fonts, not substituted fonts:
++ % we think this matches the observed behavior of Adobe interpreters.
++ /.aliasfont             % <name> <font> .aliasfont <newFont>
++- { .currentglobal 3 1 roll dup .gcheck .setglobal
+++ {
+++   currentglobal 3 1 roll dup gcheck setglobal
++                              % <bool> <name> <font>
++    dup length 2 add dict     % <bool> <name> <font> <dict>
++    dup 3 -1 roll             % <bool> <name> <dict> <dict> <font>
++@@ -541,7 +549,7 @@ buildfontdict 3 /.buildfont3 cvx put
++                 % whose FontName is a local non-string, if someone passed a
++                 % garbage value to findfont.  In this case, just don't
++                 % call definefont at all.
++-   2 index dup type /stringtype eq exch .gcheck or 1 index .gcheck not or
+++    2 index dup type /stringtype eq exch gcheck or 1 index gcheck not or
++     { pop                              % <bool> <name> <dict>
++       1 index dup type /stringtype eq { cvn } if
++                                        % <bool> <name> <dict> <name1>
++@@ -566,10 +574,11 @@ buildfontdict 3 /.buildfont3 cvx put
++                 % Don't bind in definefont, since Level 2 redefines it.
++       /definefont .systemvar exec
++     }
++-    { /findfont cvx {.completefont} .errorexec pop exch pop
+++    {
+++      /findfont cvx {.completefont} //.errorexec exec pop exch pop
++     }
++    ifelse
++-   exch .setglobal
+++   exch setglobal
++  } odef         % so findfont will bind it
++ 
++ % Define .loadfontfile for loading a font.  If we recognize Type 1 and/or
++@@ -669,10 +678,19 @@ buildfontdict 3 /.buildfont3 cvx put
++   [(Cn) 4] [(Cond) 4] [(Narrow) 4] [(Pkg) 4] [(Compr) 4]
++   [(Serif) 8] [(Sans) -8]
++ ] readonly def
+++
+++/.fontnamestring {              % <fontname> .fontnamestring <string|name>
+++  dup type dup /nametype eq {
+++    pop .namestring
+++  } {
+++    /stringtype ne { pop () } if
+++  } ifelse
+++} bind def
+++
++ /.fontnameproperties {          % <int> <string|name> .fontnameproperties
++                                 %   <int'>
++-  .fontnamestring
++-  .substituteproperties {
+++  //.fontnamestring exec
+++  //.substituteproperties {
++     2 copy 0 get search {
++       pop pop pop dup length 1 sub 1 exch getinterval 3 -1 roll exch {
++         dup 0 ge { or } { neg not and } ifelse
++@@ -710,13 +728,7 @@ buildfontdict 3 /.buildfont3 cvx put
++                                 % <other> .nametostring <other>
++   dup type /nametype eq { .namestring } if
++ } bind def
++-/.fontnamestring {              % <fontname> .fontnamestring <string|name>
++-  dup type dup /nametype eq {
++-    pop .namestring
++-  } {
++-    /stringtype ne { pop () } if
++-  } ifelse
++-} bind def
+++
++ /.substitutefontname {          % <fontname> <properties> .substitutefontname
++                                 %   <altname|null>
++         % Look for properties and/or a face name in the font name.
++@@ -724,7 +736,7 @@ buildfontdict 3 /.buildfont3 cvx put
++         % base font; otherwise, use the default font.
++         % Note that the "substituted" font name may be the same as
++         % the requested one; the caller must check this.
++-  exch .fontnamestring {
+++  exch //.fontnamestring exec {
++     defaultfontname /Helvetica-Oblique /Helvetica-Bold /Helvetica-BoldOblique
++     /Helvetica-Narrow /Helvetica-Narrow-Oblique
++     /Helvetica-Narrow-Bold /Helvetica-Narrow-BoldOblique
++@@ -734,12 +746,12 @@ buildfontdict 3 /.buildfont3 cvx put
++   } 3 1 roll
++         % Stack: facelist properties fontname
++         % Look for a face name.
++-  .substitutefaces {
+++  //.substitutefaces {
++     2 copy 0 get search {
++       pop pop pop
++         % Stack: facelist properties fontname [(pattern) family properties]
++       dup 2 get 4 -1 roll or 3 1 roll
++-      1 get .substitutefamilies exch get
+++      1 get //.substitutefamilies exch get
++       4 -1 roll pop 3 1 roll
++     } {
++       pop pop
++@@ -748,7 +760,7 @@ buildfontdict 3 /.buildfont3 cvx put
++   1 index length mod get exec
++ } bind def
++ /.substitutefont {              % <fontname> .substitutefont <altname>
++-  dup 0 exch .fontnameproperties .substitutefontname
+++  dup 0 exch //.fontnameproperties exec .substitutefontname
++         % Only accept fonts known in the Fontmap.
++    Fontmap 1 index known not
++    {
++@@ -814,7 +826,7 @@ FAKEFONTS not { (%END FAKEFONTS) .skipeof } if
++   counttomark 1 sub { .aliasfont } repeat end
++                       % <fontname> mark <font>
++   exch pop exch pop
++-} odef
+++} bind odef
++ /findfont {
++   .findfont
++ } bind def
++@@ -860,7 +872,7 @@ FAKEFONTS not { (%END FAKEFONTS) .skipeof } if
++       } {
++         dup .substitutefont
++         2 copy eq { pop defaultfontname } if
++-        .checkalias
+++        //.checkalias exec
++         QUIET not {
++           SHORTERRORS {
++             (%%[) print 1 index =only
++@@ -886,8 +898,8 @@ $error /SubstituteFont { } put
++   //null 0 1 FONTPATH length 1 sub {
++     FONTPATH 1 index get //null ne { exch pop exit } if pop
++   } for dup //null ne {
++-    dup 0 eq { .scanfontbegin } if
++-    FONTPATH 1 index get .scanfontdir
+++    dup 0 eq { //.scanfontbegin exec} if
+++    FONTPATH 1 index get //.scanfontdir exec
++     FONTPATH exch //null put //true
++   } {
++     pop //false
++@@ -897,11 +909,10 @@ $error /SubstituteFont { } put
++ % scanning of FONTPATH.
++ /.dofindfont {   %  mark <fontname> .dofindfont % mark <alias> ... <font>
++   .tryfindfont not {
++-
++                         % We didn't find the font.  If we haven't scanned
++                         % all the directories in FONTPATH, scan the next one
++                         % now and look for the font again.
++-    .scannextfontdir {
+++    //.scannextfontdir exec {
++                         % Start over with an empty alias list.
++       counttomark 1 sub { pop } repeat    % mark <fontname>
++       .dofindfont
++@@ -927,6 +938,7 @@ $error /SubstituteFont { } put
++         } if
++                         % Substitute for the font.  Don't alias.
++                         % Same stack as at the beginning of .dofindfont.
+++
++         $error /SubstituteFont get exec
++                          %
++                          % igorm: I guess the surrounding code assumes that .stdsubstfont
++@@ -935,72 +947,11 @@ $error /SubstituteFont { } put
++                          % used in .dofindfont and through .stdsubstfont
++                          % just to represent a simple iteration,
++                          % which accumulates the aliases after the mark.
++-        .stdsubstfont
+++        //.stdsubstfont exec
++       } ifelse
++     } ifelse
++   } if
++ } bind def
++-% Try to find a font using only the present contents of Fontmap.
++-/.tryfindfont {         % <fontname> .tryfindfont <font> true
++-                        % <fontname> .tryfindfont false
++-  //.FontDirectory 1 index .fontknownget
++-    {                   % Already loaded
++-      exch pop //true
++-    }
++-    {
++-       dup Fontmap exch .knownget
++-       { //true //true }
++-       {                % Unknown font name.  Look for a file with the
++-                        % same name as the requested font.
++-         dup .tryloadfont
++-         { exch pop //true //false }
++-         {
++-           % if we can't load by name check the native font map
++-           dup .nativeFontmap exch .knownget
++-           { //true //true }
++-           { //false //false } ifelse
++-         } ifelse
++-       } ifelse
++-
++-       {                % Try each element of the Fontmap in turn.
++-         pop
++-         //false exch   % (in case we exhaust the list)
++-                        % Stack: fontname false fontmaplist
++-         { exch pop
++-           dup type /nametype eq
++-            {                   % Font alias
++-              .checkalias .tryfindfont exit
++-            }
++-            { dup dup type dup /arraytype eq exch /packedarraytype eq or exch xcheck and
++-               {                % Font with a procedural definition
++-                 exec           % The procedure will load the font.
++-                                % Check to make sure this really happened.
++-                 //.FontDirectory 1 index .knownget
++-                  { exch pop //true exit }
++-                 if
++-               }
++-               {                % Font file name
++-                 //true .loadfontloop { //true exit } if
++-               }
++-              ifelse
++-            }
++-           ifelse //false
++-         }
++-         forall
++-                        % Stack: font true -or- fontname false
++-         { //true
++-         }
++-         {                      % None of the Fontmap entries worked.
++-                                % Try loading a file with the same name
++-                                % as the requested font.
++-           .tryloadfont
++-         }
++-        ifelse
++-       }
++-      if
++-    }
++-   ifelse
++- } bind def
++ 
++ % any user of .putgstringcopy must use bind and executeonly
++ /.putgstringcopy  %   <dict> <name> <string> .putgstringcopy -
++@@ -1014,25 +965,6 @@ $error /SubstituteFont { } put
++   } executeonly ifelse
++ } .bind executeonly odef % must be bound and hidden for .forceput
++ 
++-% Attempt to load a font from a file.
++-/.tryloadfont {         % <fontname> .tryloadfont <font> true
++-                        % <fontname> .tryloadfont false
++-  dup .nametostring
++-                % Hack: check for the presence of the resource machinery.
++-  /.genericrfn where {
++-    pop
++-    pop dup .fonttempstring /FontResourceDir getsystemparam .genericrfn
++-    {//false .loadfontloop} .internalstopped {//false} if {
++-      //true
++-    } {
++-      dup .nametostring
++-      {//true .loadfontloop} .internalstopped {//false} if
++-    } ifelse
++-  } {
++-    {//true .loadfontloop} .internalstopped {//false} if
++-  } ifelse
++-} bind def
++-
++ /.loadfontloop {        % <fontname> <filename> <libflag> .loadfontloop
++                         %   <font> true
++                         % -or-
++@@ -1102,7 +1034,7 @@ $error /SubstituteFont { } put
++          } if
++ 
++                 % Check to make sure the font was actually loaded.
++-        dup 3 index .fontknownget
+++        dup 3 index //.fontknownget exec
++          { dup /PathLoad 4 index .putgstringcopy
++            4 1 roll pop pop pop //true exit
++          } executeonly if
++@@ -1113,7 +1045,7 @@ $error /SubstituteFont { } put
++         exch dup      % Stack: origfontname fontdirectory path path
++         (r) file .findfontname
++          {            % Stack: origfontname fontdirectory path filefontname
++-           2 index 1 index .fontknownget
+++           2 index 1 index //.fontknownget exec
++             {   % Yes.  Stack: origfontname fontdirectory path filefontname fontdict
++               dup 4 -1 roll /PathLoad exch .putgstringcopy
++                       % Stack: origfontname fontdirectory filefontname fontdict
++@@ -1136,7 +1068,7 @@ $error /SubstituteFont { } put
++                       % Stack: fontdict
++             } executeonly
++            if pop % Stack: origfontname fontdirectory path
++-         }
+++         } executeonly
++         if pop pop  % Stack: origfontname
++ 
++                 % The font definitely did not load correctly.
++@@ -1150,7 +1082,87 @@ $error /SubstituteFont { } put
++ 
++  } bind executeonly odef % must be bound and hidden for .putgstringcopy
++ 
++-currentdict /.putgstringcopy .undef
+++% Attempt to load a font from a file.
+++/.tryloadfont {         % <fontname> .tryloadfont <font> true
+++                        % <fontname> .tryloadfont false
+++  dup //.nametostring exec
+++                % Hack: check for the presence of the resource machinery.
+++  /.genericrfn where {
+++    pop
+++    pop dup //.fonttempstring /FontResourceDir getsystemparam .genericrfn
+++    {//false .loadfontloop} .internalstopped {//false} if {
+++      //true
+++    } {
+++      dup //.nametostring exec
+++      {//true .loadfontloop} .internalstopped {//false} if
+++    } ifelse
+++  } {
+++    {//true .loadfontloop} .internalstopped {//false} if
+++  } ifelse
+++} bind def
+++
+++% Try to find a font using only the present contents of Fontmap.
+++/.tryfindfont {         % <fontname> .tryfindfont <font> true
+++                        % <fontname> .tryfindfont false
+++  //.FontDirectory 1 index //.fontknownget exec
+++    {                   % Already loaded
+++      exch pop //true
+++    }
+++    {
+++       dup Fontmap exch .knownget
+++       { //true //true }
+++       {                % Unknown font name.  Look for a file with the
+++                        % same name as the requested font.
+++         dup //.tryloadfont exec
+++         { exch pop //true //false }
+++         {
+++           % if we can't load by name check the native font map
+++           dup .nativeFontmap exch .knownget
+++           { //true //true }
+++           { //false //false } ifelse
+++         } ifelse
+++       } ifelse
+++
+++       {                % Try each element of the Fontmap in turn.
+++         pop
+++         //false exch   % (in case we exhaust the list)
+++                        % Stack: fontname false fontmaplist
+++         { exch pop
+++           dup type /nametype eq
+++            {                   % Font alias
+++              //.checkalias exec
+++              .tryfindfont exit
+++            }
+++            { dup dup type dup /arraytype eq exch /packedarraytype eq or exch xcheck and
+++               {                % Font with a procedural definition
+++                 exec           % The procedure will load the font.
+++                                % Check to make sure this really happened.
+++                 //.FontDirectory 1 index .knownget
+++                  { exch pop //true exit }
+++                 if
+++               }
+++               {                % Font file name
+++                 //true .loadfontloop { //true exit } if
+++               }
+++              ifelse
+++            }
+++           ifelse //false
+++         }
+++         forall
+++                        % Stack: font true -or- fontname false
+++         { //true
+++         }
+++         {                      % None of the Fontmap entries worked.
+++                                % Try loading a file with the same name
+++                                % as the requested font.
+++           //.tryloadfont exec
+++         }
+++        ifelse
+++       }
+++      if
+++    }
+++   ifelse
+++ } bind def
++ 
++ % Define a procedure to load all known fonts.
++ % This isn't likely to be very useful.
++@@ -1192,9 +1204,9 @@ FAKEFONTS { exch } if pop def   % don't bind, .current/setglobal get redefined
++ /.loadinitialfonts
++  { NOFONTMAP not
++     { /FONTMAP where
++-          { pop [ FONTMAP .pathlist ]
+++          { pop [ FONTMAP //.pathlist exec]
++              { dup VMDEBUG findlibfile
++-                { exch pop .loadFontmap }
+++                { exch pop //.loadFontmap exec }
++                 { /undefinedfilename signalerror }
++                ifelse
++              }
++@@ -1208,7 +1220,7 @@ FAKEFONTS { exch } if pop def   % don't bind, .current/setglobal get redefined
++                    pop pop
++                    defaultfontmap_content { .definefontmap } forall
++                  } {
++-                   .loadFontmap
+++                   //.loadFontmap exec
++                  } ifelse
++                } {
++                  pop pop
++@@ -1272,3 +1284,18 @@ FAKEFONTS { exch } if pop def   % don't bind, .current/setglobal get redefined
++  { .makemodifiedfont
++    dup /FontName get exch definefont pop
++  } bind def
+++
+++% Undef these, not needed outside this file
+++[
+++ % /.fonttempstring /.scannextfontdir - are also used in gs_res.ps, so are undefined there
+++ % /.fontnameproperties - is used in pdf_font.ps
+++ % /.scanfontheaders - used in gs_cff.ps, gs_ttf.ps
+++ /.loadfontloop /.tryloadfont /.findfont /.pathlist /.loadFontmap /.lowerstring
+++ /.splitfilename /.scanfontdict /.scanfontbegin
+++ /.scanfontskip /.scan1fontstring
+++ /.scan1fontfirst /.scanfontdir
+++ /.setnativefontmapbuilt /.aliasfont
+++ /.setloadingfont /.substitutefaces /.substituteproperties /.substitutefamilies
+++ /.nametostring /.fontnamestring /.checkalias /.fontknownget /.stdsubstfont
+++ /.putgstringcopy
+++] {systemdict exch .forceundef} forall
++diff --git a/Resource/Init/gs_res.ps b/Resource/Init/gs_res.ps
++index d9b34599e7c2..fd7eaf953ae9 100644
++--- a/Resource/Init/gs_res.ps
+++++ b/Resource/Init/gs_res.ps
++@@ -961,7 +961,7 @@ userdict /.localcsdefaults //false put
++     dup type /nametype eq { .namestring } if
++     dup type /stringtype ne { //false exit } if
++                 % Check the resource directory.
++-    dup .fonttempstring /FontResourceDir getsystemparam .genericrfn
+++    dup //.fonttempstring /FontResourceDir getsystemparam .genericrfn
++     status {
++       pop pop pop pop //true exit
++     } if
++@@ -969,7 +969,7 @@ userdict /.localcsdefaults //false put
++                 % as the font.
++     findlibfile { closefile //true exit } if
++                 % Scan a FONTPATH directory and try again.
++-    .scannextfontdir not { //false exit } if
+++    //.scannextfontdir exec not { //false exit } if
++   } loop
++ } bind def
++ 
++@@ -1008,7 +1008,7 @@ currentdict /.fontstatusaux .undef
++         } ifelse
++ } bind executeonly
++ /ResourceForAll {
++-        { .scannextfontdir not { exit } if } loop
+++        { //.scannextfontdir exec not { exit } if } loop
++         /Generic /Category findresource /ResourceForAll get exec
++ } bind executeonly
++ /.ResourceFileStatus {
++-- 
++2.20.1
++
+diff --git a/package/ghostscript/0007-Remove-.forcedef-and-harden-.force-ops-more.patch b/package/ghostscript/0007-Remove-.forcedef-and-harden-.force-ops-more.patch
+new file mode 100644
+index 0000000000..8c21c34ede
+--- /dev/null
++++ b/package/ghostscript/0007-Remove-.forcedef-and-harden-.force-ops-more.patch
+@@ -0,0 +1,345 @@
++From ba2336b3b1ca5cfe1e67dbe37a084c9644a65ac7 Mon Sep 17 00:00:00 2001
++From: Chris Liddell <chris.liddell@artifex.com>
++Date: Fri, 11 Jan 2019 13:36:36 +0000
++Subject: [PATCH] Remove .forcedef, and harden .force* ops more
++
++Remove .forcedef and replace all uses with a direct call to .forceput instead.
++
++Ensure every procedure (named and trasient) that calls .forceput is
++executeonly.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit 49c8092da88e
++
++ Resource/Init/gs_dps1.ps  | 15 +++++++-----
++ Resource/Init/gs_init.ps  | 28 ++++++++-------------
++ Resource/Init/gs_lev2.ps  | 51 +++++++++++++++++++--------------------
++ Resource/Init/gs_ll3.ps   |  5 ++--
++ Resource/Init/gs_res.ps   | 29 +++++++++++-----------
++ Resource/Init/gs_statd.ps |  4 +--
++ 6 files changed, 63 insertions(+), 69 deletions(-)
++
++diff --git a/Resource/Init/gs_dps1.ps b/Resource/Init/gs_dps1.ps
++index 8700c8cb304b..3d2cf7a1ad01 100644
++--- a/Resource/Init/gs_dps1.ps
+++++ b/Resource/Init/gs_dps1.ps
++@@ -33,14 +33,17 @@ systemdict begin
++ 
++ /SharedFontDirectory .FontDirectory .gcheck
++  { .currentglobal //false .setglobal
+++   currentdict
++    /LocalFontDirectory .FontDirectory dup maxlength dict copy
++-   .forcedef	% LocalFontDirectory is local, systemdict is global
+++   .forceput	% LocalFontDirectory is local, systemdict is global
++    .setglobal .FontDirectory
++- }
++- { /LocalFontDirectory .FontDirectory
++-   .forcedef	% LocalFontDirectory is local, systemdict is global
+++ } executeonly
+++ {
+++   currentdict
+++   /LocalFontDirectory .FontDirectory
+++   .forceput	% LocalFontDirectory is local, systemdict is global
++    50 dict
++- }
+++ }executeonly
++ ifelse def
++ 
++ end				% systemdict
++@@ -55,7 +58,7 @@ level2dict begin
++     { //SharedFontDirectory }
++     { /LocalFontDirectory .systemvar }	% can't embed ref to local VM
++    ifelse .forceput pop	% LocalFontDirectory is local, systemdict is global
++- } .bind odef
+++ } .bind executeonly odef
++ % Don't just copy (load) the definition of .setglobal:
++ % it gets redefined for LL3.
++ /setshared { /.setglobal .systemvar exec } odef
++diff --git a/Resource/Init/gs_init.ps b/Resource/Init/gs_init.ps
++index d9a0829f7f97..45bebf479bae 100644
++--- a/Resource/Init/gs_init.ps
+++++ b/Resource/Init/gs_init.ps
++@@ -54,7 +54,7 @@ systemdict exch
++    dup /userdict
++    currentdict dup 200 .setmaxlength		% userdict
++    .forceput			% userdict is local, systemdict is global
++- }
+++ } executeonly
++ if begin
++ 
++ % Define dummy local/global operators if needed.
++@@ -299,13 +299,6 @@ QUIET not { printgreeting flush } if
++   1 index exch .makeoperator def
++ } .bind def
++ 
++-% Define a special version of def for storing local objects into global
++-% dictionaries.  Like .forceput, this exists only during initialization.
++-/.forcedef {		% <key> <value> .forcedef -
++-  1 .argindex pop	% check # of args
++-  currentdict 3 1 roll .forceput
++-} .bind odef
++-
++ % Define procedures for accessing variables in systemdict and userdict
++ % regardless of the contents of the dictionary stack.
++ /.systemvar {		% <name> .systemvar <value>
++@@ -347,7 +340,7 @@ DELAYBIND
++        }
++       ifelse
++     } .bind def
++-} if
+++} executeonly if
++ 
++ %**************** BACKWARD COMPATIBILITY ****************
++ /hwsizedict mark /HWSize //null .dicttomark readonly def
++@@ -655,7 +648,7 @@ currentdict /.typenames .undef
++       /ifelse .systemvar
++     ] cvx executeonly
++   exch .setglobal
++-} odef
+++} executeonly odef
++ systemdict /internaldict dup .makeinternaldict .makeoperator
++ .forceput		% proc is local, systemdict is global
++ 
++@@ -1093,7 +1086,7 @@ def
++ 
++ % Define $error.  This must be in local VM.
++ .currentglobal //false .setglobal
++-/$error 40 dict .forcedef	% $error is local, systemdict is global
+++currentdict /$error 40 dict .forceput	% $error is local, systemdict is global
++                 % newerror, errorname, command, errorinfo,
++                 % ostack, estack, dstack, recordstacks,
++                 % binary, globalmode,
++@@ -1112,8 +1105,8 @@ end
++ % Define errordict similarly.  It has one entry per error name,
++ %   plus handleerror.  However, some astonishingly badly written PostScript
++ %   files require it to have at least one empty slot.
++-/errordict ErrorNames length 3 add dict
++-.forcedef		% errordict is local, systemdict is global
+++currentdict /errordict ErrorNames length 3 add dict
+++.forceput		% errordict is local, systemdict is global
++ .setglobal		% back to global VM
++ %  gserrordict contains all the default error handling methods, but unlike
++ %  errordict it is noaccess after creation (also it is in global VM).
++@@ -1273,8 +1266,9 @@ end
++ (END PROCS) VMDEBUG
++ 
++ % Define the font directory.
+++currentdict
++ /FontDirectory //false .setglobal 100 dict //true .setglobal
++-.forcedef		% FontDirectory is local, systemdict is global
+++.forceput		% FontDirectory is local, systemdict is global
++ 
++ % Define the encoding dictionary.
++ /EncodingDirectory 16 dict def	% enough for Level 2 + PDF standard encodings
++@@ -2333,7 +2327,6 @@ SAFER { .setsafeglobal } if
++   //systemdict /UndefinePostScriptOperators get exec
++   //systemdict /UndefinePDFOperators get exec
++   //systemdict /.forcecopynew .forceundef	% remove temptation
++-  //systemdict /.forcedef .forceundef		% ditto
++   //systemdict /.forceput .forceundef		% ditto
++   //systemdict /.undef .forceundef		    % ditto
++   //systemdict /.forceundef .forceundef		% ditto
++@@ -2368,9 +2361,9 @@ SAFER { .setsafeglobal } if
++         % (and, if implemented, context switching).
++   .currentglobal //false .setglobal
++      mark userparams { } forall .dicttomark readonly
++-     /userparams exch .forcedef		% systemdict is read-only
+++     currentdict exch /userparams exch .forceput		% systemdict is read-only
++   .setglobal
++-} if
+++} executeonly if
++ /.currentsystemparams where {
++   pop
++         % Remove real system params from pssystemparams.
++@@ -2458,7 +2451,6 @@ end
++ DELAYBIND not {
++   systemdict /.bindnow .undef       % We only need this for DELAYBIND
++   systemdict /.forcecopynew .undef	% remove temptation
++-  systemdict /.forcedef .undef		% ditto
++   systemdict /.forceput .undef		% ditto
++   systemdict /.forceundef .undef	% ditto
++ } if
++diff --git a/Resource/Init/gs_lev2.ps b/Resource/Init/gs_lev2.ps
++index 0f0d57331c23..9c0c3a6fc485 100644
++--- a/Resource/Init/gs_lev2.ps
+++++ b/Resource/Init/gs_lev2.ps
++@@ -304,31 +304,30 @@ end
++     psuserparams exch /.checkFilePermitparams load put
++   .setglobal
++ 
++-pssystemparams begin
++-  /CurDisplayList 0 .forcedef
++-  /CurFormCache 0 .forcedef
++-  /CurInputDevice () .forcedef
++-  /CurOutlineCache 0 .forcedef
++-  /CurOutputDevice () .forcedef
++-  /CurPatternCache 0 .forcedef
++-  /CurUPathCache 0 .forcedef
++-  /CurScreenStorage 0 .forcedef
++-  /CurSourceList 0 .forcedef
++-  /DoPrintErrors //false .forcedef
++-  /JobTimeout 0 .forcedef
++-  /LicenseID (LN-001) .forcedef     % bogus
++-  /MaxDisplayList 140000 .forcedef
++-  /MaxFormCache 100000 .forcedef
++-  /MaxImageBuffer 524288 .forcedef
++-  /MaxOutlineCache 65000 .forcedef
++-  /MaxPatternCache 100000 .forcedef
++-  /MaxUPathCache 300000 .forcedef
++-  /MaxScreenStorage 84000 .forcedef
++-  /MaxSourceList 25000 .forcedef
++-  /PrinterName product .forcedef
++-  /RamSize 4194304 .forcedef
++-  /WaitTimeout 40 .forcedef
++-end
+++pssystemparams
+++dup /CurDisplayList 0 .forceput
+++dup /CurFormCache 0 .forceput
+++dup /CurInputDevice () .forceput
+++dup /CurOutlineCache 0 .forceput
+++dup /CurOutputDevice () .forceput
+++dup /CurPatternCache 0 .forceput
+++dup /CurUPathCache 0 .forceput
+++dup /CurScreenStorage 0 .forceput
+++dup /CurSourceList 0 .forceput
+++dup /DoPrintErrors //false .forceput
+++dup /JobTimeout 0 .forceput
+++dup /LicenseID (LN-001) .forceput     % bogus
+++dup /MaxDisplayList 140000 .forceput
+++dup /MaxFormCache 100000 .forceput
+++dup /MaxImageBuffer 524288 .forceput
+++dup /MaxOutlineCache 65000 .forceput
+++dup /MaxPatternCache 100000 .forceput
+++dup /MaxUPathCache 300000 .forceput
+++dup /MaxScreenStorage 84000 .forceput
+++dup /MaxSourceList 25000 .forceput
+++dup /PrinterName product .forceput
+++dup /RamSize 4194304 .forceput
+++    /WaitTimeout 40 .forceput
++ 
++ % Define the procedures for handling comment scanning.  The names
++ % %ProcessComment and %ProcessDSCComment are known to the interpreter.
++@@ -710,7 +709,7 @@ pop		% currentsystemparams
++ /statusdict currentdict def
++ 
++ currentdict end
++-/statusdict exch .forcedef	% statusdict is local, systemdict is global
+++currentdict exch /statusdict exch .forceput	% statusdict is local, systemdict is global
++ 
++ % The following compatibility operators are in systemdict.  They are
++ % defined here, rather than in gs_init.ps, because they require the
++diff --git a/Resource/Init/gs_ll3.ps b/Resource/Init/gs_ll3.ps
++index c86721f39fc0..881af44e9fd2 100644
++--- a/Resource/Init/gs_ll3.ps
+++++ b/Resource/Init/gs_ll3.ps
++@@ -521,9 +521,8 @@ end
++ % Define additional user and system parameters.
++ /HalftoneMode 0 .definepsuserparam
++ /MaxSuperScreen 1016 .definepsuserparam
++-pssystemparams begin		% read-only, so use .forcedef
++-  /MaxDisplayAndSourceList 160000 .forcedef
++-end
+++% read-only, so use .forceput
+++pssystemparams  /MaxDisplayAndSourceList 160000 .forceput
++ 
++ % Define the IdiomSet resource category.
++ { /IdiomSet } {
++diff --git a/Resource/Init/gs_res.ps b/Resource/Init/gs_res.ps
++index fd7eaf953ae9..0b4e0514b2a1 100644
++--- a/Resource/Init/gs_res.ps
+++++ b/Resource/Init/gs_res.ps
++@@ -41,10 +41,10 @@ level2dict begin
++ % However, Ed Taft of Adobe says their interpreters don't implement this
++ % either, so we aren't going to worry about it for a while.
++ 
++-currentglobal //false setglobal systemdict begin
++-  /localinstancedict 5 dict
++-  .forcedef	% localinstancedict is local, systemdict is global
++-end //true setglobal
+++currentglobal //false setglobal
+++  systemdict /localinstancedict 5 dict
+++  .forceput	% localinstancedict is local, systemdict is global
+++//true setglobal
++ /.emptydict 0 dict readonly def
++ setglobal
++ 
++@@ -149,7 +149,7 @@ setglobal
++           dup [ exch 0 -1 ] exch
++           .Instances 4 2 roll put
++                 % Make the Category dictionary read-only.  We will have to
++-                % use .forceput / .forcedef later to replace the dummy,
+++                % use .forceput / .forceput later to replace the dummy,
++                 % empty .Instances dictionary with the real one later.
++           readonly
++         }{
++@@ -304,7 +304,8 @@ systemdict begin
++      dup () ne {
++      .file_name_directory_separator concatstrings
++     } if
++-    2 index exch //false .file_name_combine not {
+++    2 index exch //false
+++    .file_name_combine not {
++       (Error: .default_resource_dir returned ) print exch print ( that can't combine with ) print =
++       /.default_resource_dir cvx /configurationerror signalerror
++     } if
++@@ -317,14 +318,14 @@ currentdict /pssystemparams known not {
++ pssystemparams begin
++   .default_resource_dir
++   /FontResourceDir (Font) .resource_dir_name
++-     readonly .forcedef	% pssys'params is r-o
+++     readonly currentdict 3 1 roll .forceput	% pssys'params is r-o
++   /GenericResourceDir () .resource_dir_name
++-     readonly .forcedef	% pssys'params is r-o
+++     readonly currentdict 3 1 roll .forceput	% pssys'params is r-o
++   pop % .default_resource_dir
++   /GenericResourcePathSep
++-        .file_name_separator readonly .forcedef		% pssys'params is r-o
++-  (%diskFontResourceDir) cvn (/Resource/Font/) readonly .forcedef	% pssys'params is r-o
++-  (%diskGenericResourceDir) cvn (/Resource/) readonly .forcedef	% pssys'params is r-o
+++        .file_name_separator readonly currentdict 3 1 roll .forceput		% pssys'params is r-o
+++  currentdict (%diskFontResourceDir) cvn (/Resource/Font/) readonly .forceput	% pssys'params is r-o
+++  currentdict (%diskGenericResourceDir) cvn (/Resource/) readonly .forceput	% pssys'params is r-o
++ end
++ end
++ 
++@@ -422,8 +423,8 @@ status {
++                 .Instances dup //.emptydict eq {
++                   pop 3 dict
++                         % As noted above, Category dictionaries are read-only,
++-                        % so we have to use .forcedef here.
++-                  /.Instances 1 index .forcedef	% Category dict is read-only
+++                        % so we have to use .forceput here.
+++                  currentdict /.Instances 2 index .forceput	% Category dict is read-only
++                 } executeonly if
++               }
++               { .LocalInstances dup //.emptydict eq
++@@ -441,7 +442,7 @@ status {
++            { /defineresource cvx /typecheck signaloperror
++            }
++         ifelse
++-} .bind executeonly .makeoperator		% executeonly to prevent access to .forcedef
+++} .bind executeonly .makeoperator		% executeonly to prevent access to .forceput
++ /UndefineResource
++         {  { dup 2 index .knownget
++               { dup 1 get 1 ge
++diff --git a/Resource/Init/gs_statd.ps b/Resource/Init/gs_statd.ps
++index 20d4c96c4f8f..b6a76590dd09 100644
++--- a/Resource/Init/gs_statd.ps
+++++ b/Resource/Init/gs_statd.ps
++@@ -21,10 +21,10 @@ systemdict begin
++         % We make statusdict a little larger for Level 2 stuff.
++         % Note that it must be allocated in local VM.
++  .currentglobal //false .setglobal
++- /statusdict 91 dict .forcedef		% statusdict is local, sys'dict global
+++ currentdict /statusdict 91 dict .forceput		% statusdict is local, sys'dict global
++         % To support the Level 2 job control features,
++         % serverdict must also be in local VM.
++- /serverdict 10 dict .forcedef		% serverdict is local, sys'dict global
+++ currentdict /serverdict 10 dict .forceput		% serverdict is local, sys'dict global
++  .setglobal
++ end
++ 
++-- 
++2.20.1
++
+diff --git a/package/gnuradio/gnuradio.mk b/package/gnuradio/gnuradio.mk
+index a55c116118..9e7c91acbe 100644
+--- a/package/gnuradio/gnuradio.mk
++++ b/package/gnuradio/gnuradio.mk
+@@ -24,7 +24,8 @@ endif
+ GNURADIO_CONF_OPTS = \
+ 	-DENABLE_DEFAULT=OFF \
+ 	-DENABLE_VOLK=ON \
+-	-DENABLE_GNURADIO_RUNTIME=ON
++	-DENABLE_GNURADIO_RUNTIME=ON \
++	-DXMLTO_EXECUTABLE=NOTFOUND
+ 
+ # For third-party blocks, the gnuradio libraries are mandatory at
+ # compile time.
+diff --git a/package/imagemagick/Config.in b/package/imagemagick/Config.in
+index 4bd81dbd79..8b795d89e5 100644
+--- a/package/imagemagick/Config.in
++++ b/package/imagemagick/Config.in
+@@ -9,8 +9,8 @@ config BR2_PACKAGE_IMAGEMAGICK
+ 	  JPEG, JPEG-2000, PDF, PhotoCD, PNG, Postscript, SVG, and TIFF.
+ 	  Use ImageMagick to translate, flip, mirror, rotate, scale,
+ 	  shear and transform images, adjust image colors, apply various
+-	  special effects, or draw text,
+-	  lines, polygons, ellipses and Bézier curves.
++	  special effects, or draw text, lines, polygons, ellipses and
++	  Bézier curves.
+ 
+ 	  http://www.imagemagick.org/
+ 
+diff --git a/package/jpeg-turbo/0001-tjLoadImage-Fix-int-overflow-segfault-w-big-BMP.patch b/package/jpeg-turbo/0001-tjLoadImage-Fix-int-overflow-segfault-w-big-BMP.patch
+new file mode 100644
+index 0000000000..a10fcf62af
+--- /dev/null
++++ b/package/jpeg-turbo/0001-tjLoadImage-Fix-int-overflow-segfault-w-big-BMP.patch
+@@ -0,0 +1,51 @@
++From 3d9c64e9f8aa1ee954d1d0bb3390fc894bb84da3 Mon Sep 17 00:00:00 2001
++From: DRC <information@libjpeg-turbo.org>
++Date: Tue, 1 Jan 2019 18:57:36 -0600
++Subject: [PATCH] tjLoadImage(): Fix int overflow/segfault w/big BMP
++
++Fixes #304
++
++[baruch: drop the ChangeLog.md hunk]
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit 3d9c64e9f8aa
++
++ ChangeLog.md | 4 ++++
++ turbojpeg.c  | 9 ++++++---
++ 2 files changed, 10 insertions(+), 3 deletions(-)
++
++diff --git a/turbojpeg.c b/turbojpeg.c
++index 90a9ce6a0be8..3f7cd640677f 100644
++--- a/turbojpeg.c
+++++ b/turbojpeg.c
++@@ -1,5 +1,5 @@
++ /*
++- * Copyright (C)2009-2018 D. R. Commander.  All Rights Reserved.
+++ * Copyright (C)2009-2019 D. R. Commander.  All Rights Reserved.
++  *
++  * Redistribution and use in source and binary forms, with or without
++  * modification, are permitted provided that the following conditions are met:
++@@ -1960,7 +1960,8 @@ DLLEXPORT unsigned char *tjLoadImage(const char *filename, int *width,
++                                      int align, int *height, int *pixelFormat,
++                                      int flags)
++ {
++-  int retval = 0, tempc, pitch;
+++  int retval = 0, tempc;
+++  size_t pitch;
++   tjhandle handle = NULL;
++   tjinstance *this;
++   j_compress_ptr cinfo = NULL;
++@@ -2013,7 +2014,9 @@ DLLEXPORT unsigned char *tjLoadImage(const char *filename, int *width,
++   *pixelFormat = cs2pf[cinfo->in_color_space];
++ 
++   pitch = PAD((*width) * tjPixelSize[*pixelFormat], align);
++-  if ((dstBuf = (unsigned char *)malloc(pitch * (*height))) == NULL)
+++  if ((unsigned long long)pitch * (unsigned long long)(*height) >
+++      (unsigned long long)((size_t)-1) ||
+++      (dstBuf = (unsigned char *)malloc(pitch * (*height))) == NULL)
++     _throwg("tjLoadImage(): Memory allocation failure");
++ 
++   if (setjmp(this->jerr.setjmp_buffer)) {
++-- 
++2.20.1
++
+diff --git a/package/jpeg-turbo/0002-wrbmp.c-Don-t-allow-quantization-w-non-RGB-CS.patch b/package/jpeg-turbo/0002-wrbmp.c-Don-t-allow-quantization-w-non-RGB-CS.patch
+new file mode 100644
+index 0000000000..3e4e5bd082
+--- /dev/null
++++ b/package/jpeg-turbo/0002-wrbmp.c-Don-t-allow-quantization-w-non-RGB-CS.patch
+@@ -0,0 +1,39 @@
++From f8cca819a4fb42aafa5f70df43c45e8c416d716f Mon Sep 17 00:00:00 2001
++From: DRC <information@libjpeg-turbo.org>
++Date: Tue, 1 Jan 2019 20:32:40 -0600
++Subject: [PATCH] wrbmp.c: Don't allow quantization w/ non-RGB CS
++
++If cinfo->quantize_colors == 1, then jpeg_calc_output_dimensions() will
++set cinfo->output_components to 1, and if cinfo->out_color_space is not
++RGB (or extended RGB), hilarity will ensue.
++
++Fixes #305
++
++[baruch: drop the ChangeLog.md hunk]
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit f8cca819a4
++
++ ChangeLog.md | 4 ++++
++ wrbmp.c      | 5 +++--
++ 2 files changed, 7 insertions(+), 2 deletions(-)
++
++diff --git a/wrbmp.c b/wrbmp.c
++index 4bf81426b0ef..239f64eb3c3f 100644
++--- a/wrbmp.c
+++++ b/wrbmp.c
++@@ -502,8 +502,9 @@ jinit_write_bmp(j_decompress_ptr cinfo, boolean is_os2,
++       dest->pub.put_pixel_rows = put_gray_rows;
++     else
++       dest->pub.put_pixel_rows = put_pixel_rows;
++-  } else if (cinfo->out_color_space == JCS_RGB565 ||
++-             cinfo->out_color_space == JCS_CMYK) {
+++  } else if (!cinfo->quantize_colors &&
+++             (cinfo->out_color_space == JCS_RGB565 ||
+++              cinfo->out_color_space == JCS_CMYK)) {
++     dest->pub.put_pixel_rows = put_pixel_rows;
++   } else {
++     ERREXIT(cinfo, JERR_BMP_COLORSPACE);
++-- 
++2.20.1
++
+diff --git a/package/jpeg-turbo/jpeg-turbo.hash b/package/jpeg-turbo/jpeg-turbo.hash
+index 11b323b8bf..1779324c51 100644
+--- a/package/jpeg-turbo/jpeg-turbo.hash
++++ b/package/jpeg-turbo/jpeg-turbo.hash
+@@ -1,7 +1,7 @@
+-# From https://sourceforge.net/projects/libjpeg-turbo/files/1.5.2/
+-sha1 e788f6defa58b4393a5e1685c018f3b962971457  libjpeg-turbo-1.5.2.tar.gz
+-md5 6b4923e297a7eaa255f08511017a8818  libjpeg-turbo-1.5.2.tar.gz
++# From https://sourceforge.net/projects/libjpeg-turbo/files/2.0.1/
++sha1 7ea4a288bccbb5a2d5bfad5fb328d4a839853f4e  libjpeg-turbo-2.0.1.tar.gz
++md5 1b05a66aa9b006fd04ed29f408e68f46  libjpeg-turbo-2.0.1.tar.gz
+ # Locally computed
+-sha256 9098943b270388727ae61de82adec73cf9f0dbb240b3bc8b172595ebf405b528  libjpeg-turbo-1.5.2.tar.gz
+-sha256 5c08657eda60b7946a913ee22ac73603335a468a6aa95204506a1586a8d677ee  LICENSE.md
+-sha256 53a3e3c299e08856964f4c5986e242c3695837b73c64625092f70c774e8af5d2  README.ijg
++sha256 e5f86cec31df1d39596e0cca619ab1b01f99025a27dafdfc97a30f3a12f866ff  libjpeg-turbo-2.0.1.tar.gz
++sha256 8412238c5ad95965cf3c3197791e9dea8b5fae505d133449e33ee2fa754fe61e  LICENSE.md
++sha256 82fece2bff2669c476495f0fe70096b154e8bc5b40916a64e99836d9a01c3110  README.ijg
+diff --git a/package/jpeg-turbo/jpeg-turbo.mk b/package/jpeg-turbo/jpeg-turbo.mk
+index d52ab916e0..b848b66899 100644
+--- a/package/jpeg-turbo/jpeg-turbo.mk
++++ b/package/jpeg-turbo/jpeg-turbo.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-JPEG_TURBO_VERSION = 1.5.2
++JPEG_TURBO_VERSION = 2.0.1
+ JPEG_TURBO_SOURCE = libjpeg-turbo-$(JPEG_TURBO_VERSION).tar.gz
+ JPEG_TURBO_SITE = https://downloads.sourceforge.net/project/libjpeg-turbo/$(JPEG_TURBO_VERSION)
+ JPEG_TURBO_LICENSE = IJG (libjpeg), BSD-3-Clause (TurboJPEG), Zlib (SIMD)
+@@ -13,14 +13,22 @@ JPEG_TURBO_INSTALL_STAGING = YES
+ JPEG_TURBO_PROVIDES = jpeg
+ JPEG_TURBO_DEPENDENCIES = host-pkgconf
+ 
+-JPEG_TURBO_CONF_OPTS = --with-jpeg8
++JPEG_TURBO_CONF_OPTS = -DWITH_JPEG8=ON
++
++ifeq ($(BR2_STATIC_LIBS),y)
++JPEG_TURBO_CONF_OPTS += -DENABLE_STATIC=ON -DENABLE_SHARED=OFF
++else ifeq ($(BR2_SHARED_STATIC_LIBS),y)
++JPEG_TURBO_CONF_OPTS += -DENABLE_STATIC=ON -DENABLE_SHARED=ON
++else ifeq ($(BR2_SHARED_LIBS),y)
++JPEG_TURBO_CONF_OPTS += -DENABLE_STATIC=OFF -DENABLE_SHARED=ON
++endif
+ 
+ ifeq ($(BR2_PACKAGE_JPEG_SIMD_SUPPORT),y)
+-JPEG_TURBO_CONF_OPTS += --with-simd
++JPEG_TURBO_CONF_OPTS += -DWITH_SIMD=ON
+ # x86 simd support needs nasm
+ JPEG_TURBO_DEPENDENCIES += $(if $(BR2_X86_CPU_HAS_MMX),host-nasm)
+ else
+-JPEG_TURBO_CONF_OPTS += --without-simd
++JPEG_TURBO_CONF_OPTS += -DWITH_SIMD=OFF
+ endif
+ 
+ define JPEG_TURBO_REMOVE_USELESS_TOOLS
+@@ -29,4 +37,4 @@ endef
+ 
+ JPEG_TURBO_POST_INSTALL_TARGET_HOOKS += JPEG_TURBO_REMOVE_USELESS_TOOLS
+ 
+-$(eval $(autotools-package))
++$(eval $(cmake-package))
+diff --git a/package/libarchive/0005-iso9660-Fail-when-expected-Rockridge-extensions-is-m.patch b/package/libarchive/0005-iso9660-Fail-when-expected-Rockridge-extensions-is-m.patch
+new file mode 100644
+index 0000000000..bd36ce4b53
+--- /dev/null
++++ b/package/libarchive/0005-iso9660-Fail-when-expected-Rockridge-extensions-is-m.patch
+@@ -0,0 +1,62 @@
++From 8312eaa576014cd9b965012af51bc1f967b12423 Mon Sep 17 00:00:00 2001
++From: Daniel Axtens <dja@axtens.net>
++Date: Tue, 1 Jan 2019 17:10:49 +1100
++Subject: [PATCH] iso9660: Fail when expected Rockridge extensions is missing
++
++A corrupted or malicious ISO9660 image can cause read_CE() to loop
++forever.
++
++read_CE() calls parse_rockridge(), expecting a Rockridge extension
++to be read. However, parse_rockridge() is structured as a while
++loop starting with a sanity check, and if the sanity check fails
++before the loop has run, the function returns ARCHIVE_OK without
++advancing the position in the file. This causes read_CE() to retry
++indefinitely.
++
++Make parse_rockridge() return ARCHIVE_WARN if it didn't read an
++extension. As someone with no real knowledge of the format, this
++seems more apt than ARCHIVE_FATAL, but both the call-sites escalate
++it to a fatal error immediately anyway.
++
++Found with a combination of AFL, afl-rb (FairFuzz) and qsym.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit 8312eaa57601
++
++ libarchive/archive_read_support_format_iso9660.c | 11 ++++++++++-
++ 1 file changed, 10 insertions(+), 1 deletion(-)
++
++diff --git a/libarchive/archive_read_support_format_iso9660.c b/libarchive/archive_read_support_format_iso9660.c
++index 28acfefbba8a..bad8f1dfef3a 100644
++--- a/libarchive/archive_read_support_format_iso9660.c
+++++ b/libarchive/archive_read_support_format_iso9660.c
++@@ -2102,6 +2102,7 @@ parse_rockridge(struct archive_read *a, struct file_info *file,
++     const unsigned char *p, const unsigned char *end)
++ {
++ 	struct iso9660 *iso9660;
+++	int entry_seen = 0;
++ 
++ 	iso9660 = (struct iso9660 *)(a->format->data);
++ 
++@@ -2257,8 +2258,16 @@ parse_rockridge(struct archive_read *a, struct file_info *file,
++ 		}
++ 
++ 		p += p[2];
+++		entry_seen = 1;
+++	}
+++
+++	if (entry_seen)
+++		return (ARCHIVE_OK);
+++	else {
+++		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+++				  "Tried to parse Rockridge extensions, but none found");
+++		return (ARCHIVE_WARN);
++ 	}
++-	return (ARCHIVE_OK);
++ }
++ 
++ static int
++-- 
++2.20.1
++
+diff --git a/package/libarchive/0006-7zip-fix-crash-when-parsing-certain-archives.patch b/package/libarchive/0006-7zip-fix-crash-when-parsing-certain-archives.patch
+new file mode 100644
+index 0000000000..bad33d9526
+--- /dev/null
++++ b/package/libarchive/0006-7zip-fix-crash-when-parsing-certain-archives.patch
+@@ -0,0 +1,62 @@
++From 65a23f5dbee4497064e9bb467f81138a62b0dae1 Mon Sep 17 00:00:00 2001
++From: Daniel Axtens <dja@axtens.net>
++Date: Tue, 1 Jan 2019 16:01:40 +1100
++Subject: [PATCH] 7zip: fix crash when parsing certain archives
++
++Fuzzing with CRCs disabled revealed that a call to get_uncompressed_data()
++would sometimes fail to return at least 'minimum' bytes. This can cause
++the crc32() invocation in header_bytes to read off into invalid memory.
++
++A specially crafted archive can use this to cause a crash.
++
++An ASAN trace is below, but ASAN is not required - an uninstrumented
++binary will also crash.
++
++==7719==ERROR: AddressSanitizer: SEGV on unknown address 0x631000040000 (pc 0x7fbdb3b3ec1d bp 0x7ffe77a51310 sp 0x7ffe77a51150 T0)
++==7719==The signal is caused by a READ memory access.
++    #0 0x7fbdb3b3ec1c in crc32_z (/lib/x86_64-linux-gnu/libz.so.1+0x2c1c)
++    #1 0x84f5eb in header_bytes (/tmp/libarchive/bsdtar+0x84f5eb)
++    #2 0x856156 in read_Header (/tmp/libarchive/bsdtar+0x856156)
++    #3 0x84e134 in slurp_central_directory (/tmp/libarchive/bsdtar+0x84e134)
++    #4 0x849690 in archive_read_format_7zip_read_header (/tmp/libarchive/bsdtar+0x849690)
++    #5 0x5713b7 in _archive_read_next_header2 (/tmp/libarchive/bsdtar+0x5713b7)
++    #6 0x570e63 in _archive_read_next_header (/tmp/libarchive/bsdtar+0x570e63)
++    #7 0x6f08bd in archive_read_next_header (/tmp/libarchive/bsdtar+0x6f08bd)
++    #8 0x52373f in read_archive (/tmp/libarchive/bsdtar+0x52373f)
++    #9 0x5257be in tar_mode_x (/tmp/libarchive/bsdtar+0x5257be)
++    #10 0x51daeb in main (/tmp/libarchive/bsdtar+0x51daeb)
++    #11 0x7fbdb27cab96 in __libc_start_main /build/glibc-OTsEL5/glibc-2.27/csu/../csu/libc-start.c:310
++    #12 0x41dd09 in _start (/tmp/libarchive/bsdtar+0x41dd09)
++
++This was primarly done with afl and FairFuzz. Some early corpus entries
++may have been generated by qsym.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit 65a23f5dbee
++
++ libarchive/archive_read_support_format_7zip.c | 8 +-------
++ 1 file changed, 1 insertion(+), 7 deletions(-)
++
++diff --git a/libarchive/archive_read_support_format_7zip.c b/libarchive/archive_read_support_format_7zip.c
++index bccbf896603b..b6d1505d372e 100644
++--- a/libarchive/archive_read_support_format_7zip.c
+++++ b/libarchive/archive_read_support_format_7zip.c
++@@ -2964,13 +2964,7 @@ get_uncompressed_data(struct archive_read *a, const void **buff, size_t size,
++ 	if (zip->codec == _7Z_COPY && zip->codec2 == (unsigned long)-1) {
++ 		/* Copy mode. */
++ 
++-		/*
++-		 * Note: '1' here is a performance optimization.
++-		 * Recall that the decompression layer returns a count of
++-		 * available bytes; asking for more than that forces the
++-		 * decompressor to combine reads by copying data.
++-		 */
++-		*buff = __archive_read_ahead(a, 1, &bytes_avail);
+++		*buff = __archive_read_ahead(a, minimum, &bytes_avail);
++ 		if (bytes_avail <= 0) {
++ 			archive_set_error(&a->archive,
++ 			    ARCHIVE_ERRNO_FILE_FORMAT,
++-- 
++2.20.1
++
+diff --git a/package/libb64/0001-Integer-overflows.patch b/package/libb64/0001-Integer-overflows.patch
+new file mode 100644
+index 0000000000..0e3e08b142
+--- /dev/null
++++ b/package/libb64/0001-Integer-overflows.patch
+@@ -0,0 +1,73 @@
++Fix integer overflows. Will not work on compilers with unsigned char
++as the default.
++
++Fetched from: https://sources.debian.org/patches/libb64/1.2-5/
++
++Combined "integer overflows.diff" and "off by one.diff" and adapted
++for version 1.2.1.
++
++Signed-off-by: Mikael Eliasson <mikael@robomagi.com>
++
++diff --git a/src/cdecode.c b/src/cdecode.c
++index a6c0a42..45da4e1 100644
++--- a/src/cdecode.c
+++++ b/src/cdecode.c
++@@ -9,10 +9,11 @@ For details, see http://sourceforge.net/projects/libb64
++ 
++ int base64_decode_value(char value_in)
++ {
++-	static const char decoding[] = {62,-1,-1,-1,63,52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-2,-1,-1,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,-1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51};
+++	static const signed char decoding[] = {62,-1,-1,-1,63,52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-2,-1,-1,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,-1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51};
++ 	static const char decoding_size = sizeof(decoding);
+++	if (value_in < 43) return -1;
++ 	value_in -= 43;
++-	if (value_in < 0 || value_in >= decoding_size) return -1;
+++	if (value_in >= decoding_size) return -1;
++ 	return decoding[(int)value_in];
++ }
++ 
++@@ -26,7 +27,7 @@ int base64_decode_block(const char* code_in, const int length_in, char* plaintex
++ {
++ 	const char* codechar = code_in;
++ 	char* plainchar = plaintext_out;
++-	char fragment;
+++	int fragment;
++ 	
++ 	*plainchar = state_in->plainchar;
++ 	
++@@ -42,7 +43,7 @@ int base64_decode_block(const char* code_in, const int length_in, char* plaintex
++ 					state_in->plainchar = *plainchar;
++ 					return plainchar - plaintext_out;
++ 				}
++-				fragment = (char)base64_decode_value(*codechar++);
+++				fragment = base64_decode_value(*codechar++);
++ 			} while (fragment < 0);
++ 			*plainchar    = (fragment & 0x03f) << 2;
++ 	case step_b:
++@@ -53,7 +54,7 @@ int base64_decode_block(const char* code_in, const int length_in, char* plaintex
++ 					state_in->plainchar = *plainchar;
++ 					return plainchar - plaintext_out;
++ 				}
++-				fragment = (char)base64_decode_value(*codechar++);
+++				fragment = base64_decode_value(*codechar++);
++ 			} while (fragment < 0);
++ 			*plainchar++ |= (fragment & 0x030) >> 4;
++ 			*plainchar    = (fragment & 0x00f) << 4;
++@@ -65,7 +66,7 @@ int base64_decode_block(const char* code_in, const int length_in, char* plaintex
++ 					state_in->plainchar = *plainchar;
++ 					return plainchar - plaintext_out;
++ 				}
++-				fragment = (char)base64_decode_value(*codechar++);
+++				fragment = base64_decode_value(*codechar++);
++ 			} while (fragment < 0);
++ 			*plainchar++ |= (fragment & 0x03c) >> 2;
++ 			*plainchar    = (fragment & 0x003) << 6;
++@@ -77,7 +78,7 @@ int base64_decode_block(const char* code_in, const int length_in, char* plaintex
++ 					state_in->plainchar = *plainchar;
++ 					return plainchar - plaintext_out;
++ 				}
++-				fragment = (char)base64_decode_value(*codechar++);
+++				fragment = base64_decode_value(*codechar++);
++ 			} while (fragment < 0);
++ 			*plainchar++   |= (fragment & 0x03f);
++ 		}
+diff --git a/package/libb64/0002-Initialize-C++-objects.patch b/package/libb64/0002-Initialize-C++-objects.patch
+new file mode 100644
+index 0000000000..1556f889d1
+--- /dev/null
++++ b/package/libb64/0002-Initialize-C++-objects.patch
+@@ -0,0 +1,38 @@
++Fixes uninitialized C++ encoder and decoder _state variable bug.
++
++Fetched from: https://sources.debian.org/patches/libb64/1.2-5/
++
++initialize-coder-state.diff patch without modifications.
++
++Signed-off-by: Mikael Eliasson <mikael@robomagi.com>
++
++diff --git a/include/b64/decode.h b/include/b64/decode.h
++index 12b16ea..d3f7d60 100644
++--- a/include/b64/decode.h
+++++ b/include/b64/decode.h
++@@ -24,7 +24,9 @@ namespace base64
++ 
++ 		decoder(int buffersize_in = BUFFERSIZE)
++ 		: _buffersize(buffersize_in)
++-		{}
+++		{
+++			base64_init_decodestate(&_state);
+++		}
++ 
++ 		int decode(char value_in)
++ 		{
++diff --git a/include/b64/encode.h b/include/b64/encode.h
++index 5d807d9..49aafdc 100644
++--- a/include/b64/encode.h
+++++ b/include/b64/encode.h
++@@ -24,7 +24,9 @@ namespace base64
++ 
++ 		encoder(int buffersize_in = BUFFERSIZE)
++ 		: _buffersize(buffersize_in)
++-		{}
+++		{
+++			base64_init_encodestate(&_state);
+++		}
++ 
++ 		int encode(char value_in)
++ 		{
+diff --git a/package/libcurl/libcurl.hash b/package/libcurl/libcurl.hash
+index 432943538a..b158600eca 100644
+--- a/package/libcurl/libcurl.hash
++++ b/package/libcurl/libcurl.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated after checking pgp signature
+-# https://curl.haxx.se/download/curl-7.62.0.tar.xz.asc
++# https://curl.haxx.se/download/curl-7.64.0.tar.xz.asc
+ # with key 27EDEAF22F3ABCEB50DB9A125CC908FDB71E12C2
+-sha256 dab5643a5fe775ae92570b9f3df6b0ef4bc2a827a959361fb130c73b721275c1  curl-7.62.0.tar.xz
+-sha256 5f3849ec38ddb927e79f514bf948890c41b8d1407286a49609b8fb1585931095  COPYING
++sha256 2f2f13fa34d44aa29cb444077ad7dc4dc6d189584ad552e0aaeb06e608af6001  curl-7.64.0.tar.xz
++sha256 8c8824f50e73a021f5dde1fccbf69685939247399a33a32abab1fa448c9ddabb  COPYING
+diff --git a/package/libcurl/libcurl.mk b/package/libcurl/libcurl.mk
+index 3dc04b15ed..ca662c803c 100644
+--- a/package/libcurl/libcurl.mk
++++ b/package/libcurl/libcurl.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBCURL_VERSION = 7.62.0
++LIBCURL_VERSION = 7.64.0
+ LIBCURL_SOURCE = curl-$(LIBCURL_VERSION).tar.xz
+ LIBCURL_SITE = https://curl.haxx.se/download
+ LIBCURL_DEPENDENCIES = host-pkgconf \
+diff --git a/package/libid3tag/id3tag.pc b/package/libid3tag/id3tag.pc
+new file mode 100644
+index 0000000000..63d09eee8b
+--- /dev/null
++++ b/package/libid3tag/id3tag.pc
+@@ -0,0 +1,12 @@
++prefix=/usr
++exec_prefix=${prefix}
++libdir=${exec_prefix}/lib
++includedir=${prefix}/include
++
++Name: id3tag
++Description: ID3 tag reading library
++Version: 0.15.1b
++Requires:
++Libs: -L${libdir} -lid3tag
++Libs.private: -lz
++Cflags: -I${includedir}
+diff --git a/package/libid3tag/libid3tag.mk b/package/libid3tag/libid3tag.mk
+index 402e154ae1..3ec145725f 100644
+--- a/package/libid3tag/libid3tag.mk
++++ b/package/libid3tag/libid3tag.mk
+@@ -15,4 +15,11 @@ LIBID3TAG_DEPENDENCIES = zlib
+ # is able to properly behave in the face of a missing C++ compiler.
+ LIBID3TAG_AUTORECONF = YES
+ 
++define LIBID3TAG_INSTALL_STAGING_PC
++	$(INSTALL) -D package/libid3tag/id3tag.pc \
++		$(STAGING_DIR)/usr/lib/pkgconfig/id3tag.pc
++endef
++
++LIBID3TAG_POST_INSTALL_STAGING_HOOKS += LIBID3TAG_INSTALL_STAGING_PC
++
+ $(eval $(autotools-package))
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index 53701d40d8..05faac86fa 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -250,12 +250,12 @@ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+ 	default "3.2.102"	if BR2_KERNEL_HEADERS_3_2
+ 	default "4.1.52"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.172"	if BR2_KERNEL_HEADERS_4_4
+-	default "4.9.153"	if BR2_KERNEL_HEADERS_4_9
++	default "4.4.174"	if BR2_KERNEL_HEADERS_4_4
++	default "4.9.156"	if BR2_KERNEL_HEADERS_4_9
+ 	default "4.10.17"	if BR2_KERNEL_HEADERS_4_10
+ 	default "4.11.12"	if BR2_KERNEL_HEADERS_4_11
+ 	default "4.12.14"	if BR2_KERNEL_HEADERS_4_12
+ 	default "4.13.16"	if BR2_KERNEL_HEADERS_4_13
+-	default "4.14.96"	if BR2_KERNEL_HEADERS_4_14
++	default "4.14.99"	if BR2_KERNEL_HEADERS_4_14
+ 	default "4.15.18"	if BR2_KERNEL_HEADERS_4_15
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/madplay/0002-buildroot-libtool-v1.5.patch.patch b/package/madplay/0002-buildroot-libtool-v1.5.patch.patch
+deleted file mode 100644
+index 2be336384b..0000000000
+--- a/package/madplay/0002-buildroot-libtool-v1.5.patch.patch
++++ /dev/null
+@@ -1,109 +0,0 @@
+-From ce661985c098635965573aac8fc983a72f60d396 Mon Sep 17 00:00:00 2001
+-From: Romain Naour <romain.naour@gmail.com>
+-Date: Tue, 30 May 2017 16:42:34 +0200
+-Subject: [PATCH] buildroot-libtool-v1.5.patch
+-
+-Apply buildroot-libtool-v1.5.patch rebased on libtool 1.5.2 used
+-in madplay and fixing all conflicts.
+-
+-Signed-off-by: Romain Naour <romain.naour@gmail.com>
+----
+- ltmain.sh | 40 ++++++++++++++++++++++++++++++----------
+- 1 file changed, 30 insertions(+), 10 deletions(-)
+-
+-diff --git a/ltmain.sh b/ltmain.sh
+-index 4b9f940..0b71220 100644
+---- a/ltmain.sh
+-+++ b/ltmain.sh
+-@@ -164,6 +164,11 @@ do
+-   arg="$1"
+-   shift
+- 
+-+  # Make -static behave as -all-static
+-+  case $arg in
+-+  -static) arg="-all-static" ;;
+-+  esac
+-+
+-   case $arg in
+-   -*=*) optarg=`$echo "X$arg" | $Xsed -e 's/[-_a-zA-Z0-9]*=//'` ;;
+-   *) optarg= ;;
+-@@ -549,8 +554,9 @@ if test -z "$show_help"; then
+- 	# line option must be used.
+- 	if test -z "$tagname"; then
+- 	  $echo "$modename: unable to infer tagged configuration"
+--	  $echo "$modename: specify a tag with \`--tag'" 1>&2
+--	  exit 1
+-+	  $echo "$modename: defaulting to \`CC'"
+-+	  $echo "$modename: if this is not correct, specify a tag with \`--tag'"
+-+#	  exit 1
+- #        else
+- #          $echo "$modename: using $tagname tagged configuration"
+- 	fi
+-@@ -1228,7 +1234,8 @@ EOF
+-       prevarg="$arg"
+- 
+-       case $arg in
+--      -all-static)
+-+      # Make -static behave like -all-static
+-+      -all-static | -static)
+- 	if test -n "$link_static_flag"; then
+- 	  compile_command="$compile_command $link_static_flag"
+- 	  finalize_command="$finalize_command $link_static_flag"
+-@@ -2135,8 +2142,14 @@ EOF
+- 	    absdir="$abs_ladir"
+- 	    libdir="$abs_ladir"
+- 	  else
+--	    dir="$libdir"
+--	    absdir="$libdir"
+-+            # Adding 'libdir' from the .la file to our library search paths
+-+            # breaks crosscompilation horribly.  We cheat here and don't add
+-+            # it, instead adding the path where we found the .la.  -CL
+-+	    dir="$abs_ladir"
+-+	    absdir="$abs_ladir"
+-+	    libdir="$abs_ladir"
+-+	    #dir="$libdir"
+-+	    #absdir="$libdir"
+- 	  fi
+- 	else
+- 	  dir="$ladir/$objdir"
+-@@ -2261,7 +2274,7 @@ EOF
+- 	   { test "$prefer_static_libs" = no || test -z "$old_library"; }; then
+- 	  if test "$installed" = no; then
+- 	    notinst_deplibs="$notinst_deplibs $lib"
+--	    need_relink=yes
+-+	    need_relink=no
+- 	  fi
+- 	  # This is a shared library
+- 	
+-@@ -5146,6 +5159,10 @@ fi\
+- 	    # Replace all uninstalled libtool libraries with the installed ones
+- 	    newdependency_libs=
+- 	    for deplib in $dependency_libs; do
+-+              # Replacing uninstalled with installed can easily break crosscompilation,
+-+              # since the installed path is generally the wrong architecture.  -CL
+-+              newdependency_libs="$newdependency_libs $deplib"
+-+              continue
+- 	      case $deplib in
+- 	      *.la)
+- 		name=`$echo "X$deplib" | $Xsed -e 's%^.*/%%'`
+-@@ -5464,10 +5481,13 @@ relink_command=\"$relink_command\""
+- 	  # At present, this check doesn't affect windows .dll's that
+- 	  # are installed into $libdir/../bin (currently, that works fine)
+- 	  # but it's something to keep an eye on.
+--	  if test "$inst_prefix_dir" = "$destdir"; then
+--	    $echo "$modename: error: cannot install \`$file' to a directory not ending in $libdir" 1>&2
+--	    exit 1
+--	  fi
+-+	  #
+-+	  # This breaks install into our staging area.  -PB
+-+	  # 
+-+	  # if test "$inst_prefix_dir" = "$destdir"; then
+-+	  #   $echo "$modename: error: cannot install \`$file' to a directory not ending in $libdir" 1>&2
+-+	  #   exit 1
+-+	  # fi
+- 
+- 	  if test -n "$inst_prefix_dir"; then
+- 	    # Stick the inst_prefix_dir data into the link command.
+--- 
+-2.9.4
+-
+diff --git a/package/madplay/0002-configure-ac-automake-foreign.patch b/package/madplay/0002-configure-ac-automake-foreign.patch
+new file mode 100644
+index 0000000000..38d1630987
+--- /dev/null
++++ b/package/madplay/0002-configure-ac-automake-foreign.patch
+@@ -0,0 +1,16 @@
++configure.ac: don't require GNU-specific files when running automake
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++
++diff -durN madplay-0.15.2b-orig/configure.ac madplay-0.15.2b/configure.ac
++--- madplay-0.15.2b-orig/configure.ac	2019-02-14 21:34:01.507212449 +0100
+++++ madplay-0.15.2b/configure.ac	2019-02-14 21:34:23.439336353 +0100
++@@ -26,7 +26,7 @@
++ 
++ AC_CONFIG_SRCDIR([madplay.c])
++ 
++-AM_INIT_AUTOMAKE
+++AM_INIT_AUTOMAKE([foreign])
++ 
++ AM_CONFIG_HEADER([config.h])
++ 
+diff --git a/package/madplay/0003-configure-ac-use-pkg-config-to-find-id3tag.patch b/package/madplay/0003-configure-ac-use-pkg-config-to-find-id3tag.patch
+new file mode 100644
+index 0000000000..47645edd4c
+--- /dev/null
++++ b/package/madplay/0003-configure-ac-use-pkg-config-to-find-id3tag.patch
+@@ -0,0 +1,23 @@
++configure.ac: use pkg-config to find id3tag
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++
++diff -durN madplay-0.15.2b-orig/configure.ac madplay-0.15.2b/configure.ac
++--- madplay-0.15.2b-orig/configure.ac	2019-02-14 21:34:01.507212449 +0100
+++++ madplay-0.15.2b/configure.ac	2019-02-15 23:24:00.079876087 +0100
++@@ -182,12 +182,13 @@
++ *** environment variable to specify its installed location, e.g. -L<dir>.])
++ ])
++ 
++-AC_CHECK_LIB(id3tag, id3_tag_parse, :, [
+++PKG_CHECK_MODULES(ID3TAG, id3tag, [
+++	CFLAGS="$CFLAGS $ID3TAG_CFLAGS" LIBS="$LIBS $ID3TAG_LIBS"], [
++ 	AC_MSG_ERROR([libid3tag was not found
++ *** You must first install libid3tag before you can build this package.
++ *** If libid3tag is already installed, you may need to use the LDFLAGS
++ *** environment variable to specify its installed location, e.g. -L<dir>.])
++-], [-lz])
+++])
++ 
++ AC_FUNC_VPRINTF
++ AC_CHECK_FUNCS(madvise localeconv)
+diff --git a/package/madplay/madplay.hash b/package/madplay/madplay.hash
+index 99487b5ecd..227702976b 100644
+--- a/package/madplay/madplay.hash
++++ b/package/madplay/madplay.hash
+@@ -1,2 +1,4 @@
+ # Locally computed:
+ sha256  5a79c7516ff7560dffc6a14399a389432bc619c905b13d3b73da22fa65acede0  madplay-0.15.2b.tar.gz
++sha256  32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670  COPYING
++sha256  915bfd70548f31d11f9b4ffb21f343d1196af96c79d6aaac5663ea46c39dd3a3  COPYRIGHT
+diff --git a/package/madplay/madplay.mk b/package/madplay/madplay.mk
+index e72e2f8180..e1a78bd7d7 100644
+--- a/package/madplay/madplay.mk
++++ b/package/madplay/madplay.mk
+@@ -8,14 +8,18 @@ MADPLAY_VERSION = 0.15.2b
+ MADPLAY_SITE = http://downloads.sourceforge.net/project/mad/madplay/$(MADPLAY_VERSION)
+ MADPLAY_LICENSE = GPL-2.0+
+ MADPLAY_LICENSE_FILES = COPYING COPYRIGHT
+-MADPLAY_LIBTOOL_PATCH = NO
+-MADPLAY_DEPENDENCIES = libmad libid3tag $(TARGET_NLS_DEPENDENCIES)
++MADPLAY_DEPENDENCIES = host-pkgconf libmad libid3tag $(TARGET_NLS_DEPENDENCIES)
++
++# Force autoreconf to be able to use a more recent libtool script, that
++# is able to properly behave in the face of a missing C++ compiler.
++# Also 0003-configure-ac-use-pkg-config-to-find-id3tag.patch
++MADPLAY_AUTORECONF = YES
+ 
+ # Check if ALSA is built, then we should configure after alsa-lib so
+ # ./configure can find alsa-lib.
+ ifeq ($(BR2_PACKAGE_MADPLAY_ALSA),y)
+ MADPLAY_CONF_OPTS += --with-alsa
+-MADPLAY_DEPENDENCIES += host-pkgconf alsa-lib
++MADPLAY_DEPENDENCIES += alsa-lib
+ MADPLAY_CONF_ENV += LIBS="`$(PKG_CONFIG_HOST_BINARY) --libs alsa`"
+ endif
+ 
+diff --git a/package/mosquitto/mosquitto.hash b/package/mosquitto/mosquitto.hash
+index 831171c082..17a467a721 100644
+--- a/package/mosquitto/mosquitto.hash
++++ b/package/mosquitto/mosquitto.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated after checking gpg signature
+-sha256 fcdb47e340864c545146681af7253399cc292e41775afd76400fda5b0d23d668  mosquitto-1.5.5.tar.gz
++sha256 d4024c3388502d50be4192991e90d66dfb344376104df3f63846c9f201779955  mosquitto-1.5.7.tar.gz
+ 
+ # License files
+ sha256 cc77e25bafd40637b7084f04086d606f0a200051b61806f97c93405926670bc1  LICENSE.txt
+diff --git a/package/mosquitto/mosquitto.mk b/package/mosquitto/mosquitto.mk
+index 8d3e250819..e8a6ef74f4 100644
+--- a/package/mosquitto/mosquitto.mk
++++ b/package/mosquitto/mosquitto.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MOSQUITTO_VERSION = 1.5.5
++MOSQUITTO_VERSION = 1.5.7
+ MOSQUITTO_SITE = https://mosquitto.org/files/source
+ MOSQUITTO_LICENSE = EPL-1.0 or EDLv1.0
+ MOSQUITTO_LICENSE_FILES = LICENSE.txt epl-v10 edl-v10
+diff --git a/package/openssh/0002-upstream-Sanitize-scp-filenames-via-snmprintf.-To-do.patch b/package/openssh/0002-upstream-Sanitize-scp-filenames-via-snmprintf.-To-do.patch
+new file mode 100644
+index 0000000000..e5d137ef11
+--- /dev/null
++++ b/package/openssh/0002-upstream-Sanitize-scp-filenames-via-snmprintf.-To-do.patch
+@@ -0,0 +1,275 @@
++From 5979bdfeca813dd7e997a1edb0f928d77ce70304 Mon Sep 17 00:00:00 2001
++From: "dtucker@openbsd.org" <dtucker@openbsd.org>
++Date: Wed, 23 Jan 2019 08:01:46 +0000
++Subject: [PATCH] upstream: Sanitize scp filenames via snmprintf. To do this we
++ move
++
++the progressmeter formatting outside of signal handler context and have the
++atomicio callback called for EINTR too.  bz#2434 with contributions from djm
++and jjelen at redhat.com, ok djm@
++
++OpenBSD-Commit-ID: 1af61c1f70e4f3bd8ab140b9f1fa699481db57d8
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status (openssh-portable): backported from commit 8976f1c4b27
++---
++ atomicio.c      | 20 ++++++++++++++-----
++ progressmeter.c | 53 ++++++++++++++++++++++---------------------------
++ progressmeter.h |  3 ++-
++ scp.c           |  1 +
++ sftp-client.c   | 16 ++++++++-------
++ 5 files changed, 51 insertions(+), 42 deletions(-)
++
++diff --git a/atomicio.c b/atomicio.c
++index f854a06f5f50..d91bd7621c12 100644
++--- a/atomicio.c
+++++ b/atomicio.c
++@@ -1,4 +1,4 @@
++-/* $OpenBSD: atomicio.c,v 1.28 2016/07/27 23:18:12 djm Exp $ */
+++/* $OpenBSD: atomicio.c,v 1.29 2019/01/23 08:01:46 dtucker Exp $ */
++ /*
++  * Copyright (c) 2006 Damien Miller. All rights reserved.
++  * Copyright (c) 2005 Anil Madhavapeddy. All rights reserved.
++@@ -65,9 +65,14 @@ atomicio6(ssize_t (*f) (int, void *, size_t), int fd, void *_s, size_t n,
++ 		res = (f) (fd, s + pos, n - pos);
++ 		switch (res) {
++ 		case -1:
++-			if (errno == EINTR)
+++			if (errno == EINTR) {
+++				/* possible SIGALARM, update callback */
+++				if (cb != NULL && cb(cb_arg, 0) == -1) {
+++					errno = EINTR;
+++					return pos;
+++				}
++ 				continue;
++-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+++			} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
++ #ifndef BROKEN_READ_COMPARISON
++ 				(void)poll(&pfd, 1, -1);
++ #endif
++@@ -122,9 +127,14 @@ atomiciov6(ssize_t (*f) (int, const struct iovec *, int), int fd,
++ 		res = (f) (fd, iov, iovcnt);
++ 		switch (res) {
++ 		case -1:
++-			if (errno == EINTR)
+++			if (errno == EINTR) {
+++				/* possible SIGALARM, update callback */
+++				if (cb != NULL && cb(cb_arg, 0) == -1) {
+++					errno = EINTR;
+++					return pos;
+++				}
++ 				continue;
++-			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+++			} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
++ #ifndef BROKEN_READV_COMPARISON
++ 				(void)poll(&pfd, 1, -1);
++ #endif
++diff --git a/progressmeter.c b/progressmeter.c
++index fe9bf52e4c90..add462dde500 100644
++--- a/progressmeter.c
+++++ b/progressmeter.c
++@@ -1,4 +1,4 @@
++-/* $OpenBSD: progressmeter.c,v 1.45 2016/06/30 05:17:05 dtucker Exp $ */
+++/* $OpenBSD: progressmeter.c,v 1.46 2019/01/23 08:01:46 dtucker Exp $ */
++ /*
++  * Copyright (c) 2003 Nils Nordman.  All rights reserved.
++  *
++@@ -31,6 +31,7 @@
++ 
++ #include <errno.h>
++ #include <signal.h>
+++#include <stdarg.h>
++ #include <stdio.h>
++ #include <string.h>
++ #include <time.h>
++@@ -39,6 +40,7 @@
++ #include "progressmeter.h"
++ #include "atomicio.h"
++ #include "misc.h"
+++#include "utf8.h"
++ 
++ #define DEFAULT_WINSIZE 80
++ #define MAX_WINSIZE 512
++@@ -61,7 +63,7 @@ static void setscreensize(void);
++ void refresh_progress_meter(void);
++ 
++ /* signal handler for updating the progress meter */
++-static void update_progress_meter(int);
+++static void sig_alarm(int);
++ 
++ static double start;		/* start progress */
++ static double last_update;	/* last progress update */
++@@ -74,6 +76,7 @@ static long stalled;		/* how long we have been stalled */
++ static int bytes_per_second;	/* current speed in bytes per second */
++ static int win_size;		/* terminal window size */
++ static volatile sig_atomic_t win_resized; /* for window resizing */
+++static volatile sig_atomic_t alarm_fired;
++ 
++ /* units for format_size */
++ static const char unit[] = " KMGT";
++@@ -126,9 +129,17 @@ refresh_progress_meter(void)
++ 	off_t bytes_left;
++ 	int cur_speed;
++ 	int hours, minutes, seconds;
++-	int i, len;
++ 	int file_len;
++ 
+++	if ((!alarm_fired && !win_resized) || !can_output())
+++		return;
+++	alarm_fired = 0;
+++
+++	if (win_resized) {
+++		setscreensize();
+++		win_resized = 0;
+++	}
+++
++ 	transferred = *counter - (cur_pos ? cur_pos : start_pos);
++ 	cur_pos = *counter;
++ 	now = monotime_double();
++@@ -158,16 +169,11 @@ refresh_progress_meter(void)
++ 
++ 	/* filename */
++ 	buf[0] = '\0';
++-	file_len = win_size - 35;
+++	file_len = win_size - 36;
++ 	if (file_len > 0) {
++-		len = snprintf(buf, file_len + 1, "\r%s", file);
++-		if (len < 0)
++-			len = 0;
++-		if (len >= file_len + 1)
++-			len = file_len;
++-		for (i = len; i < file_len; i++)
++-			buf[i] = ' ';
++-		buf[file_len] = '\0';
+++		buf[0] = '\r';
+++		snmprintf(buf+1, sizeof(buf)-1 , &file_len, "%*s",
+++		    file_len * -1, file);
++ 	}
++ 
++ 	/* percent of transfer done */
++@@ -228,22 +234,11 @@ refresh_progress_meter(void)
++ 
++ /*ARGSUSED*/
++ static void
++-update_progress_meter(int ignore)
+++sig_alarm(int ignore)
++ {
++-	int save_errno;
++-
++-	save_errno = errno;
++-
++-	if (win_resized) {
++-		setscreensize();
++-		win_resized = 0;
++-	}
++-	if (can_output())
++-		refresh_progress_meter();
++-
++-	signal(SIGALRM, update_progress_meter);
+++	signal(SIGALRM, sig_alarm);
+++	alarm_fired = 1;
++ 	alarm(UPDATE_INTERVAL);
++-	errno = save_errno;
++ }
++ 
++ void
++@@ -259,10 +254,9 @@ start_progress_meter(const char *f, off_t filesize, off_t *ctr)
++ 	bytes_per_second = 0;
++ 
++ 	setscreensize();
++-	if (can_output())
++-		refresh_progress_meter();
+++	refresh_progress_meter();
++ 
++-	signal(SIGALRM, update_progress_meter);
+++	signal(SIGALRM, sig_alarm);
++ 	signal(SIGWINCH, sig_winch);
++ 	alarm(UPDATE_INTERVAL);
++ }
++@@ -286,6 +280,7 @@ stop_progress_meter(void)
++ static void
++ sig_winch(int sig)
++ {
+++	signal(SIGWINCH, sig_winch);
++ 	win_resized = 1;
++ }
++ 
++diff --git a/progressmeter.h b/progressmeter.h
++index bf179dca6518..8f6678060195 100644
++--- a/progressmeter.h
+++++ b/progressmeter.h
++@@ -1,4 +1,4 @@
++-/* $OpenBSD: progressmeter.h,v 1.3 2015/01/14 13:54:13 djm Exp $ */
+++/* $OpenBSD: progressmeter.h,v 1.4 2019/01/23 08:01:46 dtucker Exp $ */
++ /*
++  * Copyright (c) 2002 Nils Nordman.  All rights reserved.
++  *
++@@ -24,4 +24,5 @@
++  */
++ 
++ void	start_progress_meter(const char *, off_t, off_t *);
+++void	refresh_progress_meter(void);
++ void	stop_progress_meter(void);
++diff --git a/scp.c b/scp.c
++index 4f3fdcd3db89..4a342a63873c 100644
++--- a/scp.c
+++++ b/scp.c
++@@ -585,6 +585,7 @@ scpio(void *_cnt, size_t s)
++ 	off_t *cnt = (off_t *)_cnt;
++ 
++ 	*cnt += s;
+++	refresh_progress_meter();
++ 	if (limit_kbps > 0)
++ 		bandwidth_limit(&bwlimit, s);
++ 	return 0;
++diff --git a/sftp-client.c b/sftp-client.c
++index 4986d6d8d291..2bc698f868bc 100644
++--- a/sftp-client.c
+++++ b/sftp-client.c
++@@ -101,7 +101,9 @@ sftpio(void *_bwlimit, size_t amount)
++ {
++ 	struct bwlimit *bwlimit = (struct bwlimit *)_bwlimit;
++ 
++-	bandwidth_limit(bwlimit, amount);
+++	refresh_progress_meter();
+++	if (bwlimit != NULL)
+++		bandwidth_limit(bwlimit, amount);
++ 	return 0;
++ }
++ 
++@@ -121,8 +123,8 @@ send_msg(struct sftp_conn *conn, struct sshbuf *m)
++ 	iov[1].iov_base = (u_char *)sshbuf_ptr(m);
++ 	iov[1].iov_len = sshbuf_len(m);
++ 
++-	if (atomiciov6(writev, conn->fd_out, iov, 2,
++-	    conn->limit_kbps > 0 ? sftpio : NULL, &conn->bwlimit_out) !=
+++	if (atomiciov6(writev, conn->fd_out, iov, 2, sftpio,
+++	    conn->limit_kbps > 0 ? &conn->bwlimit_out : NULL) !=
++ 	    sshbuf_len(m) + sizeof(mlen))
++ 		fatal("Couldn't send packet: %s", strerror(errno));
++ 
++@@ -138,8 +140,8 @@ get_msg_extended(struct sftp_conn *conn, struct sshbuf *m, int initial)
++ 
++ 	if ((r = sshbuf_reserve(m, 4, &p)) != 0)
++ 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
++-	if (atomicio6(read, conn->fd_in, p, 4,
++-	    conn->limit_kbps > 0 ? sftpio : NULL, &conn->bwlimit_in) != 4) {
+++	if (atomicio6(read, conn->fd_in, p, 4, sftpio,
+++	    conn->limit_kbps > 0 ? &conn->bwlimit_in : NULL) != 4) {
++ 		if (errno == EPIPE || errno == ECONNRESET)
++ 			fatal("Connection closed");
++ 		else
++@@ -157,8 +159,8 @@ get_msg_extended(struct sftp_conn *conn, struct sshbuf *m, int initial)
++ 
++ 	if ((r = sshbuf_reserve(m, msg_len, &p)) != 0)
++ 		fatal("%s: buffer error: %s", __func__, ssh_err(r));
++-	if (atomicio6(read, conn->fd_in, p, msg_len,
++-	    conn->limit_kbps > 0 ? sftpio : NULL, &conn->bwlimit_in)
+++	if (atomicio6(read, conn->fd_in, p, msg_len, sftpio,
+++	    conn->limit_kbps > 0 ? &conn->bwlimit_in : NULL)
++ 	    != msg_len) {
++ 		if (errno == EPIPE)
++ 			fatal("Connection closed");
++-- 
++2.20.1
++
+diff --git a/package/openssh/0003-upstream-check-in-scp-client-that-filenames-sent-dur.patch b/package/openssh/0003-upstream-check-in-scp-client-that-filenames-sent-dur.patch
+new file mode 100644
+index 0000000000..98ce5cd876
+--- /dev/null
++++ b/package/openssh/0003-upstream-check-in-scp-client-that-filenames-sent-dur.patch
+@@ -0,0 +1,186 @@
++From f853123eda6b279a87be48e18bbea8dec82a94f2 Mon Sep 17 00:00:00 2001
++From: "djm@openbsd.org" <djm@openbsd.org>
++Date: Sat, 26 Jan 2019 22:41:28 +0000
++Subject: [PATCH] upstream: check in scp client that filenames sent during
++
++remote->local directory copies satisfy the wildcard specified by the user.
++
++This checking provides some protection against a malicious server
++sending unexpected filenames, but it comes at a risk of rejecting wanted
++files due to differences between client and server wildcard expansion rules.
++
++For this reason, this also adds a new -T flag to disable the check.
++
++reported by Harry Sintonen
++fix approach suggested by markus@;
++has been in snaps for ~1wk courtesy deraadt@
++
++OpenBSD-Commit-ID: 00f44b50d2be8e321973f3c6d014260f8f7a8eda
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status (openssh-portable): backported from commit 8976f1c4b2
++---
++ scp.1 | 12 +++++++++++-
++ scp.c | 37 +++++++++++++++++++++++++++++--------
++ 2 files changed, 40 insertions(+), 9 deletions(-)
++
++diff --git a/scp.1 b/scp.1
++index 0e5cc1b2d675..397e7709195a 100644
++--- a/scp.1
+++++ b/scp.1
++@@ -18,7 +18,7 @@
++ .Nd secure copy (remote file copy program)
++ .Sh SYNOPSIS
++ .Nm scp
++-.Op Fl 346BCpqrv
+++.Op Fl 346BCpqrTv
++ .Op Fl c Ar cipher
++ .Op Fl F Ar ssh_config
++ .Op Fl i Ar identity_file
++@@ -208,6 +208,16 @@ to use for the encrypted connection.
++ The program must understand
++ .Xr ssh 1
++ options.
+++.It Fl T
+++Disable strict filename checking.
+++By default when copying files from a remote host to a local directory
+++.Nm
+++checks that the received filenames match those requested on the command-line
+++to prevent the remote end from sending unexpected or unwanted files.
+++Because of differences in how various operating systems and shells interpret
+++filename wildcards, these checks may cause wanted files to be rejected.
+++This option disables these checks at the expense of fully trusting that
+++the server will not send unexpected filenames.
++ .It Fl v
++ Verbose mode.
++ Causes
++diff --git a/scp.c b/scp.c
++index 4a342a63873c..7b0a08efb274 100644
++--- a/scp.c
+++++ b/scp.c
++@@ -94,6 +94,7 @@
++ #include <dirent.h>
++ #include <errno.h>
++ #include <fcntl.h>
+++#include <fnmatch.h>
++ #include <limits.h>
++ #include <locale.h>
++ #include <pwd.h>
++@@ -375,14 +376,14 @@ void verifydir(char *);
++ struct passwd *pwd;
++ uid_t userid;
++ int errs, remin, remout;
++-int pflag, iamremote, iamrecursive, targetshouldbedirectory;
+++int Tflag, pflag, iamremote, iamrecursive, targetshouldbedirectory;
++ 
++ #define	CMDNEEDS	64
++ char cmd[CMDNEEDS];		/* must hold "rcp -r -p -d\0" */
++ 
++ int response(void);
++ void rsource(char *, struct stat *);
++-void sink(int, char *[]);
+++void sink(int, char *[], const char *);
++ void source(int, char *[]);
++ void tolocal(int, char *[]);
++ void toremote(int, char *[]);
++@@ -421,8 +422,9 @@ main(int argc, char **argv)
++ 	addargs(&args, "-oRemoteCommand=none");
++ 	addargs(&args, "-oRequestTTY=no");
++ 
++-	fflag = tflag = 0;
++-	while ((ch = getopt(argc, argv, "dfl:prtvBCc:i:P:q12346S:o:F:")) != -1)
+++	fflag = Tflag = tflag = 0;
+++	while ((ch = getopt(argc, argv,
+++	    "dfl:prtTvBCc:i:P:q12346S:o:F:")) != -1) {
++ 		switch (ch) {
++ 		/* User-visible flags. */
++ 		case '1':
++@@ -501,9 +503,13 @@ main(int argc, char **argv)
++ 			setmode(0, O_BINARY);
++ #endif
++ 			break;
+++		case 'T':
+++			Tflag = 1;
+++			break;
++ 		default:
++ 			usage();
++ 		}
+++	}
++ 	argc -= optind;
++ 	argv += optind;
++ 
++@@ -534,7 +540,7 @@ main(int argc, char **argv)
++ 	}
++ 	if (tflag) {
++ 		/* Receive data. */
++-		sink(argc, argv);
+++		sink(argc, argv, NULL);
++ 		exit(errs != 0);
++ 	}
++ 	if (argc < 2)
++@@ -792,7 +798,7 @@ tolocal(int argc, char **argv)
++ 			continue;
++ 		}
++ 		free(bp);
++-		sink(1, argv + argc - 1);
+++		sink(1, argv + argc - 1, src);
++ 		(void) close(remin);
++ 		remin = remout = -1;
++ 	}
++@@ -968,7 +974,7 @@ rsource(char *name, struct stat *statp)
++ 	 (sizeof(type) != 4 && sizeof(type) != 8))
++ 
++ void
++-sink(int argc, char **argv)
+++sink(int argc, char **argv, const char *src)
++ {
++ 	static BUF buffer;
++ 	struct stat stb;
++@@ -984,6 +990,7 @@ sink(int argc, char **argv)
++ 	unsigned long long ull;
++ 	int setimes, targisdir, wrerrno = 0;
++ 	char ch, *cp, *np, *targ, *why, *vect[1], buf[2048], visbuf[2048];
+++	char *src_copy = NULL, *restrict_pattern = NULL;
++ 	struct timeval tv[2];
++ 
++ #define	atime	tv[0]
++@@ -1008,6 +1015,17 @@ sink(int argc, char **argv)
++ 	(void) atomicio(vwrite, remout, "", 1);
++ 	if (stat(targ, &stb) == 0 && S_ISDIR(stb.st_mode))
++ 		targisdir = 1;
+++	if (src != NULL && !iamrecursive && !Tflag) {
+++		/*
+++		 * Prepare to try to restrict incoming filenames to match
+++		 * the requested destination file glob.
+++		 */
+++		if ((src_copy = strdup(src)) == NULL)
+++			fatal("strdup failed");
+++		if ((restrict_pattern = strrchr(src_copy, '/')) != NULL) {
+++			*restrict_pattern++ = '\0';
+++		}
+++	}
++ 	for (first = 1;; first = 0) {
++ 		cp = buf;
++ 		if (atomicio(read, remin, cp, 1) != 1)
++@@ -1112,6 +1130,9 @@ sink(int argc, char **argv)
++ 			run_err("error: unexpected filename: %s", cp);
++ 			exit(1);
++ 		}
+++		if (restrict_pattern != NULL &&
+++		    fnmatch(restrict_pattern, cp, 0) != 0)
+++			SCREWUP("filename does not match request");
++ 		if (targisdir) {
++ 			static char *namebuf;
++ 			static size_t cursize;
++@@ -1149,7 +1170,7 @@ sink(int argc, char **argv)
++ 					goto bad;
++ 			}
++ 			vect[0] = xstrdup(np);
++-			sink(1, vect);
+++			sink(1, vect, src);
++ 			if (setimes) {
++ 				setimes = 0;
++ 				if (utimes(vect[0], tv) < 0)
++-- 
++2.20.1
++
+diff --git a/package/openssh/openssh.mk b/package/openssh/openssh.mk
+index 07f3e0d663..cbf2e92920 100644
+--- a/package/openssh/openssh.mk
++++ b/package/openssh/openssh.mk
+@@ -18,8 +18,8 @@ OPENSSH_CONF_OPTS = \
+ 	--disable-wtmpx \
+ 	--disable-strip
+ 
+-define OPENSSH_USERS
+-	sshd -1 sshd -1 * - - - SSH drop priv user
++define OPENSSH_PERMISSIONS
++	/var/empty d 755 root root - - - - -
+ endef
+ 
+ ifeq ($(BR2_TOOLCHAIN_SUPPORTS_PIE),)
+@@ -56,12 +56,24 @@ else
+ OPENSSH_CONF_OPTS += --without-selinux
+ endif
+ 
++ifeq ($(BR2_PACKAGE_SYSTEMD_SYSUSERS),y)
++define OPENSSH_INSTALL_SYSTEMD_SYSUSERS
++	$(INSTALL) -m 0644 -D package/openssh/sshd-sysusers.conf \
++		$(TARGET_DIR)/usr/lib/sysusers.d/sshd.conf
++endef
++else
++define OPENSSH_USERS
++	sshd -1 sshd -1 * /var/empty - - SSH drop priv user
++endef
++endif
++
+ define OPENSSH_INSTALL_INIT_SYSTEMD
+ 	$(INSTALL) -D -m 644 package/openssh/sshd.service \
+ 		$(TARGET_DIR)/usr/lib/systemd/system/sshd.service
+ 	mkdir -p $(TARGET_DIR)/etc/systemd/system/multi-user.target.wants
+ 	ln -fs ../../../../usr/lib/systemd/system/sshd.service \
+ 		$(TARGET_DIR)/etc/systemd/system/multi-user.target.wants/sshd.service
++	$(OPENSSH_INSTALL_SYSTEMD_SYSUSERS)
+ endef
+ 
+ define OPENSSH_INSTALL_INIT_SYSV
+diff --git a/package/openssh/sshd-sysusers.conf b/package/openssh/sshd-sysusers.conf
+new file mode 100644
+index 0000000000..ac77aec065
+--- /dev/null
++++ b/package/openssh/sshd-sysusers.conf
+@@ -0,0 +1 @@
++u sshd - "SSH drop priv user" /var/empty
+diff --git a/package/php/0004-OPcache-flock-mechanism-is-obviously-linux-so-force-.patch b/package/php/0004-OPcache-flock-mechanism-is-obviously-linux-so-force-.patch
+index 2c08437e4d..c5d3740920 100644
+--- a/package/php/0004-OPcache-flock-mechanism-is-obviously-linux-so-force-.patch
++++ b/package/php/0004-OPcache-flock-mechanism-is-obviously-linux-so-force-.patch
+@@ -5,7 +5,7 @@ Subject: [PATCH] OPcache: flock mechanism is obviously linux so force it.
+ 
+ Signed-off-by: Gustavo Zacarias <gustavo@zacarias.com.ar>
+ Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+-[Bernd: update for 7.2.12]
++[Bernd: update for 7.2.12 & 7.2.15]
+ ---
+  ext/opcache/config.m4 | 34 ++--------------------------------
+  1 file changed, 2 insertions(+), 32 deletions(-)
+@@ -14,12 +14,30 @@ diff --git a/ext/opcache/config.m4 b/ext/opcache/config.m4
+ index fbb9b21..ffddc8e 100644
+ --- a/ext/opcache/config.m4
+ +++ b/ext/opcache/config.m4
+-@@ -343,38 +343,8 @@ int main() {
++@@ -343,58 +343,8 @@ int main() {
+      msg=yes,msg=no,msg=no)
+    AC_MSG_RESULT([$msg])
+  
+ -flock_type=unknown
+--AC_MSG_CHECKING("whether flock struct is linux ordered")
++-AC_MSG_CHECKING(for struct flock layout)
++-
++-if test "$flock_type" = "unknown"; then
++-AC_TRY_RUN([
++-  #include <fcntl.h>
++-  struct flock lock = { 1, 2, 3, 4, 5, 6, 7 };
++-  int main() {
++-    if(lock.l_type == 1 && lock.l_whence == 2 && lock.l_start == 6 && lock.l_len== 7) {
++-		return 0;
++-    }
++-    return 1;
++-  }
++-], [
++-    flock_type=aix64
++-    AC_DEFINE([HAVE_FLOCK_AIX64], [], [Struct flock is 64-bit AIX-type])
++-], [])
++-fi
++-
++-if test "$flock_type" = "unknown"; then
+ -AC_TRY_RUN([
+ -  #include <fcntl.h>
+ -  struct flock lock = { 1, 2, 3, 4, 5 };
+@@ -32,10 +50,10 @@ index fbb9b21..ffddc8e 100644
+ -], [
+ -	flock_type=linux
+ -    AC_DEFINE([HAVE_FLOCK_LINUX], [], [Struct flock is Linux-type])
+--    AC_MSG_RESULT("yes")
+--], AC_MSG_RESULT("no") )
++-], [])
++-fi
+ -
+--AC_MSG_CHECKING("whether flock struct is BSD ordered")
++-if test "$flock_type" = "unknown"; then
+ -AC_TRY_RUN([
+ -  #include <fcntl.h>
+ -  struct flock lock = { 1, 2, 3, 4, 5 };
+@@ -48,8 +66,10 @@ index fbb9b21..ffddc8e 100644
+ -], [
+ -	flock_type=bsd
+ -    AC_DEFINE([HAVE_FLOCK_BSD], [], [Struct flock is BSD-type])
+--    AC_MSG_RESULT("yes")
+--], AC_MSG_RESULT("no") )
++-], [])
++-fi
++-
++-AC_MSG_RESULT([$flock_type])
+ +flock_type=linux
+ +AC_DEFINE([HAVE_FLOCK_LINUX], [], [Struct flock is Linux-type])
+  
+diff --git a/package/php/php.hash b/package/php/php.hash
+index acbe499536..89cdbd204b 100644
+--- a/package/php/php.hash
++++ b/package/php/php.hash
+@@ -1,5 +1,5 @@
+ # From http://php.net/downloads.php
+-sha256 ee3f1cc102b073578a3c53ba4420a76da3d9f0c981c02b1664ae741ca65af84f  php-7.2.14.tar.xz
++sha256 75e90012faef700dffb29311f3d24fa25f1a5e0f70254a9b8d5c794e25e938ce  php-7.2.15.tar.xz
+ 
+ # License file
+ sha256 f689b8fa63bea7950ce6a21bf52ed88ea0d77673ee76e6de12f51191174d91b8  LICENSE
+diff --git a/package/php/php.mk b/package/php/php.mk
+index d140565322..67baadcc7c 100644
+--- a/package/php/php.mk
++++ b/package/php/php.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-PHP_VERSION = 7.2.14
++PHP_VERSION = 7.2.15
+ PHP_SITE = http://www.php.net/distributions
+ PHP_SOURCE = php-$(PHP_VERSION).tar.xz
+ PHP_INSTALL_STAGING = YES
+diff --git a/package/pkg-generic.mk b/package/pkg-generic.mk
+index d25f0f9afe..18c2d2cf6d 100644
+--- a/package/pkg-generic.mk
++++ b/package/pkg-generic.mk
+@@ -63,13 +63,21 @@ GLOBAL_INSTRUMENTATION_HOOKS += step_time
+ # $(2): base directory to search in
+ # $(3): suffix of file  (optional)
+ define step_pkg_size_inner
++	@touch $(BUILD_DIR)/.files-list$(3).stat
+ 	@touch $(BUILD_DIR)/packages-file-list$(3).txt
+ 	$(SED) '/^$(1),/d' $(BUILD_DIR)/packages-file-list$(3).txt
+ 	cd $(2); \
+-	find . \( -type f -o -type l \) \
+-		-newer $($(PKG)_DIR)/.stamp_built \
+-		-exec printf '$(1),%s\n' {} + \
++	LC_ALL=C find . \( -type f -o -type l \) -printf '%T@:%i:%#m:%y:%s,%p\n' \
++		| LC_ALL=C sort > $(BUILD_DIR)/.files-list$(3).new
++	LC_ALL=C comm -13 \
++		$(BUILD_DIR)/.files-list$(3).stat \
++		$(BUILD_DIR)/.files-list$(3).new \
++		> $($(PKG)_BUILDDIR)/.files-list$(3).txt
++	sed -r -e 's/^[^,]+/$(1)/' \
++		$($(PKG)_BUILDDIR)/.files-list$(3).txt \
+ 		>> $(BUILD_DIR)/packages-file-list$(3).txt
++	mv $(BUILD_DIR)/.files-list$(3).new \
++		$(BUILD_DIR)/.files-list$(3).stat
+ endef
+ 
+ define step_pkg_size
+diff --git a/package/postgresql/postgresql.hash b/package/postgresql/postgresql.hash
+index 05f94b4c76..ca797f1442 100644
+--- a/package/postgresql/postgresql.hash
++++ b/package/postgresql/postgresql.hash
+@@ -1,5 +1,5 @@
+-# From https://ftp.postgresql.org/pub/source/v10.6/postgresql-10.6.tar.bz2.sha256
+-sha256	68a8276f08bda8fbefe562faaf8831cb20664a7a1d3ffdbbcc5b83e08637624b	postgresql-10.6.tar.bz2
++# From https://ftp.postgresql.org/pub/source/v10.7/postgresql-10.7.tar.bz2.sha256
++sha256	bfed1065380c1bba927bfe51f23168471373f26e3324cbad859269cc32733ede	postgresql-10.7.tar.bz2
+ 
+ # License file, Locally calculated
+-sha256	24cfc70cf16b3a23242c49ffce39510683bdd48cbedb8a46fe03976ee5f5c21e	COPYRIGHT
++sha256	c4c86d683970b22b9fab53320ee1b3a30ef4e8223122b4fb6be53ea62ecee8b3	COPYRIGHT
+diff --git a/package/postgresql/postgresql.mk b/package/postgresql/postgresql.mk
+index 66af8fe5a9..883461fe98 100644
+--- a/package/postgresql/postgresql.mk
++++ b/package/postgresql/postgresql.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-POSTGRESQL_VERSION = 10.6
++POSTGRESQL_VERSION = 10.7
+ POSTGRESQL_SOURCE = postgresql-$(POSTGRESQL_VERSION).tar.bz2
+ POSTGRESQL_SITE = http://ftp.postgresql.org/pub/source/v$(POSTGRESQL_VERSION)
+ POSTGRESQL_LICENSE = PostgreSQL
+diff --git a/package/proftpd/proftpd.mk b/package/proftpd/proftpd.mk
+index 3e165c6ada..109e332a46 100644
+--- a/package/proftpd/proftpd.mk
++++ b/package/proftpd/proftpd.mk
+@@ -21,7 +21,8 @@ PROFTPD_CONF_OPTS = \
+ 	--disable-facl \
+ 	--disable-dso \
+ 	--enable-shadow \
+-	--with-gnu-ld
++	--with-gnu-ld \
++	--without-openssl-cmdline
+ 
+ ifeq ($(BR2_PACKAGE_PROFTPD_MOD_REWRITE),y)
+ PROFTPD_CONF_OPTS += --with-modules=mod_rewrite
+diff --git a/package/python-django/python-django.hash b/package/python-django/python-django.hash
+index 39a95f258c..b77b061c02 100644
+--- a/package/python-django/python-django.hash
++++ b/package/python-django/python-django.hash
+@@ -1,3 +1,3 @@
+-# From https://www.djangoproject.com/m/pgp/Django-1.11.18.checksum.txt
+-sha256  73cca1dac154e749b39cc91a54dc876109eb0512a5c6804986495305047066a5  Django-1.11.18.tar.gz
++# From https://www.djangoproject.com/m/pgp/Django-1.11.20.checksum.txt
++sha256  43a99da08fee329480d27860d68279945b7d8bf7b537388ee2c8938c709b2041  Django-1.11.20.tar.gz
+ sha256	b846415d1b514e9c1dff14a22deb906d794bc546ca6129f950a18cd091e2a669  LICENSE
+diff --git a/package/python-django/python-django.mk b/package/python-django/python-django.mk
+index 31d9e2c92e..d2712a936c 100644
+--- a/package/python-django/python-django.mk
++++ b/package/python-django/python-django.mk
+@@ -4,10 +4,11 @@
+ #
+ ################################################################################
+ 
+-PYTHON_DJANGO_VERSION = 1.11.18
++PYTHON_DJANGO_VERSION = 1.11.20
+ PYTHON_DJANGO_SOURCE = Django-$(PYTHON_DJANGO_VERSION).tar.gz
+ # The official Django site has an unpractical URL
+-PYTHON_DJANGO_SITE = https://files.pythonhosted.org/packages/90/84/7981bdfcfa80fe81df5325899f9fc1cbebce1fbe4fac092a32dca00d0ab2
++PYTHON_DJANGO_SITE = https://files.pythonhosted.org/packages/99/2a/6cb6fdae67a101e19cd02b1af75131eee51b8dcd0cc22c9cfdd2270b5715
++
+ PYTHON_DJANGO_LICENSE = BSD-3-Clause
+ PYTHON_DJANGO_LICENSE_FILES = LICENSE
+ PYTHON_DJANGO_SETUP_TYPE = setuptools
+diff --git a/package/python/0035-bpo-35746-Fix-segfault-in-ssl-s-cert-parser-GH-11569.patch b/package/python/0035-bpo-35746-Fix-segfault-in-ssl-s-cert-parser-GH-11569.patch
+new file mode 100644
+index 0000000000..9eec6db8c9
+--- /dev/null
++++ b/package/python/0035-bpo-35746-Fix-segfault-in-ssl-s-cert-parser-GH-11569.patch
+@@ -0,0 +1,121 @@
++From 06b15424b0dcacb1c551b2a36e739fffa8d0c595 Mon Sep 17 00:00:00 2001
++From: "Miss Islington (bot)"
++ <31488909+miss-islington@users.noreply.github.com>
++Date: Tue, 15 Jan 2019 15:11:52 -0800
++Subject: [PATCH] bpo-35746: Fix segfault in ssl's cert parser (GH-11569)
++
++Fix a NULL pointer deref in ssl module. The cert parser did not handle CRL
++distribution points with empty DP or URI correctly. A malicious or buggy
++certificate can result into segfault.
++
++Signed-off-by: Christian Heimes <christian@python.org>
++
++https://bugs.python.org/issue35746
++(cherry picked from commit a37f52436f9aa4b9292878b72f3ff1480e2606c3)
++
++Co-authored-by: Christian Heimes <christian@python.org>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Lib/test/talos-2019-0758.pem                       | 22 ++++++++++++++++++++++
++ Lib/test/test_ssl.py                               | 22 ++++++++++++++++++++++
++ .../2019-01-15-18-16-05.bpo-35746.nMSd0j.rst       |  3 +++
++ Modules/_ssl.c                                     |  4 ++++
++ 4 files changed, 51 insertions(+)
++ create mode 100644 Lib/test/talos-2019-0758.pem
++ create mode 100644 Misc/NEWS.d/next/Security/2019-01-15-18-16-05.bpo-35746.nMSd0j.rst
++
++diff --git a/Lib/test/talos-2019-0758.pem b/Lib/test/talos-2019-0758.pem
++new file mode 100644
++index 0000000000..13b95a77fd
++--- /dev/null
+++++ b/Lib/test/talos-2019-0758.pem
++@@ -0,0 +1,22 @@
+++-----BEGIN CERTIFICATE-----
+++MIIDqDCCApKgAwIBAgIBAjALBgkqhkiG9w0BAQswHzELMAkGA1UEBhMCVUsxEDAO
+++BgNVBAMTB2NvZHktY2EwHhcNMTgwNjE4MTgwMDU4WhcNMjgwNjE0MTgwMDU4WjA7
+++MQswCQYDVQQGEwJVSzEsMCoGA1UEAxMjY29kZW5vbWljb24tdm0tMi50ZXN0Lmxh
+++bC5jaXNjby5jb20wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC63fGB
+++J80A9Av1GB0bptslKRIUtJm8EeEu34HkDWbL6AJY0P8WfDtlXjlPaLqFa6sqH6ES
+++V48prSm1ZUbDSVL8R6BYVYpOlK8/48xk4pGTgRzv69gf5SGtQLwHy8UPBKgjSZoD
+++5a5k5wJXGswhKFFNqyyxqCvWmMnJWxXTt2XDCiWc4g4YAWi4O4+6SeeHVAV9rV7C
+++1wxqjzKovVe2uZOHjKEzJbbIU6JBPb6TRfMdRdYOw98n1VXDcKVgdX2DuuqjCzHP
+++WhU4Tw050M9NaK3eXp4Mh69VuiKoBGOLSOcS8reqHIU46Reg0hqeL8LIL6OhFHIF
+++j7HR6V1X6F+BfRS/AgMBAAGjgdYwgdMwCQYDVR0TBAIwADAdBgNVHQ4EFgQUOktp
+++HQjxDXXUg8prleY9jeLKeQ4wTwYDVR0jBEgwRoAUx6zgPygZ0ZErF9sPC4+5e2Io
+++UU+hI6QhMB8xCzAJBgNVBAYTAlVLMRAwDgYDVQQDEwdjb2R5LWNhggkA1QEAuwb7
+++2s0wCQYDVR0SBAIwADAuBgNVHREEJzAlgiNjb2Rlbm9taWNvbi12bS0yLnRlc3Qu
+++bGFsLmNpc2NvLmNvbTAOBgNVHQ8BAf8EBAMCBaAwCwYDVR0fBAQwAjAAMAsGCSqG
+++SIb3DQEBCwOCAQEAvqantx2yBlM11RoFiCfi+AfSblXPdrIrHvccepV4pYc/yO6p
+++t1f2dxHQb8rWH3i6cWag/EgIZx+HJQvo0rgPY1BFJsX1WnYf1/znZpkUBGbVmlJr
+++t/dW1gSkNS6sPsM0Q+7HPgEv8CPDNK5eo7vU2seE0iWOkxSyVUuiCEY9ZVGaLVit
+++p0C78nZ35Pdv4I+1cosmHl28+es1WI22rrnmdBpH8J1eY6WvUw2xuZHLeNVN0TzV
+++Q3qq53AaCWuLOD1AjESWuUCxMZTK9DPS4JKXTK8RLyDeqOvJGjsSWp3kL0y3GaQ+
+++10T1rfkKJub2+m9A9duin1fn6tHc2wSvB7m3DA==
+++-----END CERTIFICATE-----
++diff --git a/Lib/test/test_ssl.py b/Lib/test/test_ssl.py
++index e476031702..9240184d98 100644
++--- a/Lib/test/test_ssl.py
+++++ b/Lib/test/test_ssl.py
++@@ -72,6 +72,7 @@ NONEXISTINGCERT = data_file("XXXnonexisting.pem")
++ BADKEY = data_file("badkey.pem")
++ NOKIACERT = data_file("nokia.pem")
++ NULLBYTECERT = data_file("nullbytecert.pem")
+++TALOS_INVALID_CRLDP = data_file("talos-2019-0758.pem")
++ 
++ DHFILE = data_file("ffdh3072.pem")
++ BYTES_DHFILE = DHFILE.encode(sys.getfilesystemencoding())
++@@ -227,6 +228,27 @@ class BasicSocketTests(unittest.TestCase):
++         self.assertEqual(p['crlDistributionPoints'],
++                          ('http://SVRIntl-G3-crl.verisign.com/SVRIntlG3.crl',))
++ 
+++    def test_parse_cert_CVE_2019_5010(self):
+++        p = ssl._ssl._test_decode_cert(TALOS_INVALID_CRLDP)
+++        if support.verbose:
+++            sys.stdout.write("\n" + pprint.pformat(p) + "\n")
+++        self.assertEqual(
+++            p,
+++            {
+++                'issuer': (
+++                    (('countryName', 'UK'),), (('commonName', 'cody-ca'),)),
+++                'notAfter': 'Jun 14 18:00:58 2028 GMT',
+++                'notBefore': 'Jun 18 18:00:58 2018 GMT',
+++                'serialNumber': '02',
+++                'subject': ((('countryName', 'UK'),),
+++                            (('commonName',
+++                              'codenomicon-vm-2.test.lal.cisco.com'),)),
+++                'subjectAltName': (
+++                    ('DNS', 'codenomicon-vm-2.test.lal.cisco.com'),),
+++                'version': 3
+++            }
+++        )
+++
++     def test_parse_cert_CVE_2013_4238(self):
++         p = ssl._ssl._test_decode_cert(NULLBYTECERT)
++         if support.verbose:
++diff --git a/Misc/NEWS.d/next/Security/2019-01-15-18-16-05.bpo-35746.nMSd0j.rst b/Misc/NEWS.d/next/Security/2019-01-15-18-16-05.bpo-35746.nMSd0j.rst
++new file mode 100644
++index 0000000000..dffe347eec
++--- /dev/null
+++++ b/Misc/NEWS.d/next/Security/2019-01-15-18-16-05.bpo-35746.nMSd0j.rst
++@@ -0,0 +1,3 @@
+++[CVE-2019-5010] Fix a NULL pointer deref in ssl module. The cert parser did
+++not handle CRL distribution points with empty DP or URI correctly. A
+++malicious or buggy certificate can result into segfault.
++diff --git a/Modules/_ssl.c b/Modules/_ssl.c
++index a96c419260..19bb1207b4 100644
++--- a/Modules/_ssl.c
+++++ b/Modules/_ssl.c
++@@ -1223,6 +1223,10 @@ _get_crl_dp(X509 *certificate) {
++         STACK_OF(GENERAL_NAME) *gns;
++ 
++         dp = sk_DIST_POINT_value(dps, i);
+++        if (dp->distpoint == NULL) {
+++            /* Ignore empty DP value, CVE-2019-5010 */
+++            continue;
+++        }
++         gns = dp->distpoint->name.fullname;
++ 
++         for (j=0; j < sk_GENERAL_NAME_num(gns); j++) {
++-- 
++2.11.0
++
+diff --git a/package/python3/0033-bpo-35746-Fix-segfault-in-ssl-s-cert-parser-GH-11569.patch b/package/python3/0033-bpo-35746-Fix-segfault-in-ssl-s-cert-parser-GH-11569.patch
+new file mode 100644
+index 0000000000..c29ab7efaa
+--- /dev/null
++++ b/package/python3/0033-bpo-35746-Fix-segfault-in-ssl-s-cert-parser-GH-11569.patch
+@@ -0,0 +1,121 @@
++From be5de958e9052e322b0087c6dba81cdad0c3e031 Mon Sep 17 00:00:00 2001
++From: "Miss Islington (bot)"
++ <31488909+miss-islington@users.noreply.github.com>
++Date: Tue, 15 Jan 2019 15:03:36 -0800
++Subject: [PATCH] bpo-35746: Fix segfault in ssl's cert parser (GH-11569)
++
++Fix a NULL pointer deref in ssl module. The cert parser did not handle CRL
++distribution points with empty DP or URI correctly. A malicious or buggy
++certificate can result into segfault.
++
++Signed-off-by: Christian Heimes <christian@python.org>
++
++https://bugs.python.org/issue35746
++(cherry picked from commit a37f52436f9aa4b9292878b72f3ff1480e2606c3)
++
++Co-authored-by: Christian Heimes <christian@python.org>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Lib/test/talos-2019-0758.pem                       | 22 ++++++++++++++++++++++
++ Lib/test/test_ssl.py                               | 22 ++++++++++++++++++++++
++ .../2019-01-15-18-16-05.bpo-35746.nMSd0j.rst       |  3 +++
++ Modules/_ssl.c                                     |  4 ++++
++ 4 files changed, 51 insertions(+)
++ create mode 100644 Lib/test/talos-2019-0758.pem
++ create mode 100644 Misc/NEWS.d/next/Security/2019-01-15-18-16-05.bpo-35746.nMSd0j.rst
++
++diff --git a/Lib/test/talos-2019-0758.pem b/Lib/test/talos-2019-0758.pem
++new file mode 100644
++index 0000000000..13b95a77fd
++--- /dev/null
+++++ b/Lib/test/talos-2019-0758.pem
++@@ -0,0 +1,22 @@
+++-----BEGIN CERTIFICATE-----
+++MIIDqDCCApKgAwIBAgIBAjALBgkqhkiG9w0BAQswHzELMAkGA1UEBhMCVUsxEDAO
+++BgNVBAMTB2NvZHktY2EwHhcNMTgwNjE4MTgwMDU4WhcNMjgwNjE0MTgwMDU4WjA7
+++MQswCQYDVQQGEwJVSzEsMCoGA1UEAxMjY29kZW5vbWljb24tdm0tMi50ZXN0Lmxh
+++bC5jaXNjby5jb20wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC63fGB
+++J80A9Av1GB0bptslKRIUtJm8EeEu34HkDWbL6AJY0P8WfDtlXjlPaLqFa6sqH6ES
+++V48prSm1ZUbDSVL8R6BYVYpOlK8/48xk4pGTgRzv69gf5SGtQLwHy8UPBKgjSZoD
+++5a5k5wJXGswhKFFNqyyxqCvWmMnJWxXTt2XDCiWc4g4YAWi4O4+6SeeHVAV9rV7C
+++1wxqjzKovVe2uZOHjKEzJbbIU6JBPb6TRfMdRdYOw98n1VXDcKVgdX2DuuqjCzHP
+++WhU4Tw050M9NaK3eXp4Mh69VuiKoBGOLSOcS8reqHIU46Reg0hqeL8LIL6OhFHIF
+++j7HR6V1X6F+BfRS/AgMBAAGjgdYwgdMwCQYDVR0TBAIwADAdBgNVHQ4EFgQUOktp
+++HQjxDXXUg8prleY9jeLKeQ4wTwYDVR0jBEgwRoAUx6zgPygZ0ZErF9sPC4+5e2Io
+++UU+hI6QhMB8xCzAJBgNVBAYTAlVLMRAwDgYDVQQDEwdjb2R5LWNhggkA1QEAuwb7
+++2s0wCQYDVR0SBAIwADAuBgNVHREEJzAlgiNjb2Rlbm9taWNvbi12bS0yLnRlc3Qu
+++bGFsLmNpc2NvLmNvbTAOBgNVHQ8BAf8EBAMCBaAwCwYDVR0fBAQwAjAAMAsGCSqG
+++SIb3DQEBCwOCAQEAvqantx2yBlM11RoFiCfi+AfSblXPdrIrHvccepV4pYc/yO6p
+++t1f2dxHQb8rWH3i6cWag/EgIZx+HJQvo0rgPY1BFJsX1WnYf1/znZpkUBGbVmlJr
+++t/dW1gSkNS6sPsM0Q+7HPgEv8CPDNK5eo7vU2seE0iWOkxSyVUuiCEY9ZVGaLVit
+++p0C78nZ35Pdv4I+1cosmHl28+es1WI22rrnmdBpH8J1eY6WvUw2xuZHLeNVN0TzV
+++Q3qq53AaCWuLOD1AjESWuUCxMZTK9DPS4JKXTK8RLyDeqOvJGjsSWp3kL0y3GaQ+
+++10T1rfkKJub2+m9A9duin1fn6tHc2wSvB7m3DA==
+++-----END CERTIFICATE-----
++diff --git a/Lib/test/test_ssl.py b/Lib/test/test_ssl.py
++index f1b9565c8d..b6794ce3a8 100644
++--- a/Lib/test/test_ssl.py
+++++ b/Lib/test/test_ssl.py
++@@ -116,6 +116,7 @@ NONEXISTINGCERT = data_file("XXXnonexisting.pem")
++ BADKEY = data_file("badkey.pem")
++ NOKIACERT = data_file("nokia.pem")
++ NULLBYTECERT = data_file("nullbytecert.pem")
+++TALOS_INVALID_CRLDP = data_file("talos-2019-0758.pem")
++ 
++ DHFILE = data_file("ffdh3072.pem")
++ BYTES_DHFILE = os.fsencode(DHFILE)
++@@ -365,6 +366,27 @@ class BasicSocketTests(unittest.TestCase):
++         self.assertEqual(p['crlDistributionPoints'],
++                          ('http://SVRIntl-G3-crl.verisign.com/SVRIntlG3.crl',))
++ 
+++    def test_parse_cert_CVE_2019_5010(self):
+++        p = ssl._ssl._test_decode_cert(TALOS_INVALID_CRLDP)
+++        if support.verbose:
+++            sys.stdout.write("\n" + pprint.pformat(p) + "\n")
+++        self.assertEqual(
+++            p,
+++            {
+++                'issuer': (
+++                    (('countryName', 'UK'),), (('commonName', 'cody-ca'),)),
+++                'notAfter': 'Jun 14 18:00:58 2028 GMT',
+++                'notBefore': 'Jun 18 18:00:58 2018 GMT',
+++                'serialNumber': '02',
+++                'subject': ((('countryName', 'UK'),),
+++                            (('commonName',
+++                              'codenomicon-vm-2.test.lal.cisco.com'),)),
+++                'subjectAltName': (
+++                    ('DNS', 'codenomicon-vm-2.test.lal.cisco.com'),),
+++                'version': 3
+++            }
+++        )
+++
++     def test_parse_cert_CVE_2013_4238(self):
++         p = ssl._ssl._test_decode_cert(NULLBYTECERT)
++         if support.verbose:
++diff --git a/Misc/NEWS.d/next/Security/2019-01-15-18-16-05.bpo-35746.nMSd0j.rst b/Misc/NEWS.d/next/Security/2019-01-15-18-16-05.bpo-35746.nMSd0j.rst
++new file mode 100644
++index 0000000000..dffe347eec
++--- /dev/null
+++++ b/Misc/NEWS.d/next/Security/2019-01-15-18-16-05.bpo-35746.nMSd0j.rst
++@@ -0,0 +1,3 @@
+++[CVE-2019-5010] Fix a NULL pointer deref in ssl module. The cert parser did
+++not handle CRL distribution points with empty DP or URI correctly. A
+++malicious or buggy certificate can result into segfault.
++diff --git a/Modules/_ssl.c b/Modules/_ssl.c
++index 9894ad821d..9baec8a9bc 100644
++--- a/Modules/_ssl.c
+++++ b/Modules/_ssl.c
++@@ -1516,6 +1516,10 @@ _get_crl_dp(X509 *certificate) {
++         STACK_OF(GENERAL_NAME) *gns;
++ 
++         dp = sk_DIST_POINT_value(dps, i);
+++        if (dp->distpoint == NULL) {
+++            /* Ignore empty DP value, CVE-2019-5010 */
+++            continue;
+++        }
++         gns = dp->distpoint->name.fullname;
++ 
++         for (j=0; j < sk_GENERAL_NAME_num(gns); j++) {
++-- 
++2.11.0
++
+diff --git a/package/qt5/qt5base/qt5base.mk b/package/qt5/qt5base/qt5base.mk
+index b79059c2a4..b96c2eb04a 100644
+--- a/package/qt5/qt5base/qt5base.mk
++++ b/package/qt5/qt5base/qt5base.mk
+@@ -33,6 +33,25 @@ else
+ QT5BASE_DEPENDENCIES += pcre2
+ endif
+ 
++ifeq ($(BR2_X86_CPU_HAS_SSE2),)
++QT5BASE_CONFIGURE_OPTS += -no-sse2
++else ifeq ($(BR2_X86_CPU_HAS_SSE3),)
++QT5BASE_CONFIGURE_OPTS += -no-sse3
++else ifeq ($(BR2_X86_CPU_HAS_SSSE3),)
++QT5BASE_CONFIGURE_OPTS += -no-ssse3
++else ifeq ($(BR2_X86_CPU_HAS_SSE4),)
++QT5BASE_CONFIGURE_OPTS += -no-sse4.1
++else ifeq ($(BR2_X86_CPU_HAS_SSE42),)
++QT5BASE_CONFIGURE_OPTS += -no-sse4.2
++else ifeq ($(BR2_X86_CPU_HAS_AVX),)
++QT5BASE_CONFIGURE_OPTS += -no-avx
++else ifeq ($(BR2_X86_CPU_HAS_AVX2),)
++QT5BASE_CONFIGURE_OPTS += -no-avx2
++else
++# no buildroot BR2_X86_CPU_HAS_AVX512 option yet for qt configure
++# option '-no-avx512' (available for latest only)
++endif
++
+ QT5BASE_CONFIGURE_OPTS += $(call qstrip,$(BR2_PACKAGE_QT5BASE_CUSTOM_CONF_OPTS))
+ 
+ ifeq ($(BR2_PACKAGE_LIBDRM),y)
+diff --git a/package/sqlcipher/Config.in b/package/sqlcipher/Config.in
+index 332754b15a..b26bc7709f 100644
+--- a/package/sqlcipher/Config.in
++++ b/package/sqlcipher/Config.in
+@@ -3,6 +3,7 @@ config BR2_PACKAGE_SQLCIPHER
+ 	depends on !BR2_PACKAGE_SQLITE
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS
+ 	select BR2_PACKAGE_OPENSSL
++	select BR2_PACKAGE_OPENSSL_FORCE_LIBOPENSSL
+ 	help
+ 	  SQLCipher is an SQLite extension that provides 256 bits AES
+ 	  encryption of database files. Note that it is a fork of
+diff --git a/package/swupdate/swupdate.hash b/package/swupdate/swupdate.hash
+index 339f40e1bb..138bd6d305 100644
+--- a/package/swupdate/swupdate.hash
++++ b/package/swupdate/swupdate.hash
+@@ -1,3 +1,6 @@
+ # Locally calculated
+ sha256  a65884ca18523cde1b0744d952d6f91462dbd4ad07941305f5684c6d4ec833dc  swupdate-2018.11.tar.gz
+-sha256  dcc100d4161cc0b7177545ab6e47216f84857cda3843847c792a25289852dcaa  COPYING
++sha256  43492b377cf2fb67942d1dd231146bd4e6578646ad13ef289297c9dd75cbc478  Licenses/Exceptions
++sha256  8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  Licenses/gpl-2.0.txt
++sha256  dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551  Licenses/lgpl-2.1.txt
++sha256  89807acf2309bd285f033404ee78581602f3cd9b819a16ac2f0e5f60ff4a473e  Licenses/mit.txt
+diff --git a/package/swupdate/swupdate.mk b/package/swupdate/swupdate.mk
+index 08d6ba9372..48f563140e 100644
+--- a/package/swupdate/swupdate.mk
++++ b/package/swupdate/swupdate.mk
+@@ -6,8 +6,9 @@
+ 
+ SWUPDATE_VERSION = 2018.11
+ SWUPDATE_SITE = $(call github,sbabic,swupdate,$(SWUPDATE_VERSION))
+-SWUPDATE_LICENSE = GPL-2.0+, LGPL-2.1+, MIT
+-SWUPDATE_LICENSE_FILES = COPYING
++SWUPDATE_LICENSE = GPL-2.0+ with OpenSSL exception, LGPL-2.1+, MIT
++SWUPDATE_LICENSE_FILES = Licenses/Exceptions Licenses/gpl-2.0.txt \
++	Licenses/lgpl-2.1.txt Licenses/mit.txt
+ 
+ # swupdate uses $CROSS-cc instead of $CROSS-gcc, which is not
+ # available in all external toolchains, and use CC for linking. Ensure
+diff --git a/package/systemd/Config.in b/package/systemd/Config.in
+index 7b613df02c..807269b385 100644
+--- a/package/systemd/Config.in
++++ b/package/systemd/Config.in
+@@ -321,6 +321,7 @@ config BR2_PACKAGE_SYSTEMD_TMPFILES
+ 
+ config BR2_PACKAGE_SYSTEMD_VCONSOLE
+ 	bool "enable vconsole tool"
++	default y
+ 	help
+ 	  systemd-vconsole-setup is an early boot service that
+ 	  configures the virtual console font and console keymap.
+diff --git a/package/unzip/unzip.hash b/package/unzip/unzip.hash
+index a138cc27c9..fbf2615ad6 100644
+--- a/package/unzip/unzip.hash
++++ b/package/unzip/unzip.hash
+@@ -1,2 +1,15 @@
+ # Locally computed:
+ sha256 036d96991646d0449ed0aa952e4fbe21b476ce994abc276e49d30e686708bd37 unzip60.tgz
++sha256 66a364d75cea29363768ca6d43dd11b9913a59e42b8da16c4f63516c3e4ce7c1 07-increase-size-of-cfactorstr.patch
++sha256 3a8cfd2702d220c6c119eaf805b018b66460284e585e92adc8a572d190471724 08-allow-greater-hostver-values.patch
++sha256 0a1b23118b2f4a3ed097348ab33050d4f79b3863ab30e6d64ac382589834e3de 09-cve-2014-8139-crc-overflow.patch
++sha256 32b1eda30644c44a8bdb9a02ff08bb2eca107f8eb16dda6992a9b778a0de395e 10-cve-2014-8140-test-compr-eb.patch
++sha256 1f60f6e28b36f3cddb7da64c528cfe29160cefa1232e13bb8a47561f574067a9 11-cve-2014-8141-getzip64data.patch
++sha256 c05885bb48b41603f0893ada88f15c0fae3b3f9f6489f24ad630a400f6271351 12-cve-2014-9636-test-compr-eb.patch
++sha256 788c29727ff0689c3b1828466127758426f6d2c769048aa985950373747c76f3 14-cve-2015-7696.patch
++sha256 e85dab65c3ebf3c4ab3359a4143cfd0efccfd1cac517a4e7bd5f518f41a02b6f 15-cve-2015-7697.patch
++sha256 95dd15d5d9cdf5cea18c357b152930d6d52660599e0fd4907d6405870fdd9fe1 16-fix-integer-underflow-csiz-decrypted.patch
++sha256 ea04cfc8b7ca3b3c03117da0d891870b8c542d26188ef5593fd7e479f4f29f4e 17-restore-unix-timestamps-accurately.patch
++sha256 1872ffdd4d82edd7b1e62c469642bf16a1ca12dd26d41bd3f0b44f0f7602eb63 18-cve-2014-9913-unzip-buffer-overflow.patch
++sha256 60840ea8f5d11a276972fb5b43652cdd49a9ed93b2cc0586ad309bf52104b012 19-cve-2016-9844-zipinfo-buffer-overflow.patch
++sha256 4eabc3faeddd56ebc3d5053486b61f8758d840902725fd555d3472cffb094437 20-cve-2018-1000035-unzip-buffer-overflow.patch
+diff --git a/package/unzip/unzip.mk b/package/unzip/unzip.mk
+index 7d48d25309..6807257524 100644
+--- a/package/unzip/unzip.mk
++++ b/package/unzip/unzip.mk
+@@ -12,4 +12,19 @@ UNZIP_DEPENDENCIES = $(if $(BR2_PACKAGE_BUSYBOX),busybox)
+ UNZIP_LICENSE = Info-ZIP
+ UNZIP_LICENSE_FILES = LICENSE
+ 
++UNZIP_PATCH = \
++	https://sources.debian.org/data/main/u/unzip/6.0-22/debian/patches/07-increase-size-of-cfactorstr.patch \
++	https://sources.debian.org/data/main/u/unzip/6.0-22/debian/patches/08-allow-greater-hostver-values.patch \
++	https://sources.debian.org/data/main/u/unzip/6.0-22/debian/patches/09-cve-2014-8139-crc-overflow.patch \
++	https://sources.debian.org/data/main/u/unzip/6.0-22/debian/patches/10-cve-2014-8140-test-compr-eb.patch \
++	https://sources.debian.org/data/main/u/unzip/6.0-22/debian/patches/11-cve-2014-8141-getzip64data.patch \
++	https://sources.debian.org/data/main/u/unzip/6.0-22/debian/patches/12-cve-2014-9636-test-compr-eb.patch \
++	https://sources.debian.org/data/main/u/unzip/6.0-22/debian/patches/14-cve-2015-7696.patch \
++	https://sources.debian.org/data/main/u/unzip/6.0-22/debian/patches/15-cve-2015-7697.patch \
++	https://sources.debian.org/data/main/u/unzip/6.0-22/debian/patches/16-fix-integer-underflow-csiz-decrypted.patch \
++	https://sources.debian.org/data/main/u/unzip/6.0-22/debian/patches/17-restore-unix-timestamps-accurately.patch \
++	https://sources.debian.org/data/main/u/unzip/6.0-22/debian/patches/18-cve-2014-9913-unzip-buffer-overflow.patch \
++	https://sources.debian.org/data/main/u/unzip/6.0-22/debian/patches/19-cve-2016-9844-zipinfo-buffer-overflow.patch \
++	https://sources.debian.org/data/main/u/unzip/6.0-22/debian/patches/20-cve-2018-1000035-unzip-buffer-overflow.patch
++
+ $(eval $(cmake-package))
+diff --git a/package/webkitgtk/webkitgtk.hash b/package/webkitgtk/webkitgtk.hash
+index 4cdefa75b7..ed2511976d 100644
+--- a/package/webkitgtk/webkitgtk.hash
++++ b/package/webkitgtk/webkitgtk.hash
+@@ -1,7 +1,7 @@
+-# From https://webkitgtk.org/releases/webkitgtk-2.22.5.tar.xz.sums
+-md5 96a731522b800f38e70f85c22f8de477 webkitgtk-2.22.5.tar.xz
+-sha1 809b067a1672a81a4ce31363a0872c668cc72953 webkitgtk-2.22.5.tar.xz
+-sha256 99d3863f418a7c3a3e37e5062950dbf2d91fb106ec1633459b0ef6f2d5f6cb13 webkitgtk-2.22.5.tar.xz
++# From https://webkitgtk.org/releases/webkitgtk-2.22.6.tar.xz.sums
++md5 7c21a30f7f078f0b712caf0c7ee966a4 webkitgtk-2.22.6.tar.xz
++sha1 26a8f8951da03aa4dfc2c25257b6899ea3c2558f webkitgtk-2.22.6.tar.xz
++sha256 df90db9c0db0a2072b945fa3e1d45865922bd686c4659cce6cb5897ce357c85b webkitgtk-2.22.6.tar.xz
+ 
+ # Hashes for license files:
+ sha256 0b5d3a7cc325942567373b0ecd757d07c132e0ebd7c97bfc63f7e1a76094edb4 Source/WebCore/LICENSE-APPLE
+diff --git a/package/webkitgtk/webkitgtk.mk b/package/webkitgtk/webkitgtk.mk
+index f70733e21e..a50ffa87da 100644
+--- a/package/webkitgtk/webkitgtk.mk
++++ b/package/webkitgtk/webkitgtk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WEBKITGTK_VERSION = 2.22.5
++WEBKITGTK_VERSION = 2.22.6
+ WEBKITGTK_SITE = http://www.webkitgtk.org/releases
+ WEBKITGTK_SOURCE = webkitgtk-$(WEBKITGTK_VERSION).tar.xz
+ WEBKITGTK_INSTALL_STAGING = YES
+diff --git a/support/scripts/setlocalversion b/support/scripts/setlocalversion
+index 33cd605bf3..b39b751f03 100755
+--- a/support/scripts/setlocalversion
++++ b/support/scripts/setlocalversion
+@@ -53,7 +53,7 @@ if head=`git rev-parse --verify --short HEAD 2>/dev/null`; then
+ fi
+ 
+ # Check for mercurial and a mercurial repo.
+-if hgid=`hg id 2>/dev/null`; then
++if hgid=`HGRCPATH= hg id --id --tags 2>/dev/null`; then
+ 	tag=`printf '%s' "$hgid" | cut -d' ' -f2 --only-delimited`
+ 
+ 	# Do we have an untagged version?
+diff --git a/utils/scanpypi b/utils/scanpypi
+index cb4b5e76a3..23e64e65ec 100755
+--- a/utils/scanpypi
++++ b/utils/scanpypi
+@@ -212,6 +212,22 @@ class BuildrootPackage():
+         self.filename = self.used_url['filename']
+         self.url = self.used_url['url']
+ 
++    def check_archive(self, members):
++        """
++        Check archive content before extracting
++
++        Keyword arguments:
++        members -- list of archive members
++        """
++        # Protect against https://github.com/snyk/zip-slip-vulnerability
++        # Older python versions do not validate that the extracted files are
++        # inside the target directory. Detect and error out on evil paths
++        evil = [e for e in members if os.path.relpath(e).startswith(('/', '..'))]
++        if evil:
++            print('ERROR: Refusing to extract {} with suspicious members {}'.format(
++                self.filename, evil))
++            sys.exit(1)
++
+     def extract_package(self, tmp_path):
+         """
+         Extract the package contents into a directrory
+@@ -233,6 +249,7 @@ class BuildrootPackage():
+                     print('Removing {pkg}...'.format(pkg=tmp_pkg))
+                     shutil.rmtree(tmp_pkg)
+                     os.makedirs(tmp_pkg)
++                self.check_archive(as_zipfile.namelist())
+                 as_zipfile.extractall(tmp_pkg)
+                 pkg_filename = self.filename.split(".zip")[0]
+         else:
+@@ -248,6 +265,7 @@ class BuildrootPackage():
+                     print('Removing {pkg}...'.format(pkg=tmp_pkg))
+                     shutil.rmtree(tmp_pkg)
+                     os.makedirs(tmp_pkg)
++                self.check_archive(as_tarfile.getnames())
+                 as_tarfile.extractall(tmp_pkg)
+                 pkg_filename = self.filename.split(".tar")[0]
+ 

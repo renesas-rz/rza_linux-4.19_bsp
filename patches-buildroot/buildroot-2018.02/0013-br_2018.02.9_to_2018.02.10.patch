@@ -1,0 +1,2784 @@
+diff --git a/CHANGES b/CHANGES
+index 989fac414c..2bc4258a06 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,32 @@
++2018.02.10, Released January 31th, 2019
++
++	Important / security related fixes.
++
++	Defconfigs: Fixes for Lego EV3, QEMU AArch64-virt
++
++	check-package: fix Python 3 support
++
++	get-developers: Fix behaviour when called from elsewhere than
++	the toplevel directory.
++
++	cmake: Also set CMAKE_SYSTEM_VERSION in toolchainfile.cmake
++
++	Updated/fixed packages: acpica, apache, apr, asterisk,
++	avrdude, cargo, cc-tool, dash, dhcpdump, dmalloc, gnuchess,
++	gnupg2, leveldb, libarchive, libassuan, libftdi1,
++	libgpg-error, libhttpparser, libmad, libsndfile, libsquish,
++	liburiparser, libwebsock, libxml2, lighttpd, lm-sensors,
++	lua-msgpack-native, mbedtls, mosquitto, netatalk, nodejs,
++	openssh, pango, patchelf, php, python-django, python-pyyaml,
++	rauc, rp-pppoe, s6-networking, samba4, sdl_sound,
++	shairport-sync, sqlite, subversion, sunxi-cedarx, tcpreplay,
++	tekui, usb_modeswitch, webkitgtk, wireshark, wolfssl,
++	xapp_rgb, xenomai, xerces
++
++	Issues resolved (http://bugs.uclibc.org):
++
++	#11576: Unable to start apache with event MPM on raspberry pi 3
++
+ 2018.02.9, Released December 20th, 2018
+ 
+ 	Important / security related fixes.
+diff --git a/Makefile b/Makefile
+index c3695300b0..c07ff3dae5 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2,7 +2,7 @@
+ #
+ # Copyright (C) 1999-2005 by Erik Andersen <andersen@codepoet.org>
+ # Copyright (C) 2006-2014 by the Buildroot developers <buildroot@uclibc.org>
+-# Copyright (C) 2014-2018 by the Buildroot developers <buildroot@buildroot.org>
++# Copyright (C) 2014-2019 by the Buildroot developers <buildroot@buildroot.org>
+ #
+ # This program is free software; you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+@@ -92,9 +92,9 @@ all:
+ .PHONY: all
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2018.02.9
++export BR2_VERSION := 2018.02.10
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1545305000
++BR2_VERSION_EPOCH = 1548952000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+diff --git a/arch/Config.in.arm b/arch/Config.in.arm
+index b05e83e33c..e3b808279e 100644
+--- a/arch/Config.in.arm
++++ b/arch/Config.in.arm
+@@ -342,25 +342,19 @@ config BR2_exynos_m1
+ 	select BR2_ARM_CPU_ARMV8A
+ 	select BR2_ARCH_HAS_MMU_OPTIONAL
+ 	select BR2_ARCH_NEEDS_GCC_AT_LEAST_5
++if BR2_ARCH_IS_64
+ config BR2_falkor
+ 	bool "falkor"
+-	select BR2_ARM_CPU_HAS_ARM if !BR2_ARCH_IS_64
+-	select BR2_ARM_CPU_HAS_NEON if !BR2_ARCH_IS_64
+-	select BR2_ARM_CPU_HAS_THUMB2 if !BR2_ARCH_IS_64
+ 	select BR2_ARM_CPU_HAS_FP_ARMV8
+ 	select BR2_ARM_CPU_ARMV8A
+ 	select BR2_ARCH_HAS_MMU_OPTIONAL
+ 	select BR2_ARCH_NEEDS_GCC_AT_LEAST_7
+ config BR2_qdf24xx
+ 	bool "qdf24xx"
+-	select BR2_ARM_CPU_HAS_ARM if !BR2_ARCH_IS_64
+-	select BR2_ARM_CPU_HAS_NEON if !BR2_ARCH_IS_64
+-	select BR2_ARM_CPU_HAS_THUMB2 if !BR2_ARCH_IS_64
+ 	select BR2_ARM_CPU_HAS_FP_ARMV8
+ 	select BR2_ARM_CPU_ARMV8A
+ 	select BR2_ARCH_HAS_MMU_OPTIONAL
+ 	select BR2_ARCH_NEEDS_GCC_AT_LEAST_6
+-if BR2_ARCH_IS_64
+ config BR2_thunderx
+ 	bool "thunderx"
+ 	select BR2_ARM_CPU_HAS_FP_ARMV8
+diff --git a/board/lego/ev3/genimage.cfg b/board/lego/ev3/genimage.cfg
+index 3da3048d8d..65d9714650 100644
+--- a/board/lego/ev3/genimage.cfg
++++ b/board/lego/ev3/genimage.cfg
+@@ -16,7 +16,7 @@ image flash.bin {
+ 	flashtype = "nor-16M-256"
+ 	partition uboot {
+ 		image = "u-boot.bin"
+-		size = 320K
++		size = 256K
+ 	}
+ 	partition uimage {
+ 		image = "uImage.da850-lego-ev3"
+diff --git a/board/pc/post-build.sh b/board/pc/post-build.sh
+new file mode 100755
+index 0000000000..552d488160
+--- /dev/null
++++ b/board/pc/post-build.sh
+@@ -0,0 +1,15 @@
++#!/bin/sh
++
++set -e
++
++BOARD_DIR=$(dirname "$0")
++
++# Detect boot strategy, EFI or BIOS
++if [ -f "$BINARIES_DIR/efi-part/startup.nsh" ]; then
++    cp -f "$BOARD_DIR/grub-efi.cfg" "$BINARIES_DIR/efi-part/EFI/BOOT/grub.cfg"
++else
++    cp -f "$BOARD_DIR/grub-bios.cfg" "$TARGET_DIR/boot/grub/grub.cfg"
++
++    # Copy grub 1st stage to binaries, required for genimage
++    cp -f "$HOST_DIR/lib/grub/i387-pc/boot.img" "$BINARIES_DIR"
++fi
+diff --git a/board/pc/post-image.sh b/board/pc/post-image.sh
+deleted file mode 100755
+index bdd0847ec5..0000000000
+--- a/board/pc/post-image.sh
++++ /dev/null
+@@ -1,14 +0,0 @@
+-#!/bin/sh
+-
+-BOARD_DIR="$(dirname $0)"
+-
+-# Detect boot strategy, EFI or BIOS
+-if [ -f ${BINARIES_DIR}/efi-part/startup.nsh ]; then
+-  cp -f ${BOARD_DIR}/grub-efi.cfg ${BINARIES_DIR}/efi-part/EFI/BOOT/grub.cfg
+-else
+-  cp -f ${BOARD_DIR}/grub-bios.cfg ${TARGET_DIR}/boot/grub/grub.cfg
+-  # Copy grub 1st stage to binaries, required for genimage
+-  cp -f ${HOST_DIR}/lib/grub/i386-pc/boot.img ${BINARIES_DIR}
+-fi
+-
+-exit $?
+diff --git a/board/qemu/aarch64-virt/readme.txt b/board/qemu/aarch64-virt/readme.txt
+index 9e09d953f9..32025494bd 100644
+--- a/board/qemu/aarch64-virt/readme.txt
++++ b/board/qemu/aarch64-virt/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-  qemu-system-aarch64 -M virt -cpu cortex-a57 -nographic -smp 1 -kernel output/images/Image -append "root=/dev/vda console=ttyAMA0" -netdev user,id=eth0 -device virtio-net-device,netdev=eth0 -drive file=output/images/rootfs.ext4,if=none,format=raw,id=hd0 -device virtio-blk-device,drive=hd0
++  qemu-system-aarch64 -M virt -cpu cortex-a53 -nographic -smp 1 -kernel output/images/Image -append "root=/dev/vda console=ttyAMA0" -netdev user,id=eth0 -device virtio-net-device,netdev=eth0 -drive file=output/images/rootfs.ext4,if=none,format=raw,id=hd0 -device virtio-blk-device,drive=hd0
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ 
+diff --git a/boot/barebox/barebox.mk b/boot/barebox/barebox.mk
+index b811e322b5..9e8a9f67b5 100644
+--- a/boot/barebox/barebox.mk
++++ b/boot/barebox/barebox.mk
+@@ -28,7 +28,7 @@ $(1)_SITE_METHOD = git
+ else
+ # Handle stable official Barebox versions
+ $(1)_SOURCE = barebox-$$($(1)_VERSION).tar.bz2
+-$(1)_SITE = http://www.barebox.org/download
++$(1)_SITE = https://www.barebox.org/download
+ endif
+ 
+ $(1)_DEPENDENCIES = host-lzop
+diff --git a/configs/pc_x86_64_bios_defconfig b/configs/pc_x86_64_bios_defconfig
+index 47787bc118..6d9432d307 100644
+--- a/configs/pc_x86_64_bios_defconfig
++++ b/configs/pc_x86_64_bios_defconfig
+@@ -19,7 +19,8 @@ BR2_TARGET_ROOTFS_EXT2=y
+ BR2_TARGET_ROOTFS_EXT2_4=y
+ BR2_TARGET_ROOTFS_EXT2_SIZE="120M"
+ # BR2_TARGET_ROOTFS_TAR is not set
+-BR2_ROOTFS_POST_IMAGE_SCRIPT="board/pc/post-image.sh support/scripts/genimage.sh"
++BR2_ROOTFS_POST_BUILD_SCRIPT="board/pc/post-build.sh"
++BR2_ROOTFS_POST_IMAGE_SCRIPT="support/scripts/genimage.sh"
+ BR2_ROOTFS_POST_SCRIPT_ARGS="-c board/pc/genimage-bios.cfg"
+ 
+ # Linux headers same as kernel, a 4.13 series
+diff --git a/configs/pc_x86_64_efi_defconfig b/configs/pc_x86_64_efi_defconfig
+index 67ba5bcf5b..6a93eacfa3 100644
+--- a/configs/pc_x86_64_efi_defconfig
++++ b/configs/pc_x86_64_efi_defconfig
+@@ -22,7 +22,8 @@ BR2_TARGET_ROOTFS_EXT2=y
+ BR2_TARGET_ROOTFS_EXT2_4=y
+ BR2_TARGET_ROOTFS_EXT2_SIZE="120M"
+ # BR2_TARGET_ROOTFS_TAR is not set
+-BR2_ROOTFS_POST_IMAGE_SCRIPT="board/pc/post-image.sh support/scripts/genimage.sh"
++BR2_ROOTFS_POST_BUILD_SCRIPT="board/pc/post-build.sh"
++BR2_ROOTFS_POST_IMAGE_SCRIPT="support/scripts/genimage.sh"
+ BR2_ROOTFS_POST_SCRIPT_ARGS="-c board/pc/genimage-efi.cfg"
+ 
+ # Linux headers same as kernel, a 4.13 series
+diff --git a/configs/qemu_aarch64_virt_defconfig b/configs/qemu_aarch64_virt_defconfig
+index c94c4ac773..f9df2fb33e 100644
+--- a/configs/qemu_aarch64_virt_defconfig
++++ b/configs/qemu_aarch64_virt_defconfig
+@@ -1,5 +1,6 @@
+ # Architecture
+ BR2_aarch64=y
++BR2_cortex_a53=y
+ 
+ # System
+ BR2_SYSTEM_DHCP="eth0"
+diff --git a/docs/manual/adding-packages-waf.txt b/docs/manual/adding-packages-waf.txt
+index 43b557c070..12e122fb87 100644
+--- a/docs/manual/adding-packages-waf.txt
++++ b/docs/manual/adding-packages-waf.txt
+@@ -63,7 +63,7 @@ also be defined.
+ * +LIBFOO_NEEDS_EXTERNAL_WAF+ can be set to +YES+ or +NO+ to tell
+   Buildroot to use the bundled +waf+ executable. If set to +NO+, the
+   default, then Buildroot will use the waf executable provided in the
+-  package source tree; if set to +YES+, then Buidlroot will download,
++  package source tree; if set to +YES+, then Buildroot will download,
+   install waf as a host tool and use it to build the package.
+ 
+ * +LIBFOO_WAF_OPTS+, to specify additional options to pass to the
+diff --git a/docs/manual/contribute.txt b/docs/manual/contribute.txt
+index 8bbc2b9eb7..077562133a 100644
+--- a/docs/manual/contribute.txt
++++ b/docs/manual/contribute.txt
+@@ -304,6 +304,28 @@ Use the output of +get-developers+ to send your patches:
+ $ git send-email --to buildroot@buildroot.org --cc bob --cc alice outgoing/*
+ ---------------------
+ 
++Alternatively, +get-developers -e+ can be used directly with the
+++--cc-cmd+ argument to +git send-email+ to automatically CC the
++affected developers:
++
++---------------------
++$ git send-email --to buildroot@buildroot.org \
++      --cc-cmd './utils/get-developers -e' origin/master
++---------------------
++
+++git+ can be configured to automatically do this out of the box with:
++
++---------------------
++$ git config sendemail.to buildroot@buildroot.org
++$ git config sendemail.ccCmd "$(pwd)/utils/get-developers -e"
++---------------------
++
++And then just do:
++
++---------------------
++$ git send-email origin/master
++---------------------
++
+ Note that +git+ should be configured to use your mail account.
+ To configure +git+, see +man git-send-email+ or google it.
+ 
+diff --git a/docs/manual/developers.txt b/docs/manual/developers.txt
+index a0a3668dbc..7058d57b20 100644
+--- a/docs/manual/developers.txt
++++ b/docs/manual/developers.txt
+@@ -6,7 +6,7 @@
+ 
+ The main Buildroot directory contains a file named +DEVELOPERS+ that
+ lists the developers involved with various areas of Buildroot. Thanks
+-to this file, the +get-developer+ tool allows to:
++to this file, the +get-developers+ tool allows to:
+ 
+ - Calculate the list of developers to whom patches should be sent, by
+   parsing the patches and matching the modified files with the
+@@ -26,20 +26,21 @@ to include in his patch the appropriate modification to the
+ The +DEVELOPERS+ file format is documented in detail inside the file
+ itself.
+ 
+-The +get-developer+ tool, located in +utils/+ allows to use
++The +get-developers+ tool, located in +utils/+ allows to use
+ the +DEVELOPERS+ file for various tasks:
+ 
+ - When passing one or several patches as command line argument,
+-  +get-developer+ will return the appropriate +git send-email+
+-  command.
++  +get-developers+ will return the appropriate +git send-email+
++  command. If the +-e+ option is passed, only the email addresses are
++  printed in a format suitable for +git send-email --cc-cmd+.
+ 
+-- When using the +-a <arch>+ command line option, +get-developer+ will
++- When using the +-a <arch>+ command line option, +get-developers+ will
+   return the list of developers in charge of the given architecture.
+ 
+-- When using the +-p <package>+ command line option, +get-developer+
++- When using the +-p <package>+ command line option, +get-developers+
+   will return the list of developers in charge of the given package.
+ 
+-- When using the +-c+ command line option, +get-developer+ will look
++- When using the +-c+ command line option, +get-developers+ will look
+   at all files under version control in the Buildroot repository, and
+   list the ones that are not handled by any developer. The purpose of
+   this option is to help completing the +DEVELOPERS+ file.
+diff --git a/docs/manual/manual.txt b/docs/manual/manual.txt
+index 9d5076047f..4eb4ba9bf0 100644
+--- a/docs/manual/manual.txt
++++ b/docs/manual/manual.txt
+@@ -12,7 +12,7 @@ It is licensed under the GNU General Public License, version 2. Refer to the
+ http://git.buildroot.org/buildroot/tree/COPYING?id={sys:git rev-parse HEAD}[COPYING]
+ file in the Buildroot sources for the full text of this license.
+ 
+-Copyright (C) 2004-2018 The Buildroot developers
++Copyright (C) 2004-2019 The Buildroot developers
+ 
+ image::logo.png[]
+ 
+diff --git a/docs/website/copyright.txt b/docs/website/copyright.txt
+index b8ad36af99..600bf7df77 100644
+--- a/docs/website/copyright.txt
++++ b/docs/website/copyright.txt
+@@ -1,6 +1,6 @@
+ 
+ The code and graphics on this website (and it's mirror sites, if any) are
+-Copyright (c) 1999-2005 by Erik Andersen, 2006-2018 The Buildroot
++Copyright (c) 1999-2005 by Erik Andersen, 2006-2019 The Buildroot
+ developers. All rights reserved.
+ 
+ Documents on this Web site including their graphical elements, design, and
+diff --git a/package/acpica/acpica.mk b/package/acpica/acpica.mk
+index 57cc37f85e..c540061928 100644
+--- a/package/acpica/acpica.mk
++++ b/package/acpica/acpica.mk
+@@ -10,6 +10,7 @@ ACPICA_SITE = https://acpica.org/sites/acpica/files
+ ACPICA_LICENSE = BSD-3-Clause or GPL-2.0
+ ACPICA_LICENSE_FILES = source/include/acpi.h
+ ACPICA_DEPENDENCIES = host-bison host-flex
++HOST_ACPICA_DEPENDENCIES = host-bison host-flex
+ 
+ define ACPICA_BUILD_CMDS
+ 	$(TARGET_CONFIGURE_OPTS) $(MAKE) -C $(@D) \
+diff --git a/package/apache/apache.hash b/package/apache/apache.hash
+index 32743656fd..fd42cd4872 100644
+--- a/package/apache/apache.hash
++++ b/package/apache/apache.hash
+@@ -1,4 +1,4 @@
+-# From http://archive.apache.org/dist/httpd/httpd-2.4.35.tar.bz2.sha256
+-sha256 2607c6fdd4d12ac3f583127629291e9432b247b782396a563bec5678aae69b56 httpd-2.4.35.tar.bz2
++# From http://archive.apache.org/dist/httpd/httpd-2.4.38.tar.bz2.sha256
++sha256 7dc65857a994c98370dc4334b260101a7a04be60e6e74a5c57a6dee1bc8f394a httpd-2.4.38.tar.bz2
+ # Locally computed
+ sha256 c49c0819a726b70142621715dae3159c47b0349c2bc9db079070f28dadac0229 LICENSE
+diff --git a/package/apache/apache.mk b/package/apache/apache.mk
+index 982c6de793..52ba2f52dd 100644
+--- a/package/apache/apache.mk
++++ b/package/apache/apache.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-APACHE_VERSION = 2.4.35
++APACHE_VERSION = 2.4.38
+ APACHE_SOURCE = httpd-$(APACHE_VERSION).tar.bz2
+ APACHE_SITE = http://archive.apache.org/dist/httpd
+ APACHE_LICENSE = Apache-2.0
+diff --git a/package/apr/apr.mk b/package/apr/apr.mk
+index 58b1d86b28..8f29e57c59 100644
+--- a/package/apr/apr.mk
++++ b/package/apr/apr.mk
+@@ -26,7 +26,12 @@ APR_CONF_ENV = \
+ 	ac_cv_sizeof_pid_t=4 \
+ 	ac_cv_struct_rlimit=yes \
+ 	ac_cv_o_nonblock_inherited=no \
+-	apr_cv_mutex_recursive=yes
++	apr_cv_mutex_recursive=yes \
++	apr_cv_epoll=yes \
++	apr_cv_epoll_create1=yes \
++	apr_cv_dup3=yes \
++	apr_cv_sock_cloexec=yes \
++	apr_cv_accept4=yes
+ APR_CONFIG_SCRIPTS = apr-1-config
+ 
+ # Doesn't even try to guess when cross compiling
+diff --git a/package/asterisk/asterisk.hash b/package/asterisk/asterisk.hash
+index a3e9d10aff..2449aeb4d1 100644
+--- a/package/asterisk/asterisk.hash
++++ b/package/asterisk/asterisk.hash
+@@ -1,5 +1,5 @@
+ # Locally computed
+-sha256  249cf223ef4dd7aea01f0d250a6b9cad661ebd78910c73adb7f59c1c46f9fed8  asterisk-14.7.6.tar.gz
++sha256  41c99bd2236af95d056e15f9d044c28b69e00935e67791b18fa70b0614402012  asterisk-14.7.8.tar.gz
+ 
+ # sha1 from: http://downloads.asterisk.org/pub/telephony/sounds/releases
+ # sha256 locally computed
+diff --git a/package/asterisk/asterisk.mk b/package/asterisk/asterisk.mk
+index 28b85da562..b5a73ed766 100644
+--- a/package/asterisk/asterisk.mk
++++ b/package/asterisk/asterisk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-ASTERISK_VERSION = 14.7.6
++ASTERISK_VERSION = 14.7.8
+ # Use the github mirror: it's an official mirror maintained by Digium, and
+ # provides tarballs, which the main Asterisk git tree (behind Gerrit) does not.
+ ASTERISK_SITE = $(call github,asterisk,asterisk,$(ASTERISK_VERSION))
+diff --git a/package/avrdude/avrdude.mk b/package/avrdude/avrdude.mk
+index 0e34076e38..ae378dfbac 100644
+--- a/package/avrdude/avrdude.mk
++++ b/package/avrdude/avrdude.mk
+@@ -15,8 +15,6 @@ AVRDUDE_AUTORECONF = YES
+ AVRDUDE_CONF_OPTS = --enable-linuxgpio
+ AVRDUDE_DEPENDENCIES = elfutils libusb libusb-compat ncurses \
+ 	host-flex host-bison
+-AVRDUDE_LICENSE = GPL-2.0+
+-AVRDUDE_LICENSE_FILES = avrdude/COPYING
+ 
+ ifeq ($(BR2_PACKAGE_LIBFTDI1),y)
+ AVRDUDE_DEPENDENCIES += libftdi1
+diff --git a/package/cargo/cargo.mk b/package/cargo/cargo.mk
+index 3fd088d727..666e0bc77b 100644
+--- a/package/cargo/cargo.mk
++++ b/package/cargo/cargo.mk
+@@ -70,7 +70,7 @@ HOST_CARGO_SNAP_OPTS = \
+ 	$(if $(VERBOSE),--verbose)
+ 
+ HOST_CARGO_ENV = \
+-	RUSTFLAGS="-Clink-arg=-Wl,-rpath,$(HOST_DIR)/lib" \
++	RUSTFLAGS="$(addprefix -Clink-arg=,$(HOST_LDFLAGS))" \
+ 	CARGO_HOME=$(HOST_CARGO_HOME)
+ 
+ define HOST_CARGO_BUILD_CMDS
+diff --git a/package/cc-tool/Config.in b/package/cc-tool/Config.in
+index b2cf97969b..8145b676c9 100644
+--- a/package/cc-tool/Config.in
++++ b/package/cc-tool/Config.in
+@@ -9,7 +9,6 @@ config BR2_PACKAGE_CC_TOOL
+ 	select BR2_PACKAGE_BOOST_SYSTEM
+ 	select BR2_PACKAGE_BOOST_REGEX
+ 	select BR2_PACKAGE_BOOST_FILESYSTEM
+-	select BR2_PACKAGE_BOOST_SIGNALS
+ 	help
+ 	  cc-tool provides support for Texas Instruments CC Debugger
+ 	  for Linux OS in order to program 8051-based System-On-Chip
+diff --git a/package/dash/dash.mk b/package/dash/dash.mk
+index 2d415558d2..8f15890669 100644
+--- a/package/dash/dash.mk
++++ b/package/dash/dash.mk
+@@ -28,7 +28,7 @@ DASH_CONF_OPTS += --without-libedit
+ endif
+ 
+ define DASH_INSTALL_TARGET_CMDS
+-	$(INSTALL) -m 0755 $(@D)/src/dash $(TARGET_DIR)/bin/dash
++	$(INSTALL) -m 0755 -D $(@D)/src/dash $(TARGET_DIR)/bin/dash
+ endef
+ 
+ $(eval $(autotools-package))
+diff --git a/package/dhcpdump/0002-fix-strsep-feature-test.patch b/package/dhcpdump/0002-fix-strsep-feature-test.patch
+deleted file mode 100644
+index 06bab947c0..0000000000
+--- a/package/dhcpdump/0002-fix-strsep-feature-test.patch
++++ /dev/null
+@@ -1,27 +0,0 @@
+-Use the official _BSD_SOURCE feature test macro instead of the meaningless
+-HAVE_STRSEP macro in order to detect the availability of strsep().
+-
+-This allows toolchains supporting strsep() to use it instead of the custom
+-implementation from dhcpdump, which also avoids the following error with some
+-toolchains:
+-
+-	In file included from dhcpdump.c:30:0:
+-	dhcpdump.c: At top level:
+-	strsep.c:65:23: error: register name not specified for ‘delim’
+-	  register const char *delim;
+-	                       ^
+-
+-Signed-off-by: Benoît Thébaudeau <benoit.thebaudeau@advansee.com>
+-
+-diff -Nrdup dhcpdump-1.8.orig/dhcpdump.c dhcpdump-1.8/dhcpdump.c
+---- dhcpdump-1.8.orig/dhcpdump.c	2008-06-24 05:26:52.000000000 +0200
+-+++ dhcpdump-1.8/dhcpdump.c	2011-05-31 19:22:15.987388498 +0200
+-@@ -26,7 +26,7 @@
+- #include <regex.h>
+- #include "dhcp_options.h"
+- 
+--#ifndef HAVE_STRSEP
+-+#ifndef _BSD_SOURCE
+- #include "strsep.c"
+- #endif
+- 
+diff --git a/package/dhcpdump/dhcpdump.mk b/package/dhcpdump/dhcpdump.mk
+index 96f231962d..2413812880 100644
+--- a/package/dhcpdump/dhcpdump.mk
++++ b/package/dhcpdump/dhcpdump.mk
+@@ -15,8 +15,11 @@ ifeq ($(BR2_STATIC_LIBS),y)
+ DHCPDUMP_LIBS += `$(STAGING_DIR)/usr/bin/pcap-config --static --additional-libs`
+ endif
+ 
++# glibc, uclibc and musl have strsep()
++DHCPDUMP_CFLAGS = $(TARGET_CFLAGS) -DHAVE_STRSEP
++
+ define DHCPDUMP_BUILD_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) CC="$(TARGET_CC) $(TARGET_CFLAGS) \
++	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) CC="$(TARGET_CC) $(DHCPDUMP_CFLAGS) \
+ 		-D_GNU_SOURCE" LIBS="$(DHCPDUMP_LIBS)"
+ endef
+ 
+diff --git a/package/dmalloc/0005-fix-strdup.patch b/package/dmalloc/0005-fix-strdup.patch
+new file mode 100644
+index 0000000000..5884df6a89
+--- /dev/null
++++ b/package/dmalloc/0005-fix-strdup.patch
+@@ -0,0 +1,24 @@
++From 59d73a473f1c1a31bcba90d314f956d0bcc3de95 Mon Sep 17 00:00:00 2001
++From: Siana Gearz <siana.sg@live.de>
++Date: Sat, 8 Sep 2012 22:55:17 +0200
++Subject: [PATCH] Fix strdup
++
++[Retrieved from:
++https://github.com/siana/dmalloc/commit/59d73a473f1c1a31bcba90d314f956d0bcc3de95]
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++---
++ dmalloc.h.3 | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/dmalloc.h.3 b/dmalloc.h.3
++index d3d1c13..3fc573a 100644
++--- a/dmalloc.h.3
+++++ b/dmalloc.h.3
++@@ -459,6 +459,7 @@ DMALLOC_PNT	valloc(DMALLOC_SIZE size);
++  *
++  * string -> String we are duplicating.
++  */
+++#undef strdup
++ extern
++ char	*strdup(const char *string);
++ #endif /* ifndef DMALLOC_STRDUP_MACRO */
+diff --git a/package/dmalloc/0006-fix-strndup.patch b/package/dmalloc/0006-fix-strndup.patch
+new file mode 100644
+index 0000000000..a1865acb85
+--- /dev/null
++++ b/package/dmalloc/0006-fix-strndup.patch
+@@ -0,0 +1,24 @@
++From 005d92c2cebbde5c8623daa29725f7a62b18df7c Mon Sep 17 00:00:00 2001
++From: Siana Gearz <siana.sg@live.de>
++Date: Sat, 8 Sep 2012 22:44:35 +0200
++Subject: [PATCH] Fix strndup
++
++[Retrieved from:
++https://github.com/siana/dmalloc/commit/005d92c2cebbde5c8623daa29725f7a62b18df7c]
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++---
++ dmalloc.h.3 | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/dmalloc.h.3 b/dmalloc.h.3
++index 8bda997..fb538a8 100644
++--- a/dmalloc.h.3
+++++ b/dmalloc.h.3
++@@ -429,6 +429,7 @@ char	*strdup(const char *string);
++  *
++  * len -> Length of the string to duplicate.
++  */
+++#undef strndup
++ extern
++ char	*strndup(const char *string, const DMALLOC_SIZE len);
++ 
+diff --git a/package/gnuchess/gnuchess.hash b/package/gnuchess/gnuchess.hash
+index 064a845eda..e0a1c4c418 100644
+--- a/package/gnuchess/gnuchess.hash
++++ b/package/gnuchess/gnuchess.hash
+@@ -1,2 +1,3 @@
+ # sha256 locally computed
+ sha256 3c425c0264f253fc5cc2ba969abe667d77703c728770bd4b23c456cbe5e082ef  gnuchess-6.2.4.tar.gz
++sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  COPYING
+diff --git a/package/gnuchess/gnuchess.mk b/package/gnuchess/gnuchess.mk
+index 1465ab0a00..0abdab5ba5 100644
+--- a/package/gnuchess/gnuchess.mk
++++ b/package/gnuchess/gnuchess.mk
+@@ -6,7 +6,7 @@
+ 
+ GNUCHESS_VERSION = 6.2.4
+ GNUCHESS_SITE = $(BR2_GNU_MIRROR)/chess
+-GNUCHESS_LICENSE = GPL-2.0+
++GNUCHESS_LICENSE = GPL-3.0+
+ GNUCHESS_LICENSE_FILES = COPYING
+ 
+ GNUCHESS_DEPENDENCIES = host-flex flex
+diff --git a/package/gnupg2/gnupg2.hash b/package/gnupg2/gnupg2.hash
+index f5890c5e2a..f985e11ad3 100644
+--- a/package/gnupg2/gnupg2.hash
++++ b/package/gnupg2/gnupg2.hash
+@@ -1,6 +1,7 @@
+-# From https://lists.gnupg.org/pipermail/gnupg-announce/2018q2/000425.html
+-sha1 d87553a125832ea90e8aeb3ceeecf24f88de56fb  gnupg-2.2.8.tar.bz2
++# From https://lists.gnupg.org/pipermail/gnupg-announce/2018q4/000433.html
++sha1 2aeccc35ea8034306ff7a1072b84abbaa79619c3  gnupg-2.2.12.tar.bz2
+ # Calculated based on the hash above and signature
+-# https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.2.8.tar.bz2.sig
+-sha256 777b4cb8ced21965a5053d4fa20fe11484f0a478f3d011cef508a1a49db50dcd  gnupg-2.2.8.tar.bz2
++# https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.2.12.tar.bz2.sig
++# using key D8692123C4065DEA5E0F3AB5249B39D24F25E3B6
++sha256 db030f8b4c98640e91300d36d516f1f4f8fe09514a94ea9fc7411ee1a34082cb  gnupg-2.2.12.tar.bz2
+ sha256 bc2d6664f6276fa0a72d57633b3ae68dc7dcb677b71018bf08c8e93e509f1357  COPYING
+diff --git a/package/gnupg2/gnupg2.mk b/package/gnupg2/gnupg2.mk
+index 3151860f37..9365e960f2 100644
+--- a/package/gnupg2/gnupg2.mk
++++ b/package/gnupg2/gnupg2.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-GNUPG2_VERSION = 2.2.8
++GNUPG2_VERSION = 2.2.12
+ GNUPG2_SOURCE = gnupg-$(GNUPG2_VERSION).tar.bz2
+ GNUPG2_SITE = https://gnupg.org/ftp/gcrypt/gnupg
+ GNUPG2_LICENSE = GPL-3.0+
+diff --git a/package/leveldb/0003-fix-parallel-build.patch b/package/leveldb/0003-fix-parallel-build.patch
+deleted file mode 100644
+index 8aafbc2e02..0000000000
+--- a/package/leveldb/0003-fix-parallel-build.patch
++++ /dev/null
+@@ -1,36 +0,0 @@
+-From 293e1b08317567b2e479d24530986676ae4d2221 Mon Sep 17 00:00:00 2001
+-From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
+-Date: Mon, 8 Oct 2018 23:08:19 +0200
+-Subject: [PATCH] fix parallel build
+-
+-Build of leveldb sometimes fails on:
+-Fatal error: can't create out-shared/db/db_bench.o: No such file or directory
+-
+-Fix this, by creating $(SHARED_OUTDIR) before building
+-(SHARED_OUTDIR)/db/db_bench.o
+-
+-Fixes:
+- - http://autobuild.buildroot.net/results/945bb8096c1f98f307161a6def5a9f7f25b2454a
+-
+-Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
+-[Upstream status: not upstreamable as upstream switched to cmake]
+----
+- Makefile | 2 +-
+- 1 file changed, 1 insertion(+), 1 deletion(-)
+-
+-diff --git a/Makefile b/Makefile
+-index f7cc7d7..edb56a5 100644
+---- a/Makefile
+-+++ b/Makefile
+-@@ -386,7 +386,7 @@ $(STATIC_OUTDIR)/write_batch_test:db/write_batch_test.cc $(STATIC_LIBOBJECTS) $(
+- $(STATIC_OUTDIR)/memenv_test:$(STATIC_OUTDIR)/helpers/memenv/memenv_test.o $(STATIC_OUTDIR)/libmemenv.a $(STATIC_OUTDIR)/libleveldb.a $(TESTHARNESS)
+- 	$(XCRUN) $(CXX) $(LDFLAGS) $(STATIC_OUTDIR)/helpers/memenv/memenv_test.o $(STATIC_OUTDIR)/libmemenv.a $(STATIC_OUTDIR)/libleveldb.a $(TESTHARNESS) -o $@ $(LIBS)
+- 
+--$(SHARED_OUTDIR)/db_bench:$(SHARED_OUTDIR)/db/db_bench.o $(SHARED_LIBS) $(TESTUTIL)
+-+$(SHARED_OUTDIR)/db_bench:$(SHARED_OUTDIR) $(SHARED_OUTDIR)/db/db_bench.o $(SHARED_LIBS) $(TESTUTIL)
+- 	$(XCRUN) $(CXX) $(LDFLAGS) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) $(SHARED_OUTDIR)/db/db_bench.o $(TESTUTIL) $(SHARED_OUTDIR)/$(SHARED_LIB3) -o $@ $(LIBS)
+- 
+- .PHONY: run-shared
+--- 
+-2.17.1
+-
+diff --git a/package/leveldb/leveldb.mk b/package/leveldb/leveldb.mk
+index 54942a0f27..af9e879828 100644
+--- a/package/leveldb/leveldb.mk
++++ b/package/leveldb/leveldb.mk
+@@ -17,18 +17,18 @@ LEVELDB_MAKE_ARGS += SHARED_LIBS= SHARED_PROGRAMS=
+ endif
+ 
+ define LEVELDB_BUILD_CMDS
+-	$(TARGET_MAKE_ENV) $(TARGET_CONFIGURE_OPTS) $(MAKE) \
++	$(TARGET_MAKE_ENV) $(TARGET_CONFIGURE_OPTS) $(MAKE1) \
+ 		$(LEVELDB_MAKE_ARGS) -C $(@D)
+ endef
+ 
+ define LEVELDB_INSTALL_STAGING_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) \
++	$(TARGET_MAKE_ENV) $(MAKE1) \
+ 		INSTALL_ROOT=$(STAGING_DIR) INSTALL_PREFIX=/usr \
+ 		$(LEVELDB_MAKE_ARGS) -C $(@D) install
+ endef
+ 
+ define LEVELDB_INSTALL_TARGET_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) \
++	$(TARGET_MAKE_ENV) $(MAKE1) \
+ 		INSTALL_ROOT=$(TARGET_DIR) INSTALL_PREFIX=/usr \
+ 		$(LEVELDB_MAKE_ARGS) -C $(@D) install
+ endef
+diff --git a/package/libarchive/0001-Avoid-a-double-free-when-a-window-size-of-0-is-speci.patch b/package/libarchive/0001-Avoid-a-double-free-when-a-window-size-of-0-is-speci.patch
+new file mode 100644
+index 0000000000..76096f7a45
+--- /dev/null
++++ b/package/libarchive/0001-Avoid-a-double-free-when-a-window-size-of-0-is-speci.patch
+@@ -0,0 +1,40 @@
++From 021efa522ad729ff0f5806c4ce53e4a6cc1daa31 Mon Sep 17 00:00:00 2001
++From: Daniel Axtens <dja@axtens.net>
++Date: Tue, 20 Nov 2018 17:56:29 +1100
++Subject: [PATCH] Avoid a double-free when a window size of 0 is specified
++
++new_size can be 0 with a malicious or corrupted RAR archive.
++
++realloc(area, 0) is equivalent to free(area), so the region would
++be free()d here and the free()d again in the cleanup function.
++
++Found with a setup running AFL, afl-rb, and qsym.
++---
++ libarchive/archive_read_support_format_rar.c | 5 +++++
++ 1 file changed, 5 insertions(+)
++
++[for import into Buildroot]
++Signed-off-by: Thomas De Schampheleire <thomas.de_schampheleire@nokia.com>
++Upstream-status: backport
++
++CVE-2018-1000877
++
++diff --git a/libarchive/archive_read_support_format_rar.c b/libarchive/archive_read_support_format_rar.c
++index 23452222..6f419c27 100644
++--- a/libarchive/archive_read_support_format_rar.c
+++++ b/libarchive/archive_read_support_format_rar.c
++@@ -2300,6 +2300,11 @@ parse_codes(struct archive_read *a)
++       new_size = DICTIONARY_MAX_SIZE;
++     else
++       new_size = rar_fls((unsigned int)rar->unp_size) << 1;
+++    if (new_size == 0) {
+++      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+++                        "Zero window size is invalid.");
+++      return (ARCHIVE_FATAL);
+++    }
++     new_window = realloc(rar->lzss.window, new_size);
++     if (new_window == NULL) {
++       archive_set_error(&a->archive, ENOMEM,
++-- 
++2.19.2
++
+diff --git a/package/libarchive/0002-rar-file-split-across-multi-part-archives-must-match.patch b/package/libarchive/0002-rar-file-split-across-multi-part-archives-must-match.patch
+new file mode 100644
+index 0000000000..4bf68d61d3
+--- /dev/null
++++ b/package/libarchive/0002-rar-file-split-across-multi-part-archives-must-match.patch
+@@ -0,0 +1,81 @@
++From bfcfe6f04ed20db2504db8a254d1f40a1d84eb28 Mon Sep 17 00:00:00 2001
++From: Daniel Axtens <dja@axtens.net>
++Date: Tue, 4 Dec 2018 00:55:22 +1100
++Subject: [PATCH] rar: file split across multi-part archives must match
++
++Fuzzing uncovered some UAF and memory overrun bugs where a file in a
++single file archive reported that it was split across multiple
++volumes. This was caused by ppmd7 operations calling
++rar_br_fillup. This would invoke rar_read_ahead, which would in some
++situations invoke archive_read_format_rar_read_header.  That would
++check the new file name against the old file name, and if they didn't
++match up it would free the ppmd7 buffer and allocate a new
++one. However, because the ppmd7 decoder wasn't actually done with the
++buffer, it would continue to used the freed buffer. Both reads and
++writes to the freed region can be observed.
++
++This is quite tricky to solve: once the buffer has been freed it is
++too late, as the ppmd7 decoder functions almost universally assume
++success - there's no way for ppmd_read to signal error, nor are there
++good ways for functions like Range_Normalise to propagate them. So we
++can't detect after the fact that we're in an invalid state - e.g. by
++checking rar->cursor, we have to prevent ourselves from ever ending up
++there. So, when we are in the dangerous part or rar_read_ahead that
++assumes a valid split, we set a flag force read_header to either go
++down the path for split files or bail. This means that the ppmd7
++decoder keeps a valid buffer and just runs out of data.
++
++Found with a combination of AFL, afl-rb and qsym.
++---
++ libarchive/archive_read_support_format_rar.c | 9 +++++++++
++ 1 file changed, 9 insertions(+)
++
++[for import into Buildroot]
++Signed-off-by: Thomas De Schampheleire <thomas.de_schampheleire@nokia.com>
++Upstream-status: backport
++
++CVE-2018-1000878
++
++diff --git a/libarchive/archive_read_support_format_rar.c b/libarchive/archive_read_support_format_rar.c
++index 6f419c27..a8cc5c94 100644
++--- a/libarchive/archive_read_support_format_rar.c
+++++ b/libarchive/archive_read_support_format_rar.c
++@@ -258,6 +258,7 @@ struct rar
++   struct data_block_offsets *dbo;
++   unsigned int cursor;
++   unsigned int nodes;
+++  char filename_must_match;
++ 
++   /* LZSS members */
++   struct huffman_code maincode;
++@@ -1560,6 +1561,12 @@ read_header(struct archive_read *a, struct archive_entry *entry,
++     }
++     return ret;
++   }
+++  else if (rar->filename_must_match)
+++  {
+++    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+++      "Mismatch of file parts split across multi-volume archive");
+++    return (ARCHIVE_FATAL);
+++  }
++ 
++   rar->filename_save = (char*)realloc(rar->filename_save,
++                                       filename_size + 1);
++@@ -2933,12 +2940,14 @@ rar_read_ahead(struct archive_read *a, size_t min, ssize_t *avail)
++     else if (*avail == 0 && rar->main_flags & MHD_VOLUME &&
++       rar->file_flags & FHD_SPLIT_AFTER)
++     {
+++      rar->filename_must_match = 1;
++       ret = archive_read_format_rar_read_header(a, a->entry);
++       if (ret == (ARCHIVE_EOF))
++       {
++         rar->has_endarc_header = 1;
++         ret = archive_read_format_rar_read_header(a, a->entry);
++       }
+++      rar->filename_must_match = 0;
++       if (ret != (ARCHIVE_OK))
++         return NULL;
++       return rar_read_ahead(a, min, avail);
++-- 
++2.19.2
++
+diff --git a/package/libarchive/0003-Skip-0-length-ACL-fields.patch b/package/libarchive/0003-Skip-0-length-ACL-fields.patch
+new file mode 100644
+index 0000000000..796bfbdeb6
+--- /dev/null
++++ b/package/libarchive/0003-Skip-0-length-ACL-fields.patch
+@@ -0,0 +1,52 @@
++From 15bf44fd2c1ad0e3fd87048b3fcc90c4dcff1175 Mon Sep 17 00:00:00 2001
++From: Daniel Axtens <dja@axtens.net>
++Date: Tue, 4 Dec 2018 14:29:42 +1100
++Subject: [PATCH] Skip 0-length ACL fields
++
++Currently, it is possible to create an archive that crashes bsdtar
++with a malformed ACL:
++
++Program received signal SIGSEGV, Segmentation fault.
++archive_acl_from_text_l (acl=<optimised out>, text=0x7e2e92 "", want_type=<optimised out>, sc=<optimised out>) at libarchive/archive_acl.c:1726
++1726				switch (*s) {
++(gdb) p n
++$1 = 1
++(gdb) p field[n]
++$2 = {start = 0x0, end = 0x0}
++
++Stop this by checking that the length is not zero before beginning
++the switch statement.
++
++I am pretty sure this is the bug mentioned in the qsym paper [1],
++and I was able to replicate it with a qsym + AFL + afl-rb setup.
++
++[1] https://www.usenix.org/conference/usenixsecurity18/presentation/yun
++---
++ libarchive/archive_acl.c | 5 +++++
++ 1 file changed, 5 insertions(+)
++
++[for import into Buildroot]
++Signed-off-by: Thomas De Schampheleire <thomas.de_schampheleire@nokia.com>
++Upstream-status: backport
++
++CVE-2018-1000879
++
++diff --git a/libarchive/archive_acl.c b/libarchive/archive_acl.c
++index 512beee1..7beeee86 100644
++--- a/libarchive/archive_acl.c
+++++ b/libarchive/archive_acl.c
++@@ -1723,6 +1723,11 @@ archive_acl_from_text_l(struct archive_acl *acl, const char *text,
++ 			st = field[n].start + 1;
++ 			len = field[n].end - field[n].start;
++ 
+++			if (len == 0) {
+++				ret = ARCHIVE_WARN;
+++				continue;
+++			}
+++
++ 			switch (*s) {
++ 			case 'u':
++ 				if (len == 1 || (len == 4
++-- 
++2.19.2
++
+diff --git a/package/libarchive/0004-warc-consume-data-once-read.patch b/package/libarchive/0004-warc-consume-data-once-read.patch
+new file mode 100644
+index 0000000000..f07d6c08ca
+--- /dev/null
++++ b/package/libarchive/0004-warc-consume-data-once-read.patch
+@@ -0,0 +1,46 @@
++From 9c84b7426660c09c18cc349f6d70b5f8168b5680 Mon Sep 17 00:00:00 2001
++From: Daniel Axtens <dja@axtens.net>
++Date: Tue, 4 Dec 2018 16:33:42 +1100
++Subject: [PATCH] warc: consume data once read
++
++The warc decoder only used read ahead, it wouldn't actually consume
++data that had previously been printed. This means that if you specify
++an invalid content length, it will just reprint the same data over
++and over and over again until it hits the desired length.
++
++This means that a WARC resource with e.g.
++Content-Length: 666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666665
++but only a few hundred bytes of data, causes a quasi-infinite loop.
++
++Consume data in subsequent calls to _warc_read.
++
++Found with an AFL + afl-rb + qsym setup.
++---
++ libarchive/archive_read_support_format_warc.c | 5 +++++
++ 1 file changed, 5 insertions(+)
++
++[for import into Buildroot]
++Signed-off-by: Thomas De Schampheleire <thomas.de_schampheleire@nokia.com>
++Upstream-status: backport
++
++CVE-2018-1000880
++
++diff --git a/libarchive/archive_read_support_format_warc.c b/libarchive/archive_read_support_format_warc.c
++index e8753853..e8fc8428 100644
++--- a/libarchive/archive_read_support_format_warc.c
+++++ b/libarchive/archive_read_support_format_warc.c
++@@ -386,6 +386,11 @@ _warc_read(struct archive_read *a, const void **buf, size_t *bsz, int64_t *off)
++ 		return (ARCHIVE_EOF);
++ 	}
++ 
+++	if (w->unconsumed) {
+++		__archive_read_consume(a, w->unconsumed);
+++		w->unconsumed = 0U;
+++	}
+++
++ 	rab = __archive_read_ahead(a, 1U, &nrd);
++ 	if (nrd < 0) {
++ 		*bsz = 0U;
++-- 
++2.19.2
++
+diff --git a/package/libassuan/libassuan.hash b/package/libassuan/libassuan.hash
+index 2e80cfa4e1..4878a692cf 100644
+--- a/package/libassuan/libassuan.hash
++++ b/package/libassuan/libassuan.hash
+@@ -1,7 +1,8 @@
+ # From https://www.gnupg.org/download/integrity_check.html
+-sha1 c8432695bf1daa914a92f51e911881ed93d50604  libassuan-2.5.1.tar.bz2
++sha1 fb66bc1e8971d48ac9dbacd1cdaf6487a3e77375  libassuan-2.5.2.tar.bz2
+ # Locally calculated after checking signature
+-# https://www.gnupg.org/ftp/gcrypt/libassuan/libassuan-2.5.1.tar.bz2.sig
+-sha256 47f96c37b4f2aac289f0bc1bacfa8bd8b4b209a488d3d15e2229cb6cc9b26449  libassuan-2.5.1.tar.bz2
++# https://www.gnupg.org/ftp/gcrypt/libassuan/libassuan-2.5.2.tar.bz2.sig
++# using key D8692123C4065DEA5E0F3AB5249B39D24F25E3B6
++sha256 986b1bf277e375f7a960450fbb8ffbd45294d06598916ad4ebf79aee0cb788e7  libassuan-2.5.2.tar.bz2
+ sha256 a9bdde5616ecdd1e980b44f360600ee8783b1f99b8cc83a2beb163a0a390e861  COPYING.LIB
+ sha256 fc82ca8b6fdb18d4e3e85cfd8ab58d1bcd3f1b29abe782895abd91d64763f8e7  COPYING
+diff --git a/package/libassuan/libassuan.mk b/package/libassuan/libassuan.mk
+index e807086b73..18d0ad5b83 100644
+--- a/package/libassuan/libassuan.mk
++++ b/package/libassuan/libassuan.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBASSUAN_VERSION = 2.5.1
++LIBASSUAN_VERSION = 2.5.2
+ LIBASSUAN_SITE = ftp://ftp.gnupg.org/gcrypt/libassuan
+ LIBASSUAN_SOURCE = libassuan-$(LIBASSUAN_VERSION).tar.bz2
+ LIBASSUAN_LICENSE = LGPL-2.1+ (library), GPL-3.0 (tests, doc)
+diff --git a/package/libftdi1/0004-cmake-find-swig.patch b/package/libftdi1/0004-cmake-find-swig.patch
+new file mode 100644
+index 0000000000..25922cca53
+--- /dev/null
++++ b/package/libftdi1/0004-cmake-find-swig.patch
+@@ -0,0 +1,26 @@
++From fcda9c6a208d3a7fe651ef661b2eb6e462a89c17 Mon Sep 17 00:00:00 2001
++From: Eneas U de Queiroz <cote2004-github@yahoo.com>
++Date: Tue, 31 Jul 2018 17:44:57 -0300
++Subject: [PATCH] CMake: use find_package (SWIG) for cmake >= 3.0.0
++
++There's a workaround for a bug (fixed in cmake 3.0.0) that does not
++work in CMake 3.12.  Only use the workaround with cmake < 3.0.0.
++
++Signed-off-by: Eneas U de Queiroz <cote2004-github@yahoo.com>
++[Mark: patch retrieved and updated from
++http://developer.intra2net.com/git/?p=libftdi;a=commit;h=fcda9c6a208d3a7fe651ef661b2eb6e462a89c17]
++Signed-off-by: Mark Corbin <mark.corbin@embecosm.com>
++---
++diff --git a/python/CMakeLists.txt b/python/CMakeLists.txt
++index 31ef1c6..eefc344 100644
++--- a/python/CMakeLists.txt
+++++ b/python/CMakeLists.txt
++@@ -3,7 +3,7 @@ option ( LINK_PYTHON_LIBRARY "Link against python libraries" ON )
++ 
++ if ( PYTHON_BINDINGS )
++   # workaround for cmake bug #0013449
++-  if ( NOT DEFINED CMAKE_FIND_ROOT_PATH )
+++  if ( NOT DEFINED CMAKE_FIND_ROOT_PATH OR CMAKE_VERSION VERSION_GREATER_EQUAL 3.0.0 )
++     find_package ( SWIG )
++   else ()
++     find_program ( SWIG_EXECUTABLE NAMES swig2.0 swig )
+diff --git a/package/libgpg-error/Config.in b/package/libgpg-error/Config.in
+index 40424e41cf..2f1608d88e 100644
+--- a/package/libgpg-error/Config.in
++++ b/package/libgpg-error/Config.in
+@@ -45,5 +45,5 @@ config BR2_PACKAGE_LIBGPG_ERROR_SYSCFG
+ 		if BR2_sparc
+ 	default "sparc64-unknown-linux-gnu" \
+ 		if BR2_sparc64
+-	default "x86_64-pc-linux-gnu" \
++	default "x86_64-unknown-linux-gnu" \
+ 		if BR2_x86_64
+diff --git a/package/libgpg-error/libgpg-error.hash b/package/libgpg-error/libgpg-error.hash
+index 0e6304de66..b18ab7e6b6 100644
+--- a/package/libgpg-error/libgpg-error.hash
++++ b/package/libgpg-error/libgpg-error.hash
+@@ -1,6 +1,7 @@
+ # Locally calculated after checking pgp signature
+-# https://www.gnupg.org/ftp/gcrypt/libgpg-error/libgpg-error-1.29.tar.bz2.sig
+-sha256 ece926fa5719d17a7ad8da618712cfa2f8a796ab2f2af9d544c5bb093383b1ea  libgpg-error-1.29.tar.bz2
++# https://gnupg.org/ftp/gcrypt/libgpg-error/libgpg-error-1.33.tar.bz2.sig
++# using key D8692123C4065DEA5E0F3AB5249B39D24F25E3B6
++sha256 5d38826656e746c936e7742d9cde072b50baa3c4c49daa168a56813612bf03ff  libgpg-error-1.33.tar.bz2
+ # Locally calculated
+ sha256 231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c  COPYING
+ sha256 a9bdde5616ecdd1e980b44f360600ee8783b1f99b8cc83a2beb163a0a390e861  COPYING.LIB
+diff --git a/package/libgpg-error/libgpg-error.mk b/package/libgpg-error/libgpg-error.mk
+index 862cb44eef..d26d92fb05 100644
+--- a/package/libgpg-error/libgpg-error.mk
++++ b/package/libgpg-error/libgpg-error.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBGPG_ERROR_VERSION = 1.29
++LIBGPG_ERROR_VERSION = 1.33
+ LIBGPG_ERROR_SITE = https://www.gnupg.org/ftp/gcrypt/libgpg-error
+ LIBGPG_ERROR_SOURCE = libgpg-error-$(LIBGPG_ERROR_VERSION).tar.bz2
+ LIBGPG_ERROR_LICENSE = GPL-2.0+, LGPL-2.1+
+@@ -12,14 +12,7 @@ LIBGPG_ERROR_LICENSE_FILES = COPYING COPYING.LIB
+ LIBGPG_ERROR_INSTALL_STAGING = YES
+ LIBGPG_ERROR_CONFIG_SCRIPTS = gpg-error-config
+ LIBGPG_ERROR_DEPENDENCIES = $(TARGET_NLS_DEPENDENCIES)
+-
+-define LIBGPG_ERROR_FIX_CROSS_COMPILATION
+-	cd $(@D)/src/syscfg && \
+-	ln -s lock-obj-pub.$(call qstrip, $(BR2_PACKAGE_LIBGPG_ERROR_SYSCFG)).h \
+-		lock-obj-pub.$(GNU_TARGET_NAME).h
+-endef
+-LIBGPG_ERROR_PRE_CONFIGURE_HOOKS += LIBGPG_ERROR_FIX_CROSS_COMPILATION
+-
+-LIBGPG_ERROR_CONF_OPTS = --disable-tests
++LIBGPG_ERROR_CONF_OPTS = --disable-tests \
++		--host=$(BR2_PACKAGE_LIBGPG_ERROR_SYSCFG)
+ 
+ $(eval $(autotools-package))
+diff --git a/package/libhttpparser/libhttpparser.hash b/package/libhttpparser/libhttpparser.hash
+index 8ffceb24d9..b7df9ca602 100644
+--- a/package/libhttpparser/libhttpparser.hash
++++ b/package/libhttpparser/libhttpparser.hash
+@@ -1,2 +1,3 @@
+ # Locally computed:
+-sha256 7277c6f99bf6fc272eb5d8fc3dca01e7cc1d4ae609b5d2c5d5e18added98479d  libhttpparser-v2.8.0.tar.gz
++sha256 ef26268c54c8084d17654ba2ed5140bffeffd2a040a895ffb22a6cca3f6c613f  libhttpparser-v2.9.0.tar.gz
++sha256 79e6ba8b687cb54786207342b9b6fcee0ac10218453ed9009b84d949b2233cc0  LICENSE-MIT
+diff --git a/package/libhttpparser/libhttpparser.mk b/package/libhttpparser/libhttpparser.mk
+index 5f50d877d9..068d697dd9 100644
+--- a/package/libhttpparser/libhttpparser.mk
++++ b/package/libhttpparser/libhttpparser.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBHTTPPARSER_VERSION = v2.8.0
++LIBHTTPPARSER_VERSION = v2.9.0
+ LIBHTTPPARSER_SITE = $(call github,nodejs,http-parser,$(LIBHTTPPARSER_VERSION))
+ LIBHTTPPARSER_INSTALL_STAGING = YES
+ LIBHTTPPARSER_LICENSE = MIT
+diff --git a/package/libmad/0006-configure-ac-automake-foreign.patch b/package/libmad/0006-configure-ac-automake-foreign.patch
+new file mode 100644
+index 0000000000..828ad0c152
+--- /dev/null
++++ b/package/libmad/0006-configure-ac-automake-foreign.patch
+@@ -0,0 +1,16 @@
++configure.ac: don't require GNU-specific files when running automake
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++
++diff -ur libmad-0.15.1b-orig/configure.ac libmad-0.15.1b/configure.ac
++--- libmad-0.15.1b-orig/configure.ac	2019-01-17 21:24:52.259194527 +0100
+++++ libmad-0.15.1b/configure.ac	2019-01-17 21:25:32.779481058 +0100
++@@ -26,7 +26,7 @@
++ 
++ AC_CONFIG_SRCDIR([decoder.h])
++ 
++-AM_INIT_AUTOMAKE
+++AM_INIT_AUTOMAKE([foreign])
++ 
++ AM_CONFIG_HEADER([config.h])
++ 
+diff --git a/package/libmad/libmad.mk b/package/libmad/libmad.mk
+index 7175eaa30e..108c4f641b 100644
+--- a/package/libmad/libmad.mk
++++ b/package/libmad/libmad.mk
+@@ -13,17 +13,15 @@ LIBMAD_LICENSE_FILES = COPYING
+ LIBMAD_PATCH = \
+ 	https://sources.debian.net/data/main/libm/libmad/0.15.1b-8/debian/patches/frame_length.diff
+ 
+-define LIBMAD_PREVENT_AUTOMAKE
+-	# Prevent automake from running.
+-	(cd $(@D); touch -c config* aclocal.m4 Makefile*);
+-endef
++# Force autoreconf to be able to use a more recent libtool script, that
++# is able to properly behave in the face of a missing C++ compiler.
++LIBMAD_AUTORECONF = YES
+ 
+ define LIBMAD_INSTALL_STAGING_PC
+ 	$(INSTALL) -D package/libmad/mad.pc \
+ 		$(STAGING_DIR)/usr/lib/pkgconfig/mad.pc
+ endef
+ 
+-LIBMAD_POST_PATCH_HOOKS += LIBMAD_PREVENT_AUTOMAKE
+ LIBMAD_POST_INSTALL_STAGING_HOOKS += LIBMAD_INSTALL_STAGING_PC
+ 
+ LIBMAD_CONF_OPTS = \
+diff --git a/package/libsndfile/0001-double64_init-Check-psf-sf.channels-against-upper-bo.patch b/package/libsndfile/0001-double64_init-Check-psf-sf.channels-against-upper-bo.patch
+new file mode 100644
+index 0000000000..59ba8f85f6
+--- /dev/null
++++ b/package/libsndfile/0001-double64_init-Check-psf-sf.channels-against-upper-bo.patch
+@@ -0,0 +1,39 @@
++From 85c877d5072866aadbe8ed0c3e0590fbb5e16788 Mon Sep 17 00:00:00 2001
++From: Fabian Greffrath <fabian@greffrath.com>
++Date: Thu, 28 Sep 2017 12:15:04 +0200
++Subject: [PATCH] double64_init: Check psf->sf.channels against upper bound
++
++This prevents division by zero later in the code.
++
++While the trivial case to catch this (i.e. sf.channels < 1) has already
++been covered, a crafted file may report a number of channels that is
++so high (i.e. > INT_MAX/sizeof(double)) that it "somehow" gets
++miscalculated to zero (if this makes sense) in the determination of the
++blockwidth. Since we only support a limited number of channels anyway,
++make sure to check here as well.
++
++CVE-2017-14634
++
++Closes: https://github.com/erikd/libsndfile/issues/318
++Signed-off-by: Erik de Castro Lopo <erikd@mega-nerd.com>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/double64.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/src/double64.c b/src/double64.c
++index b318ea86..78dfef7f 100644
++--- a/src/double64.c
+++++ b/src/double64.c
++@@ -91,7 +91,7 @@ int
++ double64_init	(SF_PRIVATE *psf)
++ {	static int double64_caps ;
++ 
++-	if (psf->sf.channels < 1)
+++	if (psf->sf.channels < 1 || psf->sf.channels > SF_MAX_CHANNELS)
++ 	{	psf_log_printf (psf, "double64_init : internal error : channels = %d\n", psf->sf.channels) ;
++ 		return SFE_INTERNAL ;
++ 		} ;
++-- 
++2.11.0
++
+diff --git a/package/libsndfile/0002-Check-MAX_CHANNELS-in-sndfile-deinterleave.patch b/package/libsndfile/0002-Check-MAX_CHANNELS-in-sndfile-deinterleave.patch
+new file mode 100644
+index 0000000000..3b828de6ac
+--- /dev/null
++++ b/package/libsndfile/0002-Check-MAX_CHANNELS-in-sndfile-deinterleave.patch
+@@ -0,0 +1,36 @@
++From aaea680337267bfb6d2544da878890ee7f1c5077 Mon Sep 17 00:00:00 2001
++From: "Brett T. Warden" <brett.t.warden@intel.com>
++Date: Tue, 28 Aug 2018 12:01:17 -0700
++Subject: [PATCH] Check MAX_CHANNELS in sndfile-deinterleave
++
++Allocated buffer has space for only 16 channels. Verify that input file
++meets this limit.
++
++Fixes #397
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ programs/sndfile-deinterleave.c | 7 +++++++
++ 1 file changed, 7 insertions(+)
++
++diff --git a/programs/sndfile-deinterleave.c b/programs/sndfile-deinterleave.c
++index 53660310..225b4d54 100644
++--- a/programs/sndfile-deinterleave.c
+++++ b/programs/sndfile-deinterleave.c
++@@ -89,6 +89,13 @@ main (int argc, char **argv)
++ 		exit (1) ;
++ 		} ;
++ 
+++	if (sfinfo.channels > MAX_CHANNELS)
+++	{	printf ("\nError : Input file '%s' has too many (%d) channels. Limit is %d.\n",
+++			argv [1], sfinfo.channels, MAX_CHANNELS) ;
+++		exit (1) ;
+++		} ;
+++
+++
++ 	state.channels = sfinfo.channels ;
++ 	sfinfo.channels = 1 ;
++ 
++-- 
++2.11.0
++
+diff --git a/package/libsndfile/0003-a-ulaw-fix-multiple-buffer-overflows-432.patch b/package/libsndfile/0003-a-ulaw-fix-multiple-buffer-overflows-432.patch
+new file mode 100644
+index 0000000000..536bad2678
+--- /dev/null
++++ b/package/libsndfile/0003-a-ulaw-fix-multiple-buffer-overflows-432.patch
+@@ -0,0 +1,96 @@
++From 8ddc442d539ca775d80cdbc7af17a718634a743f Mon Sep 17 00:00:00 2001
++From: Hugo Lefeuvre <hle@owl.eu.com>
++Date: Mon, 24 Dec 2018 06:43:48 +0100
++Subject: [PATCH] a/ulaw: fix multiple buffer overflows (#432)
++
++i2ulaw_array() and i2alaw_array() fail to handle ptr [count] = INT_MIN
++properly, leading to buffer underflow. INT_MIN is a special value
++since - INT_MIN cannot be represented as int.
++
++In this case round - INT_MIN to INT_MAX and proceed as usual.
++
++f2ulaw_array() and f2alaw_array() fail to handle ptr [count] = NaN
++properly, leading to null pointer dereference.
++
++In this case, arbitrarily set the buffer value to 0.
++
++This commit fixes #429 (CVE-2018-19661 and CVE-2018-19662) and
++fixes #344 (CVE-2017-17456 and CVE-2017-17457).
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/alaw.c | 9 +++++++--
++ src/ulaw.c | 9 +++++++--
++ 2 files changed, 14 insertions(+), 4 deletions(-)
++
++diff --git a/src/alaw.c b/src/alaw.c
++index 063fd1a2..4220224c 100644
++--- a/src/alaw.c
+++++ b/src/alaw.c
++@@ -19,6 +19,7 @@
++ #include	"sfconfig.h"
++ 
++ #include	<math.h>
+++#include	<limits.h>
++ 
++ #include	"sndfile.h"
++ #include	"common.h"
++@@ -326,7 +327,9 @@ s2alaw_array (const short *ptr, int count, unsigned char *buffer)
++ static inline void
++ i2alaw_array (const int *ptr, int count, unsigned char *buffer)
++ {	while (--count >= 0)
++-	{	if (ptr [count] >= 0)
+++	{	if (ptr [count] == INT_MIN)
+++			buffer [count] = alaw_encode [INT_MAX >> (16 + 4)] ;
+++		else if (ptr [count] >= 0)
++ 			buffer [count] = alaw_encode [ptr [count] >> (16 + 4)] ;
++ 		else
++ 			buffer [count] = 0x7F & alaw_encode [- ptr [count] >> (16 + 4)] ;
++@@ -346,7 +349,9 @@ f2alaw_array (const float *ptr, int count, unsigned char *buffer, float normfact
++ static inline void
++ d2alaw_array (const double *ptr, int count, unsigned char *buffer, double normfact)
++ {	while (--count >= 0)
++-	{	if (ptr [count] >= 0)
+++	{	if (!isfinite (ptr [count]))
+++			buffer [count] = 0 ;
+++		else if (ptr [count] >= 0)
++ 			buffer [count] = alaw_encode [lrint (normfact * ptr [count])] ;
++ 		else
++ 			buffer [count] = 0x7F & alaw_encode [- lrint (normfact * ptr [count])] ;
++diff --git a/src/ulaw.c b/src/ulaw.c
++index e50b4cb5..b6070ade 100644
++--- a/src/ulaw.c
+++++ b/src/ulaw.c
++@@ -19,6 +19,7 @@
++ #include	"sfconfig.h"
++ 
++ #include	<math.h>
+++#include	<limits.h>
++ 
++ #include	"sndfile.h"
++ #include	"common.h"
++@@ -827,7 +828,9 @@ s2ulaw_array (const short *ptr, int count, unsigned char *buffer)
++ static inline void
++ i2ulaw_array (const int *ptr, int count, unsigned char *buffer)
++ {	while (--count >= 0)
++-	{	if (ptr [count] >= 0)
+++	{	if (ptr [count] == INT_MIN)
+++			buffer [count] = ulaw_encode [INT_MAX >> (16 + 2)] ;
+++		else if (ptr [count] >= 0)
++ 			buffer [count] = ulaw_encode [ptr [count] >> (16 + 2)] ;
++ 		else
++ 			buffer [count] = 0x7F & ulaw_encode [-ptr [count] >> (16 + 2)] ;
++@@ -847,7 +850,9 @@ f2ulaw_array (const float *ptr, int count, unsigned char *buffer, float normfact
++ static inline void
++ d2ulaw_array (const double *ptr, int count, unsigned char *buffer, double normfact)
++ {	while (--count >= 0)
++-	{	if (ptr [count] >= 0)
+++	{	if (!isfinite (ptr [count]))
+++			buffer [count] = 0 ;
+++		else if (ptr [count] >= 0)
++ 			buffer [count] = ulaw_encode [lrint (normfact * ptr [count])] ;
++ 		else
++ 			buffer [count] = 0x7F & ulaw_encode [- lrint (normfact * ptr [count])] ;
++-- 
++2.11.0
++
+diff --git a/package/libsquish/0001-Makefile-add-f-option-for-ln-to-remove-existing-dest.patch b/package/libsquish/0001-Makefile-add-f-option-for-ln-to-remove-existing-dest.patch
+new file mode 100644
+index 0000000000..ab9e64f0ff
+--- /dev/null
++++ b/package/libsquish/0001-Makefile-add-f-option-for-ln-to-remove-existing-dest.patch
+@@ -0,0 +1,32 @@
++From 1e541293ac19c49f886220b64de6006c5c700144 Mon Sep 17 00:00:00 2001
++From: Romain Naour <romain.naour@gmail.com>
++Date: Sat, 12 Jan 2019 12:50:54 +0100
++Subject: [PATCH] Makefile: add -f option for ln to remove existing destination
++ files
++
++While reinstalling the library, all symlinks are present.
++Ask ln to remove them with -f.
++
++Signed-off-by: Romain Naour <romain.naour@gmail.com>
++---
++ Makefile | 4 ++--
++ 1 file changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/Makefile b/Makefile
++index fd7d6c8..2683819 100644
++--- a/Makefile
+++++ b/Makefile
++@@ -25,8 +25,8 @@ install: $(LIB) $(LIBA) libsquish.pc
++ 	$(INSTALL_FILE) $(LIBA) $(INSTALL_DIR)/$(LIB_PATH)
++ ifneq ($(USE_SHARED),0)
++ 	$(INSTALL_FILE) $(LIB) $(INSTALL_DIR)/$(LIB_PATH)
++-	ln -s $(LIB) $(INSTALL_DIR)/$(LIB_PATH)/$(SOLIB)
++-	ln -s $(LIB) $(INSTALL_DIR)/$(LIB_PATH)/libsquish.so
+++	ln -sf $(LIB) $(INSTALL_DIR)/$(LIB_PATH)/$(SOLIB)
+++	ln -sf $(LIB) $(INSTALL_DIR)/$(LIB_PATH)/libsquish.so
++ 	$(INSTALL_DIRECTORY) $(INSTALL_DIR)/$(LIB_PATH)/pkgconfig
++ 	$(INSTALL_FILE) libsquish.pc $(INSTALL_DIR)/$(LIB_PATH)/pkgconfig
++ endif
++-- 
++2.14.5
++
+diff --git a/package/libsquish/Config.in b/package/libsquish/Config.in
+index eabe6c54a8..e93e97e578 100644
+--- a/package/libsquish/Config.in
++++ b/package/libsquish/Config.in
+@@ -1,7 +1,6 @@
+ config BR2_PACKAGE_LIBSQUISH
+ 	bool "libsquish"
+ 	depends on BR2_INSTALL_LIBSTDCPP
+-	depends on !BR2_STATIC_LIBS
+ 	help
+ 	  The libSquish library compresses images with the DXT standard
+ 	  (also known as S3TC). This standard is mainly used by OpenGL
+@@ -9,5 +8,5 @@ config BR2_PACKAGE_LIBSQUISH
+ 
+ 	  http://sourceforge.net/projects/libsquish
+ 
+-comment "libsquish needs a toolchain w/ C++, dynamic library"
+-	depends on !BR2_INSTALL_LIBSTDCPP || BR2_STATIC_LIBS
++comment "libsquish needs a toolchain w/ C++"
++	depends on !BR2_INSTALL_LIBSTDCPP
+diff --git a/package/libsquish/libsquish.hash b/package/libsquish/libsquish.hash
+index e68d28d66f..06c96e977b 100644
+--- a/package/libsquish/libsquish.hash
++++ b/package/libsquish/libsquish.hash
+@@ -1,3 +1,5 @@
+ # From http://sourceforge.net/projects/libsquish/files
+ sha1 51844b9a8bc815a27e2cc0ffbede5fee3ef75110 libsquish-1.15.tgz
+ md5 c02645800131e55b519ff8dbe7284f93 libsquish-1.15.tgz
++# Locally calculated
++sha256 a6b8c383bf3ab28460d6507484d605dd722e03971606f0cd3032a3af682b63a5  LICENSE.txt
+diff --git a/package/libsquish/libsquish.mk b/package/libsquish/libsquish.mk
+index 67892dd9eb..75d2cbd16a 100644
+--- a/package/libsquish/libsquish.mk
++++ b/package/libsquish/libsquish.mk
+@@ -12,26 +12,29 @@ LIBSQUISH_STRIP_COMPONENTS = 0
+ LIBSQUISH_LICENSE = MIT
+ LIBSQUISH_LICENSE_FILES = LICENSE.txt
+ 
++ifeq ($(BR2_STATIC_LIBS),y)
++LIBSQUISH_MAKE_ENV = USE_SHARED=0
++else
++LIBSQUISH_MAKE_ENV = USE_SHARED=1
++endif
++
+ define LIBSQUISH_BUILD_CMDS
+-	$(TARGET_CONFIGURE_OPTS) $(MAKE) -C $(@D)
++	$(TARGET_CONFIGURE_OPTS) $(LIBSQUISH_MAKE_ENV) $(MAKE) -C $(@D)
+ endef
+ 
+ define LIBSQUISH_INSTALL_STAGING_CMDS
+ 	mkdir -p $(STAGING_DIR)/usr/include
+ 	mkdir -p $(STAGING_DIR)/usr/lib
+-	$(TARGET_CONFIGURE_OPTS) $(MAKE) -C $(@D) \
++	$(TARGET_CONFIGURE_OPTS) $(LIBSQUISH_MAKE_ENV) $(MAKE) -C $(@D) \
+ 		install PREFIX=/usr INSTALL_DIR=$(STAGING_DIR)/usr
+ 	$(INSTALL) -D -m 644 $(@D)/libsquish.pc $(STAGING_DIR)/usr/lib/pkgconfig/libsquish.pc
+-	ln -sf libsquish.so.0.0 $(STAGING_DIR)/usr/lib/libsquish.so
+-	ln -sf libsquish.so.0.0 $(STAGING_DIR)/usr/lib/libsquish.so.0
+ endef
+ 
+ define LIBSQUISH_INSTALL_TARGET_CMDS
+ 	mkdir -p $(TARGET_DIR)/usr/include
+ 	mkdir -p $(TARGET_DIR)/usr/lib
+-	$(TARGET_CONFIGURE_OPTS) $(MAKE) -C $(@D) \
++	$(TARGET_CONFIGURE_OPTS) $(LIBSQUISH_MAKE_ENV) $(MAKE) -C $(@D) \
+ 		install PREFIX=/usr INSTALL_DIR=$(TARGET_DIR)/usr
+-	ln -sf libsquish.so.0.0 $(TARGET_DIR)/usr/lib/libsquish.so.0
+ endef
+ 
+ $(eval $(generic-package))
+diff --git a/package/liburiparser/liburiparser.hash b/package/liburiparser/liburiparser.hash
+index f71dd5cc7b..bbdb37329d 100644
+--- a/package/liburiparser/liburiparser.hash
++++ b/package/liburiparser/liburiparser.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256  ec67eb34feda8eac166f281799f03ed48387694fca44f6f5852f61f8fb535e2c  uriparser-0.9.0.tar.bz2
++sha256  75248f3de3b7b13c8c9735ff7b86ebe72cbb8ad043291517d7d53488e0893abe  uriparser-0.9.1.tar.bz2
+ sha256  ee90029e62d11f48faa59360d15c3ad8e7c094c74cc25b055716d92340da561f  COPYING
+diff --git a/package/liburiparser/liburiparser.mk b/package/liburiparser/liburiparser.mk
+index 62bc8d30d1..529f70190c 100644
+--- a/package/liburiparser/liburiparser.mk
++++ b/package/liburiparser/liburiparser.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBURIPARSER_VERSION = 0.9.0
++LIBURIPARSER_VERSION = 0.9.1
+ LIBURIPARSER_SOURCE = uriparser-$(LIBURIPARSER_VERSION).tar.bz2
+ LIBURIPARSER_SITE = https://github.com/uriparser/uriparser/releases/download/uriparser-$(LIBURIPARSER_VERSION)
+ LIBURIPARSER_LICENSE = BSD-3-Clause
+diff --git a/package/libwebsock/0002-fix-ssl.patch b/package/libwebsock/0002-fix-ssl.patch
+index 51b9b36825..f577538713 100644
+--- a/package/libwebsock/0002-fix-ssl.patch
++++ b/package/libwebsock/0002-fix-ssl.patch
+@@ -1,26 +1,21 @@
+ config: fix SSL detection
+ 
+-The @WEBSOCK_HAVE_SSL@ is not replaced at configure time, and even if
+-it was, it would be replaced by an empty string if openssl is disabled,
+-thus still defining WEBSOCK_HAVE_SSL when we would not want it.
++The @WEBSOCK_HAVE_SSL@ is replaced at configure time with either a 1 or 0.
++The rest of the code is simply checking to see if WEBSOCK_HAVE_SSL is
++defined at all. Using a #undef WEBSOCK_HAVE_SSL will cause configure
++to either comment it out or change the line to
++"#define WEBSOCK_HAVE_SSL 1".
+ 
+-Instead, rely on config.h, which is properly generated by ./configure,
+-to provide the information about whether openssl is enabled or not.
+-
+-Signed-off-by: "Yann E. MORIN" <yann.morin.1998@free.fr>
++Signed-off-by: Clayton Shotwell <clayton.shotwell@rockwellcollins.com>
+ 
+ diff -durN a/src/websock_config.h.in b/src/websock_config.h.in
+ --- a/src/websock_config.h.in
+ +++ b/src/websock_config.h.in
+-@@ -1,9 +1,10 @@
+- #ifndef WEBSOCK_CONFIG_H
+- #define WEBSOCK_CONFIG_H 1
+- 
+-+#include "config.h"
+-+
++@@ -4,6 +4,6 @@
+  #define WEBSOCK_PACKAGE_STRING @WEBSOCK_PACKAGE_STRING@
+  #define WEBSOCK_PACKAGE_VERSION @WEBSOCK_PACKAGE_VERSION@
+  #define WEBSOCK_PACKAGE_NAME @WEBSOCK_PACKAGE_NAME@
+ -#define WEBSOCK_HAVE_SSL @WEBSOCK_HAVE_SSL@
+++#undef WEBSOCK_HAVE_SSL
+  
+  #endif
+diff --git a/package/libxml2/0001-CVE-2017-8872.patch b/package/libxml2/0001-CVE-2017-8872.patch
+deleted file mode 100644
+index b7a75c19a7..0000000000
+--- a/package/libxml2/0001-CVE-2017-8872.patch
++++ /dev/null
+@@ -1,33 +0,0 @@
+-From 8b329effb610f4138e4e680f6a6867570f6d6179 Mon Sep 17 00:00:00 2001
+-From: Baruch Siach <baruch@tkos.co.il>
+-Date: Fri, 9 Feb 2018 10:58:11 +0200
+-Subject: [PATCH] CVE-2017-8872
+-
+-Taken from attachment to upstream bug report comment #9.
+-
+-https://bugzilla.gnome.org/show_bug.cgi?id=775200#c9
+-https://bugzilla.gnome.org/attachment.cgi?id=366193&action=diff
+-
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+- parser.c | 4 ++++
+- 1 file changed, 4 insertions(+)
+-
+-diff --git a/parser.c b/parser.c
+-index 1c5e036ea265..025111067ae8 100644
+---- a/parser.c
+-+++ b/parser.c
+-@@ -12467,6 +12467,10 @@ xmlHaltParser(xmlParserCtxtPtr ctxt) {
+- 	ctxt->input->cur = BAD_CAST"";
+- 	ctxt->input->base = ctxt->input->cur;
+-         ctxt->input->end = ctxt->input->cur;
+-+    if (ctxt->input->buf)
+-+        xmlBufEmpty (ctxt->input->buf->buffer);
+-+    else
+-+        ctxt->input->length = 0;
+-     }
+- }
+- 
+--- 
+-2.15.1
+-
+diff --git a/package/libxml2/libxml2.hash b/package/libxml2/libxml2.hash
+index f7e046bff6..ce8f5ef7f2 100644
+--- a/package/libxml2/libxml2.hash
++++ b/package/libxml2/libxml2.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated after checking pgp signature
+-sha256	f63c5e7d30362ed28b38bfa1ac6313f9a80230720b7fb6c80575eeab3ff5900c	libxml2-2.9.7.tar.gz
++sha256	94fb70890143e3c6549f265cee93ec064c80a84c42ad0f23e85ee1fd6540a871	libxml2-2.9.9.tar.gz
+ # License files, locally calculated
+ sha256	c5c63674f8a83c4d2e385d96d1c670a03cb871ba2927755467017317878574bd	COPYING
+diff --git a/package/libxml2/libxml2.mk b/package/libxml2/libxml2.mk
+index a6285a6946..3b3714fff1 100644
+--- a/package/libxml2/libxml2.mk
++++ b/package/libxml2/libxml2.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBXML2_VERSION = 2.9.7
++LIBXML2_VERSION = 2.9.9
+ LIBXML2_SITE = ftp://xmlsoft.org/libxml2
+ LIBXML2_INSTALL_STAGING = YES
+ LIBXML2_LICENSE = MIT
+diff --git a/package/lighttpd/lighttpd.hash b/package/lighttpd/lighttpd.hash
+index 0829c6b4c9..93581a9abb 100644
+--- a/package/lighttpd/lighttpd.hash
++++ b/package/lighttpd/lighttpd.hash
+@@ -1,4 +1,4 @@
+-# From https://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-1.4.51.sha256sum
+-sha256 2af9fdb265d1f025bfa634e13770239712ecbd585e4975b8226edf1df74e9c82  lighttpd-1.4.51.tar.xz
++# From https://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-1.4.52.sha256sum
++sha256 27bc0991c530b7c6335e6efff2181934d3c1a1c516f7401ea71d8302cefda764  lighttpd-1.4.52.tar.xz
+ # Locally calculated
+ sha256 5c98cad2fbaf5c5e2562bcbab401a7c557c1bb1bac9914ecc63730925052fb13  COPYING
+diff --git a/package/lighttpd/lighttpd.mk b/package/lighttpd/lighttpd.mk
+index 44bee6f90f..61f29d4b54 100644
+--- a/package/lighttpd/lighttpd.mk
++++ b/package/lighttpd/lighttpd.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ LIGHTTPD_VERSION_MAJOR = 1.4
+-LIGHTTPD_VERSION = $(LIGHTTPD_VERSION_MAJOR).51
++LIGHTTPD_VERSION = $(LIGHTTPD_VERSION_MAJOR).52
+ LIGHTTPD_SOURCE = lighttpd-$(LIGHTTPD_VERSION).tar.xz
+ LIGHTTPD_SITE = http://download.lighttpd.net/lighttpd/releases-$(LIGHTTPD_VERSION_MAJOR).x
+ LIGHTTPD_LICENSE = BSD-3-Clause
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index b2a27bf7fe..53701d40d8 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -250,12 +250,12 @@ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+ 	default "3.2.102"	if BR2_KERNEL_HEADERS_3_2
+ 	default "4.1.52"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.166"	if BR2_KERNEL_HEADERS_4_4
+-	default "4.9.143"	if BR2_KERNEL_HEADERS_4_9
++	default "4.4.172"	if BR2_KERNEL_HEADERS_4_4
++	default "4.9.153"	if BR2_KERNEL_HEADERS_4_9
+ 	default "4.10.17"	if BR2_KERNEL_HEADERS_4_10
+ 	default "4.11.12"	if BR2_KERNEL_HEADERS_4_11
+ 	default "4.12.14"	if BR2_KERNEL_HEADERS_4_12
+ 	default "4.13.16"	if BR2_KERNEL_HEADERS_4_13
+-	default "4.14.86"	if BR2_KERNEL_HEADERS_4_14
++	default "4.14.96"	if BR2_KERNEL_HEADERS_4_14
+ 	default "4.15.18"	if BR2_KERNEL_HEADERS_4_15
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/lm-sensors/Config.in b/package/lm-sensors/Config.in
+index 60571b784f..a2e0275999 100644
+--- a/package/lm-sensors/Config.in
++++ b/package/lm-sensors/Config.in
+@@ -25,12 +25,14 @@ config BR2_PACKAGE_LM_SENSORS_FANCONTROL
+ 
+ config BR2_PACKAGE_LM_SENSORS_ISADUMP
+ 	bool "isadump"
++	depends on BR2_i386 || BR2_x86_64
+ 	help
+ 	  Isadump is a small helper program to examine registers
+ 	  visible through the ISA bus.
+ 
+ config BR2_PACKAGE_LM_SENSORS_ISASET
+ 	bool "isaset"
++	depends on BR2_i386 || BR2_x86_64
+ 	help
+ 	  Isaset is a small helper program to set register visible
+ 	  through the ISA bus.
+diff --git a/package/lua-msgpack-native/Config.in b/package/lua-msgpack-native/Config.in
+index 3837228fa0..ad2772fb3d 100644
+--- a/package/lua-msgpack-native/Config.in
++++ b/package/lua-msgpack-native/Config.in
+@@ -8,6 +8,6 @@ config BR2_PACKAGE_LUA_MSGPACK_NATIVE
+ 
+ 	  https://github.com/kengonakajima/lua-msgpack-native
+ 
+-comment "lua-msgpack-native needs a Lua 5.1 interpreter"
++comment "lua-msgpack-native needs Lua 5.1 or LuaJIT"
+ 	depends on !BR2_PACKAGE_LUA_5_1
+ 	depends on !BR2_PACKAGE_LUAJIT
+diff --git a/package/mbedtls/mbedtls.hash b/package/mbedtls/mbedtls.hash
+index 47e446dd07..57a5aeffcb 100644
+--- a/package/mbedtls/mbedtls.hash
++++ b/package/mbedtls/mbedtls.hash
+@@ -1,5 +1,5 @@
+-# From https://tls.mbed.org/tech-updates/releases/mbedtls-2.12.0-2.7.5-and-2.1.14-released
+-sha1	180ca49e2bb6df3826113781b793529a81427ce3	mbedtls-2.7.5-apache.tgz
+-sha256	a1302ad9094aabb9880d2755927b466a6bac8e02b68e04dee77321f3859e9b40	mbedtls-2.7.5-apache.tgz
++# From https://tls.mbed.org/tech-updates/releases/mbedtls-2.16.0-2.7.9-and-2.1.18-released
++sha1	70dc65f3f6f6b2392b821163be7f1f634f0012c8	mbedtls-2.7.9-apache.tgz
++sha256	18e57260b46579245744adb79c2924194dad36aac38c2d0be9e749b9181c706f	mbedtls-2.7.9-apache.tgz
+ # Locally calculated
+ sha256	cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30	apache-2.0.txt
+diff --git a/package/mbedtls/mbedtls.mk b/package/mbedtls/mbedtls.mk
+index e07cc3d71c..4a5a731d42 100644
+--- a/package/mbedtls/mbedtls.mk
++++ b/package/mbedtls/mbedtls.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ MBEDTLS_SITE = https://tls.mbed.org/code/releases
+-MBEDTLS_VERSION = 2.7.5
++MBEDTLS_VERSION = 2.7.9
+ MBEDTLS_SOURCE = mbedtls-$(MBEDTLS_VERSION)-apache.tgz
+ MBEDTLS_CONF_OPTS = \
+ 	-DENABLE_PROGRAMS=$(if $(BR2_PACKAGE_MBEDTLS_PROGRAMS),ON,OFF) \
+diff --git a/package/mosquitto/mosquitto.hash b/package/mosquitto/mosquitto.hash
+index 96e2ae9369..831171c082 100644
+--- a/package/mosquitto/mosquitto.hash
++++ b/package/mosquitto/mosquitto.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated after checking gpg signature
+-sha256 5fd7f3454fd6d286645d032bc07f44a1c8583cec02ef2422c9eb32e0a89a9b2f  mosquitto-1.5.4.tar.gz
++sha256 fcdb47e340864c545146681af7253399cc292e41775afd76400fda5b0d23d668  mosquitto-1.5.5.tar.gz
+ 
+ # License files
+ sha256 cc77e25bafd40637b7084f04086d606f0a200051b61806f97c93405926670bc1  LICENSE.txt
+diff --git a/package/mosquitto/mosquitto.mk b/package/mosquitto/mosquitto.mk
+index d01811e5aa..8d3e250819 100644
+--- a/package/mosquitto/mosquitto.mk
++++ b/package/mosquitto/mosquitto.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MOSQUITTO_VERSION = 1.5.4
++MOSQUITTO_VERSION = 1.5.5
+ MOSQUITTO_SITE = https://mosquitto.org/files/source
+ MOSQUITTO_LICENSE = EPL-1.0 or EDLv1.0
+ MOSQUITTO_LICENSE_FILES = LICENSE.txt epl-v10 edl-v10
+diff --git a/package/netatalk/netatalk.hash b/package/netatalk/netatalk.hash
+index ce78373ae3..762fcd460e 100644
+--- a/package/netatalk/netatalk.hash
++++ b/package/netatalk/netatalk.hash
+@@ -1,3 +1,3 @@
+-# From http://sourceforge.net/projects/netatalk/files/netatalk/3.1.11/
+-md5 8f79ce2a275b128ebb07188766f088fc  netatalk-3.1.11.tar.bz2
+-sha1 5aa7900e6f7de3c7ee812aa1130c1245d1974586  netatalk-3.1.11.tar.bz2
++# From http://sourceforge.net/projects/netatalk/files/netatalk/3.1.12/
++md5 021d2330cb7f7cd2977aec46299dcc1b  netatalk-3.1.12.tar.bz2
++sha1 cc1fe1ebdbdb4da9cf82835c440e82ba28a832c5  netatalk-3.1.12.tar.bz2
+diff --git a/package/netatalk/netatalk.mk b/package/netatalk/netatalk.mk
+index 28a87509e0..1214fc3bf5 100644
+--- a/package/netatalk/netatalk.mk
++++ b/package/netatalk/netatalk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-NETATALK_VERSION = 3.1.11
++NETATALK_VERSION = 3.1.12
+ NETATALK_SITE = http://downloads.sourceforge.net/project/netatalk/netatalk/$(NETATALK_VERSION)
+ NETATALK_SOURCE = netatalk-$(NETATALK_VERSION).tar.bz2
+ # For 0001-Fix-setting-of-LD_LIBRARY_FLAGS-shlibpath_var.patch
+diff --git a/package/nodejs/nodejs.hash b/package/nodejs/nodejs.hash
+index 13a5c2daa5..5a06e5328c 100644
+--- a/package/nodejs/nodejs.hash
++++ b/package/nodejs/nodejs.hash
+@@ -1,5 +1,5 @@
+-# From https://nodejs.org/dist/v8.14.0/SHASUMS256.txt
+-sha256 8ce252913c9f6aaa9871f2d9661b6e54858dae2f0064bd3c624676edb09083c4  node-v8.14.0.tar.xz
++# From https://nodejs.org/dist/v8.15.0/SHASUMS256.txt
++sha256 968523333947cc3f769d73dedc6c9c60580826d8714bc0e62ca4589de6a7c633  node-v8.15.0.tar.xz
+ 
+ # Hash for license file
+ sha256 b87be6c1479ed977481115869c2dd8b6d59e5ea55aa09939d6c898242121b2f5  LICENSE
+diff --git a/package/nodejs/nodejs.mk b/package/nodejs/nodejs.mk
+index 27751eef0b..d266493de9 100644
+--- a/package/nodejs/nodejs.mk
++++ b/package/nodejs/nodejs.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-NODEJS_VERSION = 8.14.0
++NODEJS_VERSION = 8.15.0
+ NODEJS_SOURCE = node-v$(NODEJS_VERSION).tar.xz
+ NODEJS_SITE = http://nodejs.org/dist/v$(NODEJS_VERSION)
+ NODEJS_DEPENDENCIES = host-python host-nodejs c-ares \
+diff --git a/package/openssh/0001-fix-pam-uclibc-pthreads-clash.patch b/package/openssh/0001-fix-pam-uclibc-pthreads-clash.patch
+deleted file mode 100644
+index d9bc6e5d0c..0000000000
+--- a/package/openssh/0001-fix-pam-uclibc-pthreads-clash.patch
++++ /dev/null
+@@ -1,44 +0,0 @@
+-When PAM is enabled, openssh makes its own static versions of pthreads
+-functions.  But when built with a uclibc toolchain, pthreads.h gets
+-indirectly included.  The clashing exported and static definitions of
+-the pthreads functions then cause a compile error.  This patch fixes
+-the problem by changing the static pthread function names with macros
+-when the static functions are defined.
+-
+-Signed-off-by: Danomi Manchego <danomimanchego123@gmail.com>
+-
+-diff -urN openssh-6.1p1.orig/auth-pam.c openssh-6.1p1/auth-pam.c
+---- openssh-6.1p1.orig/auth-pam.c	2009-07-12 08:07:21.000000000 -0400
+-+++ openssh-6.1p1/auth-pam.c	2012-09-15 19:49:47.677288199 -0400
+-@@ -166,6 +166,7 @@
+- 		sigdie("PAM: authentication thread exited uncleanly");
+- }
+- 
+-+#define pthread_exit pthread_exit_AVOID_UCLIBC_PTHREAD_CLASH
+- /* ARGSUSED */
+- static void
+- pthread_exit(void *value)
+-@@ -173,6 +174,7 @@
+- 	_exit(0);
+- }
+- 
+-+#define pthread_create pthread_create_AVOID_UCLIBC_PTHREAD_CLASH
+- /* ARGSUSED */
+- static int
+- pthread_create(sp_pthread_t *thread, const void *attr,
+-@@ -200,6 +202,7 @@
+- 	}
+- }
+- 
+-+#define pthread_cancel pthread_cancel_AVOID_UCLIBC_PTHREAD_CLASH
+- static int
+- pthread_cancel(sp_pthread_t thread)
+- {
+-@@ -207,6 +210,7 @@
+- 	return (kill(thread, SIGTERM));
+- }
+- 
+-+#define pthread_join pthread_join_AVOID_UCLIBC_PTHREAD_CLASH
+- /* ARGSUSED */
+- static int
+- pthread_join(sp_pthread_t thread, void **value)
+diff --git a/package/openssh/0001-upstream-disallow-empty-incoming-filename-or-ones-th.patch b/package/openssh/0001-upstream-disallow-empty-incoming-filename-or-ones-th.patch
+new file mode 100644
+index 0000000000..2b5a958d13
+--- /dev/null
++++ b/package/openssh/0001-upstream-disallow-empty-incoming-filename-or-ones-th.patch
+@@ -0,0 +1,39 @@
++From 6010c0303a422a9c5fa8860c061bf7105eb7f8b2 Mon Sep 17 00:00:00 2001
++From: "djm@openbsd.org" <djm@openbsd.org>
++Date: Fri, 16 Nov 2018 03:03:10 +0000
++Subject: [PATCH] upstream: disallow empty incoming filename or ones that refer
++ to the
++
++current directory; based on report/patch from Harry Sintonen
++
++OpenBSD-Commit-ID: f27651b30eaee2df49540ab68d030865c04f6de9
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status (openssh-portable): commit 6010c0303a422
++
++ scp.c | 5 +++--
++ 1 file changed, 3 insertions(+), 2 deletions(-)
++
++diff --git a/scp.c b/scp.c
++index 60682c68769b..4f3fdcd3db89 100644
++--- a/scp.c
+++++ b/scp.c
++@@ -1,4 +1,4 @@
++-/* $OpenBSD: scp.c,v 1.197 2018/06/01 04:31:48 dtucker Exp $ */
+++/* $OpenBSD: scp.c,v 1.198 2018/11/16 03:03:10 djm Exp $ */
++ /*
++  * scp - secure remote copy.  This is basically patched BSD rcp which
++  * uses ssh to do the data transfer (instead of using rcmd).
++@@ -1106,7 +1106,8 @@ sink(int argc, char **argv)
++ 			SCREWUP("size out of range");
++ 		size = (off_t)ull;
++ 
++-		if ((strchr(cp, '/') != NULL) || (strcmp(cp, "..") == 0)) {
+++		if (*cp == '\0' || strchr(cp, '/') != NULL ||
+++		    strcmp(cp, ".") == 0 || strcmp(cp, "..") == 0) {
++ 			run_err("error: unexpected filename: %s", cp);
++ 			exit(1);
++ 		}
++-- 
++2.20.1
++
+diff --git a/package/openssh/0002-fix-howmany-include.patch b/package/openssh/0002-fix-howmany-include.patch
+deleted file mode 100644
+index 7a2a8e3202..0000000000
+--- a/package/openssh/0002-fix-howmany-include.patch
++++ /dev/null
+@@ -1,49 +0,0 @@
+-Update patch from 2fea21799223d41605556858a95b55e69e9960ca to openssh
+-version 6.8p1
+-
+-Signed-off-by: Gustavo Zacarias <gustavo@zacarias.com.ar>
+-
+-diff -Nura openssh-6.8p1.orig/openbsd-compat/bsd-poll.c openssh-6.8p1/openbsd-compat/bsd-poll.c
+---- openssh-6.8p1.orig/openbsd-compat/bsd-poll.c	2015-03-18 07:11:46.184620677 -0300
+-+++ openssh-6.8p1/openbsd-compat/bsd-poll.c	2015-03-18 07:12:29.120094555 -0300
+-@@ -19,6 +19,7 @@
+- #include "includes.h"
+- #if !defined(HAVE_POLL)
+- 
+-+#include <sys/param.h>
+- #include <sys/types.h>
+- #include <sys/time.h>
+- #ifdef HAVE_SYS_SELECT_H
+-diff -Nura openssh-6.8p1.orig/sshd.c openssh-6.8p1/sshd.c
+---- openssh-6.8p1.orig/sshd.c	2015-03-18 07:11:46.187620780 -0300
+-+++ openssh-6.8p1/sshd.c	2015-03-18 07:13:11.889562735 -0300
+-@@ -44,6 +44,7 @@
+- 
+- #include "includes.h"
+- 
+-+#include <sys/param.h>
+- #include <sys/types.h>
+- #include <sys/ioctl.h>
+- #include <sys/socket.h>
+-diff -Nura openssh-6.8p1.orig/ssh-keyscan.c openssh-6.8p1/ssh-keyscan.c
+---- openssh-6.8p1.orig/ssh-keyscan.c	2015-03-18 07:11:46.180620539 -0300
+-+++ openssh-6.8p1/ssh-keyscan.c	2015-03-18 07:13:32.092256248 -0300
+-@@ -9,6 +9,7 @@
+- 
+- #include "includes.h"
+-  
+-+#include <sys/param.h>
+- #include <sys/types.h>
+- #include "openbsd-compat/sys-queue.h"
+- #include <sys/resource.h>
+-diff -Nura openssh-6.8p1.orig/ssh-pkcs11-helper.c openssh-6.8p1/ssh-pkcs11-helper.c
+---- openssh-6.8p1.orig/ssh-pkcs11-helper.c	2015-03-18 07:11:46.182620608 -0300
+-+++ openssh-6.8p1/ssh-pkcs11-helper.c	2015-03-18 07:13:43.620651993 -0300
+-@@ -17,6 +17,7 @@
+- 
+- #include "includes.h"
+- 
+-+#include <sys/param.h>
+- #include <sys/types.h>
+- #ifdef HAVE_SYS_TIME_H
+- # include <sys/time.h>
+diff --git a/package/openssh/openssh.hash b/package/openssh/openssh.hash
+index 0b31f70ecc..26b143c059 100644
+--- a/package/openssh/openssh.hash
++++ b/package/openssh/openssh.hash
+@@ -1,4 +1,4 @@
+-# From http://www.openssh.com/txt/release-7.8 (base64 encoded)
+-sha256 1a484bb15152c183bb2514e112aa30dd34138c3cfb032eee5490a66c507144ca  openssh-7.8p1.tar.gz
++# From http://www.openssh.com/txt/release-7.9 (base64 encoded)
++sha256 6b4b3ba2253d84ed3771c8050728d597c91cfce898713beb7b64a305b6f11aad  openssh-7.9p1.tar.gz
+ # Locally calculated
+ sha256 05a4c25ef464e19656c5259bd4f4da8428efab01044f3541b79fbb3ff209350f  LICENCE
+diff --git a/package/openssh/openssh.mk b/package/openssh/openssh.mk
+index 45a11ee65e..07f3e0d663 100644
+--- a/package/openssh/openssh.mk
++++ b/package/openssh/openssh.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-OPENSSH_VERSION = 7.8p1
++OPENSSH_VERSION = 7.9p1
+ OPENSSH_SITE = http://ftp.openbsd.org/pub/OpenBSD/OpenSSH/portable
+ OPENSSH_LICENSE = BSD-3-Clause, BSD-2-Clause, Public Domain
+ OPENSSH_LICENSE_FILES = LICENCE
+diff --git a/package/pango/0002-Prevent-an-assertion-with-invalid-Unicode-sequences.patch b/package/pango/0002-Prevent-an-assertion-with-invalid-Unicode-sequences.patch
+new file mode 100644
+index 0000000000..010981e8b4
+--- /dev/null
++++ b/package/pango/0002-Prevent-an-assertion-with-invalid-Unicode-sequences.patch
+@@ -0,0 +1,38 @@
++From 71aaeaf020340412b8d012fe23a556c0420eda5f Mon Sep 17 00:00:00 2001
++From: Matthias Clasen <mclasen@redhat.com>
++Date: Fri, 17 Aug 2018 22:29:36 -0400
++Subject: [PATCH] Prevent an assertion with invalid Unicode sequences
++
++Invalid Unicode sequences, such as 0x2665 0xfe0e 0xfe0f,
++can trick the Emoji iter code into returning an empty
++segment, which then triggers an assertion in the itemizer.
++
++Prevent this by ensuring that we make progress.
++
++This issue was reported by Jeffrey M.
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ pango/pango-emoji.c | 6 ++++++
++ 1 file changed, 6 insertions(+)
++
++diff --git a/pango/pango-emoji.c b/pango/pango-emoji.c
++index 0e332dff..29472452 100644
++--- a/pango/pango-emoji.c
+++++ b/pango/pango-emoji.c
++@@ -253,6 +253,12 @@ _pango_emoji_iter_next (PangoEmojiIter *iter)
++     if (iter->is_emoji == PANGO_EMOJI_TYPE_IS_EMOJI (current_emoji_type))
++     {
++       iter->is_emoji = !PANGO_EMOJI_TYPE_IS_EMOJI (current_emoji_type);
+++
+++      /* Make sure we make progress.  Weird sequences, like a VC15 followed
+++       * by VC16, can trick us into stalling otherwise. */
+++      if (iter->start == iter->end)
+++        iter->end = g_utf8_next_char (iter->end);
+++
++       return TRUE;
++     }
++   }
++-- 
++2.11.0
++
+diff --git a/package/patchelf/patchelf.mk b/package/patchelf/patchelf.mk
+index 74e6cccdbe..52912e295b 100644
+--- a/package/patchelf/patchelf.mk
++++ b/package/patchelf/patchelf.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ PATCHELF_VERSION = 0.9
+-PATCHELF_SITE = http://releases.nixos.org/patchelf/patchelf-$(PATCHELF_VERSION)
++PATCHELF_SITE = https://nixos.org/releases/patchelf/patchelf-$(PATCHELF_VERSION)
+ PATCHELF_SOURCE = patchelf-$(PATCHELF_VERSION).tar.bz2
+ PATCHELF_LICENSE = GPL-3.0+
+ PATCHELF_LICENSE_FILES = COPYING
+diff --git a/package/php/php.hash b/package/php/php.hash
+index 094977c548..acbe499536 100644
+--- a/package/php/php.hash
++++ b/package/php/php.hash
+@@ -1,5 +1,5 @@
+ # From http://php.net/downloads.php
+-sha256 14b0429abdb46b65c843e5882c9a8c46b31dfbf279c747293b8ab950c2644a4b  php-7.2.13.tar.xz
++sha256 ee3f1cc102b073578a3c53ba4420a76da3d9f0c981c02b1664ae741ca65af84f  php-7.2.14.tar.xz
+ 
+ # License file
+ sha256 f689b8fa63bea7950ce6a21bf52ed88ea0d77673ee76e6de12f51191174d91b8  LICENSE
+diff --git a/package/php/php.mk b/package/php/php.mk
+index b11ee4cf4a..d140565322 100644
+--- a/package/php/php.mk
++++ b/package/php/php.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-PHP_VERSION = 7.2.13
++PHP_VERSION = 7.2.14
+ PHP_SITE = http://www.php.net/distributions
+ PHP_SOURCE = php-$(PHP_VERSION).tar.xz
+ PHP_INSTALL_STAGING = YES
+diff --git a/package/python-django/python-django.hash b/package/python-django/python-django.hash
+index 6e6e7708db..39a95f258c 100644
+--- a/package/python-django/python-django.hash
++++ b/package/python-django/python-django.hash
+@@ -1,3 +1,3 @@
+-# From https://www.djangoproject.com/m/pgp/Django-1.11.16.checksum.txt
+-sha256	29268cc47816a44f27308e60f71da635f549c47d8a1d003b28de55141df75791  Django-1.11.16.tar.gz
++# From https://www.djangoproject.com/m/pgp/Django-1.11.18.checksum.txt
++sha256  73cca1dac154e749b39cc91a54dc876109eb0512a5c6804986495305047066a5  Django-1.11.18.tar.gz
+ sha256	b846415d1b514e9c1dff14a22deb906d794bc546ca6129f950a18cd091e2a669  LICENSE
+diff --git a/package/python-django/python-django.mk b/package/python-django/python-django.mk
+index 9f43ffab85..31d9e2c92e 100644
+--- a/package/python-django/python-django.mk
++++ b/package/python-django/python-django.mk
+@@ -4,10 +4,10 @@
+ #
+ ################################################################################
+ 
+-PYTHON_DJANGO_VERSION = 1.11.16
++PYTHON_DJANGO_VERSION = 1.11.18
+ PYTHON_DJANGO_SOURCE = Django-$(PYTHON_DJANGO_VERSION).tar.gz
+ # The official Django site has an unpractical URL
+-PYTHON_DJANGO_SITE = https://files.pythonhosted.org/packages/35/1d/59836bce4c9cfded261e21c0abd6a4629de6d289522d0fd928117d8eb985
++PYTHON_DJANGO_SITE = https://files.pythonhosted.org/packages/90/84/7981bdfcfa80fe81df5325899f9fc1cbebce1fbe4fac092a32dca00d0ab2
+ PYTHON_DJANGO_LICENSE = BSD-3-Clause
+ PYTHON_DJANGO_LICENSE_FILES = LICENSE
+ PYTHON_DJANGO_SETUP_TYPE = setuptools
+diff --git a/package/python-pyyaml/python-pyyaml.hash b/package/python-pyyaml/python-pyyaml.hash
+index 209ab27e53..256742feb6 100644
+--- a/package/python-pyyaml/python-pyyaml.hash
++++ b/package/python-pyyaml/python-pyyaml.hash
+@@ -1,3 +1,3 @@
+-# md5 from https://pypi.python.org/pypi/pyyaml/json, sha256 locally computed
+-md5 4c129761b661d181ebf7ff4eb2d79950 PyYAML-3.12.tar.gz
+-sha256 592766c6303207a20efc445587778322d7f73b161bd994f227adaa341ba212ab PyYAML-3.12.tar.gz
++# md5, sha256 from https://pypi.python.org/pypi/pyyaml/json
++md5 a842bc7391e145bbe4e7fd0d32da1132 PyYAML-4.2b4.tar.gz
++sha256 3c17fb92c8ba2f525e4b5f7941d850e7a48c3a59b32d331e2502a3cdc6648e76 PyYAML-4.2b4.tar.gz
+diff --git a/package/python-pyyaml/python-pyyaml.mk b/package/python-pyyaml/python-pyyaml.mk
+index beeaf88e96..95f0f0bb9e 100644
+--- a/package/python-pyyaml/python-pyyaml.mk
++++ b/package/python-pyyaml/python-pyyaml.mk
+@@ -4,9 +4,9 @@
+ #
+ ################################################################################
+ 
+-PYTHON_PYYAML_VERSION = 3.12
++PYTHON_PYYAML_VERSION = 4.2b4
+ PYTHON_PYYAML_SOURCE = PyYAML-$(PYTHON_PYYAML_VERSION).tar.gz
+-PYTHON_PYYAML_SITE = https://pypi.python.org/packages/4a/85/db5a2df477072b2902b0eb892feb37d88ac635d36245a72a6a69b23b383a
++PYTHON_PYYAML_SITE = https://files.pythonhosted.org/packages/a8/c6/a8d1555e795dbd0375c3c93b576ca13bbf139db51ea604afa19a2c35fc03
+ PYTHON_PYYAML_SETUP_TYPE = distutils
+ PYTHON_PYYAML_LICENSE = MIT
+ PYTHON_PYYAML_LICENSE_FILES = LICENSE
+diff --git a/package/rauc/Config.in b/package/rauc/Config.in
+index 6433b827d3..456f8f382c 100644
+--- a/package/rauc/Config.in
++++ b/package/rauc/Config.in
+@@ -6,6 +6,7 @@ config BR2_PACKAGE_RAUC
+ 	select BR2_PACKAGE_LIBGLIB2
+ 	select BR2_PACKAGE_OPENSSL
+ 	select BR2_PACKAGE_DBUS # run-time dependency
++	select BR2_PACKAGE_SQUASHFS # run-time dependency
+ 	help
+ 	  RAUC is the Robust Auto-Update Controller developed by
+ 	  Pengutronix. It supports updating embedded Linux
+diff --git a/package/rp-pppoe/Config.in b/package/rp-pppoe/Config.in
+index 8a692711b9..12f981d8c7 100644
+--- a/package/rp-pppoe/Config.in
++++ b/package/rp-pppoe/Config.in
+@@ -16,4 +16,4 @@ config BR2_PACKAGE_RP_PPPOE
+ 	  devices. Otherwise the normal client functionality already
+ 	  exists in the pppd package (and kernel).
+ 
+-	  http://www.roaringpenguin.com/pppoe.html
++	  https://dianne.skoll.ca/projects/rp-pppoe/
+diff --git a/package/s6-networking/s6-networking.mk b/package/s6-networking/s6-networking.mk
+index 7c9f087051..b621eb225d 100644
+--- a/package/s6-networking/s6-networking.mk
++++ b/package/s6-networking/s6-networking.mk
+@@ -25,7 +25,7 @@ S6_NETWORKING_CONF_OPTS = \
+ 
+ ifeq ($(BR2_PACKAGE_LIBRESSL),y)
+ S6_NETWORKING_CONF_OPTS += --enable-ssl=libressl
+-S6_NETWORKING_DEPENDENCIES = libressl
++S6_NETWORKING_DEPENDENCIES += libressl
+ endif
+ 
+ define S6_NETWORKING_CONFIGURE_CMDS
+diff --git a/package/samba4/samba4.hash b/package/samba4/samba4.hash
+index 2ecea7fa5a..1671440569 100644
+--- a/package/samba4/samba4.hash
++++ b/package/samba4/samba4.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated after checking pgp signature
+-# https://download.samba.org/pub/samba/stable/samba-4.8.7.tar.asc
+-sha256 0f6f67932e8bb23ab83b43070037ac452f9fc5f20763857d2b67e209ee7cd362  samba-4.8.7.tar.gz
++# https://download.samba.org/pub/samba/stable/samba-4.8.8.tar.asc
++sha256 3bc97ba7b827526b299e09a1c410f22d3a3c57bb46f1e67e8f93258945f8cf60  samba-4.8.8.tar.gz
+ sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  COPYING
+diff --git a/package/samba4/samba4.mk b/package/samba4/samba4.mk
+index ed860fbda2..a8585f4ffb 100644
+--- a/package/samba4/samba4.mk
++++ b/package/samba4/samba4.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SAMBA4_VERSION = 4.8.7
++SAMBA4_VERSION = 4.8.8
+ SAMBA4_SITE = https://download.samba.org/pub/samba/stable
+ SAMBA4_SOURCE = samba-$(SAMBA4_VERSION).tar.gz
+ SAMBA4_INSTALL_STAGING = YES
+diff --git a/package/sdl_sound/sdl_sound.mk b/package/sdl_sound/sdl_sound.mk
+index 2544b598e9..c6028e7910 100644
+--- a/package/sdl_sound/sdl_sound.mk
++++ b/package/sdl_sound/sdl_sound.mk
+@@ -11,6 +11,11 @@ SDL_SOUND_LICENSE = LGPL-2.1+
+ SDL_SOUND_LICENSE_FILES = COPYING
+ SDL_SOUND_INSTALL_STAGING = YES
+ SDL_SOUND_DEPENDENCIES = sdl
++SDL_SOUND_CONF_OPTS = \
++	--with-sdl-prefix=$(STAGING_DIR)/usr \
++	--with-sdl-exec-prefix=$(STAGING_DIR)/usr \
++	--disable-sdltest \
++	--enable-static
+ 
+ ifneq ($(BR2_ENABLE_LOCALE),y)
+ SDL_SOUND_DEPENDENCIES += libiconv
+@@ -52,12 +57,6 @@ else
+ SDL_SOUND_CONF_OPTS += --disable-physfs
+ endif
+ 
+-SDL_SOUND_CONF_OPTS = \
+-	--with-sdl-prefix=$(STAGING_DIR)/usr \
+-	--with-sdl-exec-prefix=$(STAGING_DIR)/usr \
+-	--disable-sdltest \
+-	--enable-static
+-
+ ifeq ($(BR2_X86_CPU_HAS_MMX),y)
+ SDL_SOUND_CONF_OPTS += --enable-mmx
+ else
+diff --git a/package/shairport-sync/S99shairport-sync b/package/shairport-sync/S99shairport-sync
+index 5443ed138c..80b2fddbc6 100644
+--- a/package/shairport-sync/S99shairport-sync
++++ b/package/shairport-sync/S99shairport-sync
+@@ -6,16 +6,18 @@ OPTIONS="-d"
+ case "$1" in
+     start)
+ 	printf "Starting shairport-sync: "
+-	start-stop-daemon -S -q -p /var/run/shairport-sync.pid --exec /usr/bin/shairport-sync -- $OPTIONS
++	start-stop-daemon -S -q --exec /usr/bin/shairport-sync -- $OPTIONS
+ 	[ $? = 0 ] && echo "OK" || echo "FAIL"
+ 	;;
+     stop)
+ 	printf "Stopping shairport-sync: "
+-	start-stop-daemon -K -q -p /var/run/shairport-sync.pid
++	start-stop-daemon -K -q --exec /usr/bin/shairport-sync \
++		-p /var/run/shairport-sync/shairport-sync.pid
+ 	[ $? = 0 ] && echo "OK" || echo "FAIL"
+ 	;;
+     restart)
+ 	$0 stop
++	sleep 1
+ 	$0 start
+ 	;;
+     *)
+diff --git a/package/sqlite/sqlite.hash b/package/sqlite/sqlite.hash
+index be5820e1f8..7be42a0aca 100644
+--- a/package/sqlite/sqlite.hash
++++ b/package/sqlite/sqlite.hash
+@@ -1,6 +1,6 @@
+-# From http://www.sqlite.org/download.html
+-sha1 f56fe3407d8297fc0a68a058f4c9e6b77e83575c  sqlite-autoconf-3210000.tar.gz
++# From https://www.sqlite.org/download.html
++sha1 5d6dc7634ec59e7a6fffa8758c1e184b2522c2e5  sqlite-autoconf-3250300.tar.gz
+ # Calculated based on the hash above
+-sha256 d7dd516775005ad87a57f428b6f86afd206cb341722927f104d3f0cf65fbbbe3  sqlite-autoconf-3210000.tar.gz
++sha256 00ebf97be13928941940cc71de3d67e9f852698233cd98ce2d178fd08092f3dd  sqlite-autoconf-3250300.tar.gz
+ # Locally calculated
+ sha256 66e056b6e8687f32af30d5187611b98b12a8f46f07aaf62f43585f276e8f0ac9  tea/license.terms
+diff --git a/package/sqlite/sqlite.mk b/package/sqlite/sqlite.mk
+index 5239592f18..7ee60bf154 100644
+--- a/package/sqlite/sqlite.mk
++++ b/package/sqlite/sqlite.mk
+@@ -4,9 +4,9 @@
+ #
+ ################################################################################
+ 
+-SQLITE_VERSION = 3210000
++SQLITE_VERSION = 3250300
+ SQLITE_SOURCE = sqlite-autoconf-$(SQLITE_VERSION).tar.gz
+-SQLITE_SITE = http://www.sqlite.org/2017
++SQLITE_SITE = https://www.sqlite.org/2018
+ SQLITE_LICENSE = Public domain
+ SQLITE_LICENSE_FILES = tea/license.terms
+ SQLITE_INSTALL_STAGING = YES
+@@ -35,7 +35,10 @@ ifeq ($(BR2_PACKAGE_SQLITE_NO_SYNC),y)
+ SQLITE_CFLAGS += -DSQLITE_NO_SYNC
+ endif
+ 
+-SQLITE_CONF_ENV = CFLAGS="$(TARGET_CFLAGS) $(SQLITE_CFLAGS)"
++# fallback to standard -O3 when -Ofast is present to avoid -ffast-math
++SQLITE_CFLAGS += $(subst -Ofast,-O3,$(TARGET_CFLAGS))
++
++SQLITE_CONF_ENV = CFLAGS="$(SQLITE_CFLAGS)"
+ 
+ ifeq ($(BR2_STATIC_LIBS),y)
+ SQLITE_CONF_OPTS += --enable-dynamic-extensions=no
+@@ -47,6 +50,7 @@ ifeq ($(BR2_TOOLCHAIN_HAS_THREADS),y)
+ SQLITE_CONF_OPTS += --enable-threadsafe
+ else
+ SQLITE_CONF_OPTS += --disable-threadsafe
++SQLITE_CFLAGS += -DSQLITE_THREADSAFE=0
+ endif
+ 
+ ifeq ($(BR2_PACKAGE_NCURSES)$(BR2_PACKAGE_READLINE),yy)
+diff --git a/package/subversion/subversion.hash b/package/subversion/subversion.hash
+index 6adb57c1ae..be0c8ec931 100644
+--- a/package/subversion/subversion.hash
++++ b/package/subversion/subversion.hash
+@@ -1,4 +1,5 @@
+-# From http://subversion.apache.org/download.cgi#recommended-release
+-sha1 874b81749cdc3e88152d103243c3623ac6338388  subversion-1.9.7.tar.bz2
+-# From https://www.apache.org/dist/subversion/subversion-1.9.7.tar.bz2.sha512
+-sha512 a55efd3edaddbc099450d849fcc6fe5a8d20b85ece966d8ac2fd73ee9cb4255a0349bbcfceb4e9fca6daf054ce7c648eff8d273c6873f5dade6e62dcea7eeb2b  subversion-1.9.7.tar.bz2
++# From https://www.apache.org/dist/subversion/subversion-1.9.10.tar.bz2.sha512
++sha512 58ac11078e0e5a1720199e5c66da76e7a20b86d02edcb8d313f98e2ddc74ae70aa3e0763a7d8a8fcb5a1fd7d65186829625ff110d78028b1c447e91f420d6f48 subversion-1.9.10.tar.bz2
++
++# Locally calculated
++sha256 3202942c1aba495fd17390618dedc1d3542815c5bc11958da7fd98c985abc11a LICENSE
+diff --git a/package/subversion/subversion.mk b/package/subversion/subversion.mk
+index 55738a826d..db7e36a638 100644
+--- a/package/subversion/subversion.mk
++++ b/package/subversion/subversion.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SUBVERSION_VERSION = 1.9.7
++SUBVERSION_VERSION = 1.9.10
+ SUBVERSION_SOURCE = subversion-$(SUBVERSION_VERSION).tar.bz2
+ SUBVERSION_SITE = http://mirror.catn.com/pub/apache/subversion
+ SUBVERSION_LICENSE = Apache-2.0
+diff --git a/package/sunxi-cedarx/sunxi-cedarx.mk b/package/sunxi-cedarx/sunxi-cedarx.mk
+index 219f1bc74b..5b99f04181 100644
+--- a/package/sunxi-cedarx/sunxi-cedarx.mk
++++ b/package/sunxi-cedarx/sunxi-cedarx.mk
+@@ -19,7 +19,7 @@ SUNXI_CEDARX_BIN_DIR = $(@D)/libcedarv/linux-armel2
+ endif
+ 
+ define SUNXI_CEDARX_BUILD_AVHEAP
+-	$(TARGET_CC) $(TARGET_CFLAGS) \
++	$(TARGET_CC) $(TARGET_CFLAGS) -fPIC \
+ 		-c $(SUNXI_CEDARX_BIN_DIR)/adapter/avheap/avheap.c \
+ 		-o $(SUNXI_CEDARX_BIN_DIR)/adapter/avheap/avheap.o \
+ 		-I $(SUNXI_CEDARX_BIN_DIR)/adapter/avheap \
+diff --git a/package/tcpreplay/tcpreplay.hash b/package/tcpreplay/tcpreplay.hash
+index b033d3c3f1..31b3d3eb28 100644
+--- a/package/tcpreplay/tcpreplay.hash
++++ b/package/tcpreplay/tcpreplay.hash
+@@ -1,2 +1,5 @@
+ # Locally calculated after checking pgp signature
+-sha256 043756c532dab93e2be33a517ef46b1341f7239278a1045ae670041dd8a4531d  tcpreplay-4.2.6.tar.gz
++# https://github.com/appneta/tcpreplay/releases/download/v4.3.1/tcpreplay-4.3.1.tar.xz.asc
++# using key 84E4FA215C934A7D97DC76D5E9E2149793BDE17E
++sha256 108924a25e616e3465139410c49cae629c338df73443dfc8fc155ea9f099c659  tcpreplay-4.3.1.tar.xz
++sha256 5971b0c544622f4b210a9cc56436a970685d3b0666e373c09e3cf9304db15d05  docs/LICENSE
+diff --git a/package/tcpreplay/tcpreplay.mk b/package/tcpreplay/tcpreplay.mk
+index adccde0eb0..71e57d5bd9 100644
+--- a/package/tcpreplay/tcpreplay.mk
++++ b/package/tcpreplay/tcpreplay.mk
+@@ -4,24 +4,20 @@
+ #
+ ################################################################################
+ 
+-TCPREPLAY_VERSION = 4.2.6
++TCPREPLAY_VERSION = 4.3.1
+ TCPREPLAY_SITE = https://github.com/appneta/tcpreplay/releases/download/v$(TCPREPLAY_VERSION)
++TCPREPLAY_SOURCE = tcpreplay-4.3.1.tar.xz
+ TCPREPLAY_LICENSE = GPL-3.0
+ TCPREPLAY_LICENSE_FILES = docs/LICENSE
+ TCPREPLAY_CONF_ENV = \
+-	tr_cv_libpcap_version=">= 0.7.0" \
+-	ac_cv_have_bpf=no \
+-	$(call AUTOCONF_AC_CHECK_FILE_VAL,$(STAGING_DIR)/usr/include/pcap-netmap.c)=no
+-TCPREPLAY_CONF_OPTS = --with-libpcap=$(STAGING_DIR)/usr
++	ac_cv_path_ac_pt_PCAP_CONFIG="$(STAGING_DIR)/usr/bin/pcap-config"
++TCPREPLAY_CONF_OPTS = --with-libpcap=$(STAGING_DIR)/usr \
++	--enable-pcapconfig
+ TCPREPLAY_DEPENDENCIES = libpcap
+ 
+-# libpcap may depend on symbols in other libs
+-TCPREPLAY_LIBS = $(STAGING_DIR)/usr/bin/pcap-config --static --libs
+-TCPREPLAY_CONF_ENV += ac_cv_search_pcap_close="`$(TCPREPLAY_LIBS)`" \
+-	LIBS="`$(TCPREPLAY_LIBS)`"
+-
+ ifeq ($(BR2_STATIC_LIBS),y)
+ TCPREPLAY_CONF_OPTS += --enable-dynamic-link=no
++TCPREPLAY_CONF_ENV += LIBS="`$(STAGING_DIR)/usr/bin/pcap-config --static --libs`"
+ endif
+ 
+ ifeq ($(BR2_PACKAGE_TCPDUMP),y)
+diff --git a/package/tekui/tekui.mk b/package/tekui/tekui.mk
+index f9ae849033..3f39072527 100644
+--- a/package/tekui/tekui.mk
++++ b/package/tekui/tekui.mk
+@@ -11,6 +11,9 @@ TEKUI_LICENSE = MIT
+ TEKUI_LICENSE_FILES = COPYRIGHT
+ TEKUI_DEPENDENCIES = freetype luainterpreter
+ 
++# Package does not build in parallel due to improper make rules
++TEKUI_MAKE = $(MAKE1)
++
+ TEKUI_MAKE_OPTS = \
+ 	CC="$(TARGET_CC) -fPIC" \
+ 	AR="$(TARGET_AR) rcu" \
+diff --git a/package/usb_modeswitch/usb_modeswitch.mk b/package/usb_modeswitch/usb_modeswitch.mk
+index 719e4fe33b..0b7eb171dd 100644
+--- a/package/usb_modeswitch/usb_modeswitch.mk
++++ b/package/usb_modeswitch/usb_modeswitch.mk
+@@ -10,16 +10,16 @@ USB_MODESWITCH_SITE = http://www.draisberghof.de/usb_modeswitch
+ USB_MODESWITCH_DEPENDENCIES = libusb
+ USB_MODESWITCH_LICENSE = GPL-2.0+
+ USB_MODESWITCH_LICENSE_FILES = COPYING
+-# Package does not build in parallel due to improper make rules
++# Package does not build in parallel due to improper make rules
+ USB_MODESWITCH_MAKE = $(MAKE1)
+ 
+-USB_MODESWITCH_BUILD_TARGETS = static
+-USB_MODESWITCH_INSTALL_TARGETS = install-static
+-
+ ifeq ($(BR2_PACKAGE_TCL)$(BR2_PACKAGE_TCL_SHLIB_ONLY),y)
+ USB_MODESWITCH_DEPENDENCIES += tcl
+ USB_MODESWITCH_BUILD_TARGETS = script
+ USB_MODESWITCH_INSTALL_TARGETS = install-script
++else
++USB_MODESWITCH_BUILD_TARGETS = static
++USB_MODESWITCH_INSTALL_TARGETS = install-static
+ endif
+ 
+ # build system of embedded jimtcl doesn't use autotools, but does use
+diff --git a/package/webkitgtk/webkitgtk.mk b/package/webkitgtk/webkitgtk.mk
+index 17984be21c..f70733e21e 100644
+--- a/package/webkitgtk/webkitgtk.mk
++++ b/package/webkitgtk/webkitgtk.mk
+@@ -12,7 +12,7 @@ WEBKITGTK_LICENSE = LGPL-2.1+, BSD-2-Clause
+ WEBKITGTK_LICENSE_FILES = \
+ 	Source/WebCore/LICENSE-APPLE \
+ 	Source/WebCore/LICENSE-LGPL-2.1
+-WEBKITGTK_DEPENDENCIES = host-ruby host-flex host-bison host-gperf \
++WEBKITGTK_DEPENDENCIES = host-ruby host-python host-gperf \
+ 	enchant harfbuzz icu jpeg libgcrypt libgtk3 libsecret libsoup \
+ 	libtasn1 libxml2 libxslt sqlite webp woff2
+ WEBKITGTK_CONF_OPTS = \
+@@ -41,13 +41,9 @@ WEBKITGTK_CONF_OPTS += \
+ 	-DENABLE_WEB_AUDIO=ON
+ WEBKITGTK_DEPENDENCIES += gstreamer1 gst1-libav gst1-plugins-base gst1-plugins-good
+ else
+-# ENABLE_MEDIA_STREAM has to be explicitly disabled because there is a missing
+-# feature dependency in the WebKitGTK+ CMake files. This can be removed once
+-# https://bugs.webkit.org/show_bug.cgi?id=174940 makes it into a release.
+ WEBKITGTK_CONF_OPTS += \
+ 	-DENABLE_VIDEO=OFF \
+-	-DENABLE_WEB_AUDIO=OFF \
+-	-DENABLE_MEDIA_STREAM=OFF
++	-DENABLE_WEB_AUDIO=OFF
+ endif
+ 
+ ifeq ($(BR2_PACKAGE_WEBKITGTK_WEBDRIVER),y)
+diff --git a/package/wireshark/0001-configure.ac-do-not-assume-broken-inet_pton-in-case-.patch b/package/wireshark/0001-configure.ac-do-not-assume-broken-inet_pton-in-case-.patch
+deleted file mode 100644
+index 1e44ad0942..0000000000
+--- a/package/wireshark/0001-configure.ac-do-not-assume-broken-inet_pton-in-case-.patch
++++ /dev/null
+@@ -1,35 +0,0 @@
+-From 25d313275e87dc236e86c0e713cad08ea64253f8 Mon Sep 17 00:00:00 2001
+-From: Vicente Olivert Riera <Vincent.Riera@imgtec.com>
+-Date: Thu, 8 Sep 2016 10:58:34 +0100
+-Subject: [PATCH] configure.ac: do not assume broken inet_pton in case of cross
+- compiling
+-
+-Patch configure.ac to not assume broken inet_pton in case of cross
+-compiling.
+-
+-[Vincent: adapt the patch for 2.2.0]
+-
+-Signed-off-by: Peter Seiderer <ps.report@gmx.net>
+-Signed-off-by: Vicente Olivert Riera <Vincent.Riera@imgtec.com>
+----
+- configure.ac | 4 ++--
+- 1 file changed, 2 insertions(+), 2 deletions(-)
+-
+-diff --git a/configure.ac b/configure.ac
+-index c43e366..9672831 100644
+---- a/configure.ac
+-+++ b/configure.ac
+-@@ -2373,8 +2373,8 @@ int main()
+- #endif
+- }], [AC_MSG_RESULT(ok);
+- have_inet_pton=yes], [AC_MSG_RESULT(broken);
+--have_inet_pton=no], [AC_MSG_RESULT([cross compiling, assume it is broken]);
+--have_inet_pton=no])],
+-+have_inet_pton=no], [AC_MSG_RESULT([cross compiling, assume it is broken... not here]);
+-+have_inet_pton=yes])],
+- have_inet_pton=no)
+- if test "$have_inet_pton" = no; then
+-   AC_LIBOBJ(inet_pton)
+--- 
+-2.7.3
+-
+diff --git a/package/wireshark/0002-androiddump-add-missing-sys-time.h-header.patch b/package/wireshark/0002-androiddump-add-missing-sys-time.h-header.patch
+deleted file mode 100644
+index ae1198018a..0000000000
+--- a/package/wireshark/0002-androiddump-add-missing-sys-time.h-header.patch
++++ /dev/null
+@@ -1,35 +0,0 @@
+-From 1ab938e762ee6ebd3211c22ef25a7575e37791c4 Mon Sep 17 00:00:00 2001
+-From: Baruch Siach <baruch@tkos.co.il>
+-Date: Thu, 29 Dec 2016 20:16:53 +0200
+-Subject: [PATCH] androiddump: add missing sys/time.h header
+-
+-struct timeval requires sys/time.h. Fixes the following musl libc build error:
+-
+-androiddump.c: In function 'useSndTimeout':
+-androiddump.c:262:18: error: variable 'socket_timeout' has initializer but incomplete type
+-     const struct timeval socket_timeout = {
+-                  ^
+-
+-Change-Id: I52e204f32a012aabea2e54877e564576c072fe08
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: https://code.wireshark.org/review/19460
+----
+- extcap/androiddump.c | 1 +
+- 1 file changed, 1 insertion(+)
+-
+-diff --git a/extcap/androiddump.c b/extcap/androiddump.c
+-index 8287c4bb1a76..fab7c10e05cc 100644
+---- a/extcap/androiddump.c
+-+++ b/extcap/androiddump.c
+-@@ -30,6 +30,7 @@
+- #include <string.h>
+- #include <errno.h>
+- #include <time.h>
+-+#include <sys/time.h>
+- 
+- #ifdef HAVE_NETINET_IN_H
+- #    include <netinet/in.h>
+--- 
+-2.11.0
+-
+diff --git a/package/wireshark/Config.in b/package/wireshark/Config.in
+index 4d5a2157f2..0cf14f2f84 100644
+--- a/package/wireshark/Config.in
++++ b/package/wireshark/Config.in
+@@ -1,9 +1,11 @@
+ config BR2_PACKAGE_WIRESHARK
+ 	bool "wireshark"
++	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS # libgcrypt -> libgpg-error
+ 	depends on BR2_USE_MMU # fork(), glib2
+ 	depends on BR2_USE_WCHAR # glib2
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS # glib2
+ 	select BR2_PACKAGE_LIBPCAP
++	select BR2_PACKAGE_LIBGCRYPT
+ 	select BR2_PACKAGE_LIBGLIB2
+ 	help
+ 	  Network traffic sniffer and protocol decoder.
+@@ -28,5 +30,6 @@ config BR2_PACKAGE_WIRESHARK_GUI
+ endif # BR2_PACKAGE_WIRESHARK
+ 
+ comment "wireshark needs a toolchain w/ wchar, threads"
++	depends on BR2_PACKAGE_LIBGPG_ERROR_ARCH_SUPPORTS
+ 	depends on BR2_USE_MMU
+ 	depends on !BR2_USE_WCHAR || !BR2_TOOLCHAIN_HAS_THREADS
+diff --git a/package/wireshark/wireshark.hash b/package/wireshark/wireshark.hash
+index 8b2d7bc985..bad0a0fd45 100644
+--- a/package/wireshark/wireshark.hash
++++ b/package/wireshark/wireshark.hash
+@@ -1,4 +1,4 @@
+-# From: https://www.wireshark.org/download/src/all-versions/SIGNATURES-2.2.17.txt
+-sha256 923d39ff9c6df83b9594868542061da33bf330e12526778a8cb3adcf912eebb0  wireshark-2.2.17.tar.bz2
++# From: https://www.wireshark.org/download/src/all-versions/SIGNATURES-2.6.6.txt
++sha256 487933ea075bdbb25d8df06017d9c4f49fc20eb7f6ec80af086718ed5550e863  wireshark-2.6.6.tar.xz
+ # Locally calculated
+ sha256 7cdbed2b697efaa45576a033f1ac0e73cd045644a91c79bbf41d4a7d81dac7bf  COPYING
+diff --git a/package/wireshark/wireshark.mk b/package/wireshark/wireshark.mk
+index fb90f2b940..3b77deabb0 100644
+--- a/package/wireshark/wireshark.mk
++++ b/package/wireshark/wireshark.mk
+@@ -4,27 +4,27 @@
+ #
+ ################################################################################
+ 
+-WIRESHARK_VERSION = 2.2.17
+-WIRESHARK_SOURCE = wireshark-$(WIRESHARK_VERSION).tar.bz2
++WIRESHARK_VERSION = 2.6.6
++WIRESHARK_SOURCE = wireshark-$(WIRESHARK_VERSION).tar.xz
+ WIRESHARK_SITE = https://www.wireshark.org/download/src/all-versions
+ WIRESHARK_LICENSE = wireshark license
+ WIRESHARK_LICENSE_FILES = COPYING
+-WIRESHARK_DEPENDENCIES = host-pkgconf libpcap libglib2
++WIRESHARK_DEPENDENCIES = host-pkgconf libgcrypt libpcap libglib2
+ WIRESHARK_CONF_ENV = \
++	LIBGCRYPT_CONFIG=$(STAGING_DIR)/usr/bin/libgcrypt-config \
+ 	PCAP_CONFIG=$(STAGING_DIR)/usr/bin/pcap-config
+ 
+-# patch touching configure.ac
+-WIRESHARK_AUTORECONF = YES
+-
+-# wireshark adds -I$includedir to CFLAGS, causing host/target headers mixup.
+-# Work around it by pointing includedir at staging
+ WIRESHARK_CONF_OPTS = \
+ 	--without-krb5 \
++	--disable-guides \
+ 	--enable-static=no \
++	--without-bcg729 \
++	--without-libxml2 \
++	--without-lz4 \
++	--without-nghttp2 \
++	--without-snappy \
+ 	--with-libsmi=no \
+-	--with-lua=no \
+-	--with-pcap=$(STAGING_DIR)/usr \
+-	--includedir=$(STAGING_DIR)/usr/include
++	--with-pcap=yes
+ 
+ # wireshark GUI options
+ ifeq ($(BR2_PACKAGE_LIBGTK3),y)
+@@ -63,13 +63,6 @@ else
+ WIRESHARK_CONF_OPTS += --without-c-ares
+ endif
+ 
+-ifeq ($(BR2_PACKAGE_GEOIP),y)
+-WIRESHARK_CONF_OPTS += --with-geoip=$(STAGING_DIR)/usr
+-WIRESHARK_DEPENDENCIES += geoip
+-else
+-WIRESHARK_CONF_OPTS += --without-geoip
+-endif
+-
+ ifeq ($(BR2_PACKAGE_GNUTLS),y)
+ WIRESHARK_CONF_OPTS += --with-gnutls=yes
+ WIRESHARK_DEPENDENCIES += gnutls
+@@ -77,12 +70,11 @@ else
+ WIRESHARK_CONF_OPTS += --with-gnutls=no
+ endif
+ 
+-ifeq ($(BR2_PACKAGE_LIBGCRYPT),y)
+-WIRESHARK_CONF_ENV += LIBGCRYPT_CONFIG=$(STAGING_DIR)/usr/bin/libgcrypt-config
+-WIRESHARK_CONF_OPTS += --with-gcrypt=yes
+-WIRESHARK_DEPENDENCIES += libgcrypt
++ifeq ($(BR2_PACKAGE_LIBMAXMINDDB),y)
++WIRESHARK_CONF_OPTS += --with-maxminddb=$(STAGING_DIR)/usr
++WIRESHARK_DEPENDENCIES += libmaxminddb
+ else
+-WIRESHARK_CONF_OPTS += --with-gcrypt=no
++WIRESHARK_CONF_OPTS += --without-maxminddb
+ endif
+ 
+ ifeq ($(BR2_PACKAGE_LIBNL),y)
+@@ -92,6 +84,21 @@ else
+ WIRESHARK_CONF_OPTS += --without-libnl
+ endif
+ 
++ifeq ($(BR2_PACKAGE_LIBSSH),y)
++WIRESHARK_CONF_OPTS += --with-libssh=$(STAGING_DIR)/usr
++WIRESHARK_DEPENDENCIES += libssh
++else
++WIRESHARK_CONF_OPTS += --without-libssh
++endif
++
++# no support for lua53 yet
++ifeq ($(BR2_PACKAGE_LUA_5_1)$(BR2_PACKAGE_LUA_5_2),y)
++WIRESHARK_CONF_OPTS += --with-lua
++WIRESHARK_DEPENDENCIES += lua
++else
++WIRESHARK_CONF_OPTS += --without-lua
++endif
++
+ ifeq ($(BR2_PACKAGE_SBC),y)
+ WIRESHARK_CONF_OPTS += --with-sbc=yes
+ WIRESHARK_DEPENDENCIES += sbc
+diff --git a/package/wolfssl/wolfssl.hash b/package/wolfssl/wolfssl.hash
+index 204f2f0957..1ff9fc61d8 100644
+--- a/package/wolfssl/wolfssl.hash
++++ b/package/wolfssl/wolfssl.hash
+@@ -1,5 +1,5 @@
+ # Locally computed:
+-sha256 3bafeb0cb7eaff80002ba3f7cbb70023757bcc35fc4d82181945b143f1f927c6  v3.13.0-stable.tar.gz
++sha256 70e4fbeb91284a269b25a84fc526755c670475aee4034a6f237b1f754d108af3  v3.15.7-stable.tar.gz
+ 
+ # Hash for license files:
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  COPYING
+diff --git a/package/wolfssl/wolfssl.mk b/package/wolfssl/wolfssl.mk
+index 84073f338e..64e58ffd3b 100644
+--- a/package/wolfssl/wolfssl.mk
++++ b/package/wolfssl/wolfssl.mk
+@@ -4,9 +4,10 @@
+ #
+ ################################################################################
+ 
+-WOLFSSL_VERSION = 3.13.0
++WOLFSSL_VERSION = 3.15.7
+ WOLFSSL_SITE = https://github.com/wolfSSL/wolfssl/archive
+ WOLFSSL_SOURCE = v$(WOLFSSL_VERSION)-stable.tar.gz
++WOLFSSL_INSTALL_STAGING = YES
+ 
+ WOLFSSL_LICENSE = GPL-2.0
+ WOLFSSL_LICENSE_FILES = COPYING LICENSING
+diff --git a/package/x11r7/xapp_rgb/xapp_rgb.mk b/package/x11r7/xapp_rgb/xapp_rgb.mk
+index 82878abad0..1c467c4525 100644
+--- a/package/x11r7/xapp_rgb/xapp_rgb.mk
++++ b/package/x11r7/xapp_rgb/xapp_rgb.mk
+@@ -9,6 +9,6 @@ XAPP_RGB_SOURCE = rgb-$(XAPP_RGB_VERSION).tar.bz2
+ XAPP_RGB_SITE = http://xorg.freedesktop.org/releases/individual/app
+ XAPP_RGB_LICENSE = MIT
+ XAPP_RGB_LICENSE_FILES = COPYING
+-XAPP_RGB_DEPENDENCIES = xproto_xproto
++XAPP_RGB_DEPENDENCIES = xproto_xproto host-pkgconf
+ 
+ $(eval $(autotools-package))
+diff --git a/package/xenomai/xenomai.mk b/package/xenomai/xenomai.mk
+index 6bf08edfbc..98f550af60 100644
+--- a/package/xenomai/xenomai.mk
++++ b/package/xenomai/xenomai.mk
+@@ -24,9 +24,6 @@ XENOMAI_LICENSE_FILES = debian/copyright include/COPYING kernel/cobalt/COPYING \
+ 
+ XENOMAI_DEPENDENCIES = host-pkgconf
+ 
+-# 0002-boilerplate-build-obstack-support-conditionally.patch
+-XENOMAI_AUTORECONF = YES
+-
+ XENOMAI_INSTALL_STAGING = YES
+ XENOMAI_INSTALL_TARGET_OPTS = DESTDIR=$(TARGET_DIR) install-user
+ XENOMAI_INSTALL_STAGING_OPTS = DESTDIR=$(STAGING_DIR) install-user
+diff --git a/package/xerces/Config.in b/package/xerces/Config.in
+index 8d55a5cbc2..2edc4346b5 100644
+--- a/package/xerces/Config.in
++++ b/package/xerces/Config.in
+@@ -4,7 +4,7 @@ config BR2_PACKAGE_XERCES
+ 	help
+ 	  Xerces-C++ is a validating XML parser written in portable C++.
+ 
+-	  http://xml.apache.org/xerces-c/
++	  http://xerces.apache.org/xerces-c/
+ 
+ comment "xerces-c++ needs a toolchain w/ C++, wchar"
+ 	depends on !(BR2_INSTALL_LIBSTDCPP && BR2_USE_WCHAR)
+diff --git a/support/misc/toolchainfile.cmake.in b/support/misc/toolchainfile.cmake.in
+index 1f5d2371ed..2528446b40 100644
+--- a/support/misc/toolchainfile.cmake.in
++++ b/support/misc/toolchainfile.cmake.in
+@@ -15,6 +15,7 @@ string(REPLACE "/share/buildroot" "" RELOCATED_HOST_DIR ${CMAKE_CURRENT_LIST_DIR
+ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR})
+ 
+ set(CMAKE_SYSTEM_NAME Buildroot)
++set(CMAKE_SYSTEM_VERSION 1)
+ set(CMAKE_SYSTEM_PROCESSOR @@CMAKE_SYSTEM_PROCESSOR@@)
+ 
+ # Set the {C,CXX}FLAGS appended by CMake depending on the build type
+diff --git a/utils/check-package b/utils/check-package
+index a87a74decc..6467af6a64 100755
+--- a/utils/check-package
++++ b/utils/check-package
+@@ -5,6 +5,7 @@ from __future__ import print_function
+ import argparse
+ import inspect
+ import re
++import six
+ import sys
+ 
+ import checkpackagelib.lib_config
+@@ -103,10 +104,15 @@ def check_file_using_lib(fname):
+ 
+     for cf in objects:
+         nwarnings += print_warnings(cf.before())
+-    for lineno, text in enumerate(open(fname, "r").readlines()):
++    if six.PY3:
++        f = open(fname, "r", errors="surrogateescape")
++    else:
++        f = open(fname, "r")
++    for lineno, text in enumerate(f.readlines()):
+         nlines += 1
+         for cf in objects:
+             nwarnings += print_warnings(cf.check_line(lineno + 1, text))
++    f.close()
+     for cf in objects:
+         nwarnings += print_warnings(cf.after())
+ 
+diff --git a/utils/checkpackagelib/lib.py b/utils/checkpackagelib/lib.py
+index 91f4ad49b7..6afe1aabce 100644
+--- a/utils/checkpackagelib/lib.py
++++ b/utils/checkpackagelib/lib.py
+@@ -1,6 +1,6 @@
+ # See utils/checkpackagelib/readme.txt before editing this file.
+ 
+-from base import _CheckFunction
++from checkpackagelib.base import _CheckFunction
+ 
+ 
+ class ConsecutiveEmptyLines(_CheckFunction):
+diff --git a/utils/checkpackagelib/lib_config.py b/utils/checkpackagelib/lib_config.py
+index 11d885f8c7..f7b5d31d3a 100644
+--- a/utils/checkpackagelib/lib_config.py
++++ b/utils/checkpackagelib/lib_config.py
+@@ -5,11 +5,11 @@
+ 
+ import re
+ 
+-from base import _CheckFunction
+-from lib import ConsecutiveEmptyLines  # noqa: F401
+-from lib import EmptyLastLine          # noqa: F401
+-from lib import NewlineAtEof           # noqa: F401
+-from lib import TrailingSpace          # noqa: F401
++from checkpackagelib.base import _CheckFunction
++from checkpackagelib.lib import ConsecutiveEmptyLines  # noqa: F401
++from checkpackagelib.lib import EmptyLastLine          # noqa: F401
++from checkpackagelib.lib import NewlineAtEof           # noqa: F401
++from checkpackagelib.lib import TrailingSpace          # noqa: F401
+ 
+ 
+ def _empty_or_comment(text):
+diff --git a/utils/checkpackagelib/lib_hash.py b/utils/checkpackagelib/lib_hash.py
+index 6d4cc9fd62..3e381119a5 100644
+--- a/utils/checkpackagelib/lib_hash.py
++++ b/utils/checkpackagelib/lib_hash.py
+@@ -5,11 +5,11 @@
+ 
+ import re
+ 
+-from base import _CheckFunction
+-from lib import ConsecutiveEmptyLines  # noqa: F401
+-from lib import EmptyLastLine          # noqa: F401
+-from lib import NewlineAtEof           # noqa: F401
+-from lib import TrailingSpace          # noqa: F401
++from checkpackagelib.base import _CheckFunction
++from checkpackagelib.lib import ConsecutiveEmptyLines  # noqa: F401
++from checkpackagelib.lib import EmptyLastLine          # noqa: F401
++from checkpackagelib.lib import NewlineAtEof           # noqa: F401
++from checkpackagelib.lib import TrailingSpace          # noqa: F401
+ 
+ 
+ def _empty_line_or_comment(text):
+diff --git a/utils/checkpackagelib/lib_mk.py b/utils/checkpackagelib/lib_mk.py
+index 2df2e1a884..fa8b8f9781 100644
+--- a/utils/checkpackagelib/lib_mk.py
++++ b/utils/checkpackagelib/lib_mk.py
+@@ -6,11 +6,11 @@
+ 
+ import re
+ 
+-from base import _CheckFunction
+-from lib import ConsecutiveEmptyLines  # noqa: F401
+-from lib import EmptyLastLine          # noqa: F401
+-from lib import NewlineAtEof           # noqa: F401
+-from lib import TrailingSpace          # noqa: F401
++from checkpackagelib.base import _CheckFunction
++from checkpackagelib.lib import ConsecutiveEmptyLines  # noqa: F401
++from checkpackagelib.lib import EmptyLastLine          # noqa: F401
++from checkpackagelib.lib import NewlineAtEof           # noqa: F401
++from checkpackagelib.lib import TrailingSpace          # noqa: F401
+ 
+ 
+ class Indent(_CheckFunction):
+diff --git a/utils/checkpackagelib/lib_patch.py b/utils/checkpackagelib/lib_patch.py
+index 555621afa1..453b782e6c 100644
+--- a/utils/checkpackagelib/lib_patch.py
++++ b/utils/checkpackagelib/lib_patch.py
+@@ -5,8 +5,8 @@
+ 
+ import re
+ 
+-from base import _CheckFunction
+-from lib import NewlineAtEof           # noqa: F401
++from checkpackagelib.base import _CheckFunction
++from checkpackagelib.lib import NewlineAtEof           # noqa: F401
+ 
+ 
+ class ApplyOrder(_CheckFunction):
+diff --git a/utils/get-developers b/utils/get-developers
+index c887938859..750fc556dc 100755
+--- a/utils/get-developers
++++ b/utils/get-developers
+@@ -24,11 +24,6 @@ def parse_args():
+ 
+ 
+ def __main__():
+-    # DEVELOPERS is one level up from here
+-    devs_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
+-    devs = getdeveloperlib.parse_developers(devs_dir)
+-    if devs is None:
+-        sys.exit(1)
+     args = parse_args()
+ 
+     # Check that only one action is given
+@@ -50,9 +45,17 @@ def __main__():
+         print("No action specified")
+         return
+ 
++    # getdeveloperlib expects to be executed from the toplevel buildroot
++    # directory, which is one level up from this script
++    os.chdir(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..'))
++
++    devs = getdeveloperlib.parse_developers()
++    if devs is None:
++        sys.exit(1)
++
+     # Handle the check action
+     if args.check:
+-        files = getdeveloperlib.check_developers(devs, devs_dir)
++        files = getdeveloperlib.check_developers(devs)
+         for f in files:
+             print(f)
+ 
+diff --git a/utils/getdeveloperlib.py b/utils/getdeveloperlib.py
+index 84665520c6..2c8d477583 100644
+--- a/utils/getdeveloperlib.py
++++ b/utils/getdeveloperlib.py
+@@ -158,8 +158,6 @@ def parse_developers(basepath=None):
+     linen = 0
+     if basepath is None:
+         basepath = os.getcwd()
+-    else:
+-        basepath = os.path.abspath(basepath)
+     with open(os.path.join(basepath, "DEVELOPERS"), "r") as f:
+         files = []
+         name = None

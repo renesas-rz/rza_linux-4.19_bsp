@@ -1,0 +1,1746 @@
+diff --git a/CHANGES b/CHANGES
+index cf35c540ec..989fac414c 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,20 @@
++2018.02.9, Released December 20th, 2018
++
++	Important / security related fixes.
++
++	defconfigs: Fixes for ci20
++
++	Updated/fixed packages: c-ares, dante, freetype, ghostscript,
++	glibc, gnutls, go, libcurl, libgpgme, libid3tag, libiscsi,
++	libmpd, libopenssl, libpjsip, linux, liquid-dsp, luvi, lynx,
++	msgpack, nginx, nodejs, php, popt, pps-tools, python-numpy,
++	python-requests, samba4, sdl2_net, squashfs, swupdate, uclibc,
++	wine, webkitgtk, xfsprogs
++
++	Issues resolved (http://bugs.uclibc.org):
++
++	#11426: pps-tools bash dependency
++
+ 2018.02.8, Released November 26th, 2018
+ 
+ 	Important / security related fixes.
+diff --git a/Makefile b/Makefile
+index 989d86f132..c3695300b0 100644
+--- a/Makefile
++++ b/Makefile
+@@ -92,9 +92,9 @@ all:
+ .PHONY: all
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2018.02.8
++export BR2_VERSION := 2018.02.9
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1543272000
++BR2_VERSION_EPOCH = 1545305000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+diff --git a/board/ci20/patches/uboot/0001-mips-Remove-default-endiannes.patch b/board/ci20/patches/uboot/0001-mips-Remove-default-endiannes.patch
+new file mode 100644
+index 0000000000..a6191804f1
+--- /dev/null
++++ b/board/ci20/patches/uboot/0001-mips-Remove-default-endiannes.patch
+@@ -0,0 +1,66 @@
++From b3a1e97498e7987073775d49a703932c20f2df1d Mon Sep 17 00:00:00 2001
++From: Ezequiel Garcia <ezequiel@collabora.com>
++Date: Mon, 12 Nov 2018 14:04:46 -0300
++Subject: [PATCH] mips: Remove default endiannes
++
++Currently, trying to build ci20_mmc fails on little-endian
++toolchains. The problem seems to be that some targets don't
++have CONFIG_SYS_LITTLE_ENDIAN properly set, and therefore
++the default -EB switch is selected.
++
++Let's get rid of the default switch entirely, and fix this problem.
++While this may be a hack, it is a quick solution until
++U-Boot gets CI20 proper support.
++
++make ARCH=mips CROSS_COMPILE=mips-linux-gnu- ci20_mmc
++Configuring for ci20_mmc - Board: ci20, Options: SPL_MMC_SUPPORT,ENV_IS_IN_MMC
++make
++make[1]: Entering directory '/home/zeta/repos/u-boot-ci20'
++Generating include/autoconf.mk
++Generating include/autoconf.mk.dep
++mips-linux-gnu-gcc: error: may not use both -EB and -EL
++mips-linux-gnu-gcc: error: may not use both -EB and -EL
++Generating include/spl-autoconf.mk
++mips-linux-gnu-gcc: error: may not use both -EB and -EL
++Generating include/tpl-autoconf.mk
++mips-linux-gnu-gcc: error: may not use both -EB and -EL
++mips-linux-gnu-gcc -DDO_DEPS_ONLY \
++	-g  -Os   -ffunction-sections -fdata-sections -D__KERNEL__ -I/home/zeta/repos/u-boot-ci20/include -fno-builtin -ffreestanding -nostdinc -isystem /home/zeta/repos/buildroot/mips/output/host/opt/ext-toolchain/bin/../lib/gcc/mips-linux-gnu/5.3.0/include -pipe  -DCONFIG_MIPS -D__MIPS__ -G 0 -EB -msoft-float -fpic -mabicalls -march=mips32 -mabi=32 -DCONFIG_32BIT -mno-branch-likely -Wall -Wstrict-prototypes       \
++	-o lib/asm-offsets.s lib/asm-offsets.c -c -S
++if [ -f arch/mips/cpu/xburst/jz4780/asm-offsets.c ];then \
++	mips-linux-gnu-gcc -DDO_DEPS_ONLY \
++	-g  -Os   -ffunction-sections -fdata-sections -D__KERNEL__ -I/home/zeta/repos/u-boot-ci20/include -fno-builtin -ffreestanding -nostdinc -isystem /home/zeta/repos/buildroot/mips/output/host/opt/ext-toolchain/bin/../lib/gcc/mips-linux-gnu/5.3.0/include -pipe  -DCONFIG_MIPS -D__MIPS__ -G 0 -EB -msoft-float -fpic -mabicalls -march=mips32 -mabi=32 -DCONFIG_32BIT -mno-branch-likely -Wall -Wstrict-prototypes       \
++		-o arch/mips/cpu/xburst/jz4780/asm-offsets.s arch/mips/cpu/xburst/jz4780/asm-offsets.c -c -S; \
++else \
++	touch arch/mips/cpu/xburst/jz4780/asm-offsets.s; \
++fi
++mips-linux-gnu-gcc: error: may not use both -EB and -EL
++make[1]: *** [Makefile:747: lib/asm-offsets.s] Error 1
++make[1]: *** Waiting for unfinished jobs....
++make[1]: Leaving directory '/home/zeta/repos/u-boot-ci20'
++make: *** [.boards.depend:463: ci20_mmc] Error 2
++
++Signed-off-by: Ezequiel Garcia <ezequiel@collabora.com>
++---
++https://github.com/MIPS/CI20_u-boot/pull/19
++
++ arch/mips/config.mk | 3 ---
++ 1 file changed, 3 deletions(-)
++
++diff --git a/arch/mips/config.mk b/arch/mips/config.mk
++index c89279025507..43560abbc0e1 100644
++--- a/arch/mips/config.mk
+++++ b/arch/mips/config.mk
++@@ -20,9 +20,6 @@ ifdef CONFIG_SYS_BIG_ENDIAN
++ ENDIANNESS := -EB
++ endif
++ 
++-# Default to EB if no endianess is configured
++-ENDIANNESS ?= -EB
++-
++ PLATFORM_CPPFLAGS += -DCONFIG_MIPS -D__MIPS__
++ 
++ #
++-- 
++2.19.1
++
+diff --git a/configs/ci20_defconfig b/configs/ci20_defconfig
+index f28dd4da10..b853b70f2d 100644
+--- a/configs/ci20_defconfig
++++ b/configs/ci20_defconfig
+@@ -28,6 +28,7 @@ BR2_TARGET_UBOOT_BOARDNAME="ci20_mmc"
+ BR2_TARGET_UBOOT_CUSTOM_GIT=y
+ BR2_TARGET_UBOOT_CUSTOM_REPO_URL="https://github.com/MIPS/CI20_u-boot"
+ BR2_TARGET_UBOOT_CUSTOM_REPO_VERSION="dd3c1b95dac7d10b2ca5806f65e5c1050d7dd0fa"
++BR2_TARGET_UBOOT_PATCH="board/ci20/patches/uboot"
+ BR2_TARGET_UBOOT_FORMAT_IMG=y
+ BR2_TARGET_UBOOT_SPL=y
+ BR2_TARGET_UBOOT_SPL_NAME="spl/u-boot-spl.bin"
+diff --git a/linux/linux.mk b/linux/linux.mk
+index 38a67edcd1..f1a34d4fe0 100644
+--- a/linux/linux.mk
++++ b/linux/linux.mk
+@@ -278,6 +278,7 @@ define LINUX_KCONFIG_FIXUP_CMDS
+ 	# replaced later by the real cpio archive, and the kernel will be
+ 	# rebuilt using the linux-rebuild-with-initramfs target.
+ 	$(if $(BR2_TARGET_ROOTFS_INITRAMFS),
++		mkdir -p $(BINARIES_DIR)
+ 		touch $(BINARIES_DIR)/rootfs.cpio
+ 		$(call KCONFIG_SET_OPT,CONFIG_INITRAMFS_SOURCE,"$${BR_BINARIES_DIR}/rootfs.cpio",$(@D)/.config)
+ 		$(call KCONFIG_SET_OPT,CONFIG_INITRAMFS_ROOT_UID,0,$(@D)/.config)
+diff --git a/package/c-ares/c-ares.hash b/package/c-ares/c-ares.hash
+index 832c4dfcfb..0c665574d8 100644
+--- a/package/c-ares/c-ares.hash
++++ b/package/c-ares/c-ares.hash
+@@ -1,2 +1,5 @@
+ # Locally calculated after checking pgp signature
+ sha256 45d3c1fd29263ceec2afc8ff9cd06d5f8f889636eb4e80ce3cc7f0eaf7aadc6e c-ares-1.14.0.tar.gz
++
++# Hash for license file
++sha256 db4eb63fe09daebdf57d3f79b091bb5ee5070c0d761040e83264e648d307af4c LICENSE.md
+diff --git a/package/c-ares/c-ares.mk b/package/c-ares/c-ares.mk
+index 67254244a1..16536137a8 100644
+--- a/package/c-ares/c-ares.mk
++++ b/package/c-ares/c-ares.mk
+@@ -11,7 +11,6 @@ C_ARES_CONF_OPTS = --with-random=/dev/urandom
+ # Rebuild configure to avoid XC_CHECK_USER_CFLAGS
+ C_ARES_AUTORECONF = YES
+ C_ARES_LICENSE = MIT
+-# No standalone, use some source file
+-C_ARES_LICENSE_FILES = ares_mkquery.c
++C_ARES_LICENSE_FILES = LICENSE.md
+ 
+ $(eval $(autotools-package))
+diff --git a/package/dante/dante.mk b/package/dante/dante.mk
+index 687567e100..9471acc692 100644
+--- a/package/dante/dante.mk
++++ b/package/dante/dante.mk
+@@ -9,10 +9,10 @@ DANTE_SITE = http://www.inet.no/dante/files
+ DANTE_LICENSE = BSD-3-Clause
+ DANTE_LICENSE_FILES = LICENSE
+ 
+-# Dante uses a *VERY* old configure.ac
+-DANTE_LIBTOOL_PATCH = NO
++# 0002-compiler.m4-do-not-remove-g-flag.patch touches a m4 file
++DANTE_AUTORECONF = YES
+ 
+-DANTE_CONF_OPTS += --disable-client --disable-preload
++DANTE_CONF_OPTS += --disable-client --disable-preload --without-pam
+ 
+ define DANTE_INSTALL_CONFIG_FILE
+ 	$(INSTALL) -D -m 644 $(@D)/example/sockd.conf \
+diff --git a/package/freetype/Config.in b/package/freetype/Config.in
+index ded87388e8..06c6a8546d 100644
+--- a/package/freetype/Config.in
++++ b/package/freetype/Config.in
+@@ -3,4 +3,4 @@ config BR2_PACKAGE_FREETYPE
+ 	help
+ 	  a free, high-quality and portable font engine.
+ 
+-	  http://www.freetype.org/
++	  https://www.freetype.org/
+diff --git a/package/freetype/freetype.hash b/package/freetype/freetype.hash
+index 51d018465f..c98674c7c2 100644
+--- a/package/freetype/freetype.hash
++++ b/package/freetype/freetype.hash
+@@ -1,9 +1,9 @@
+-# From https://sourceforge.net/projects/freetype/files/freetype2/2.8.1/
+-md5	bf0a210b6fe781228fa0e4a80691a521		freetype-2.8.1.tar.bz2
+-sha1	417bb3747c4ac95b6f2652024a53fad45581fa1c	freetype-2.8.1.tar.bz2
++# From https://sourceforge.net/projects/freetype/files/freetype2/2.9.1/
++md5 60ef7d8160cd4bf8cb118ee9d65367ca freetype-2.9.1.tar.bz2
++sha1 220c82062171c513e4017c523d196933c9de4a7d freetype-2.9.1.tar.bz2
+ 
+ # Locally calculated
+-sha256	e5435f02e02d2b87bb8e4efdcaa14b1f78c9cf3ab1ed80f94b6382fb6acc7d78	freetype-2.8.1.tar.bz2
++sha256	db8d87ea720ea9d5edc5388fc7a0497bb11ba9fe972245e0f7f4c7e8b1e1e84d	freetype-2.9.1.tar.bz2
+ sha256	fd056de4196903a676208ef58cfddafc7d583d1f28fa2e44c309cf84a59e62fb	docs/LICENSE.TXT
+-sha256	4a9a548027a2c1d37788519dea833294c9c81f1ebc280e817f41f50d0c642d78	docs/FTL.TXT
++sha256	08c135755dd589039470f1fdbb400daaabaaa50d0b366d19cebff4d22986baa1	docs/FTL.TXT
+ sha256	c4120c6752c910c299e3bd9cb3a46ff262c268303ca2069b61f92f10a5656c18	docs/GPLv2.TXT
+diff --git a/package/freetype/freetype.mk b/package/freetype/freetype.mk
+index e755c82378..7167061568 100644
+--- a/package/freetype/freetype.mk
++++ b/package/freetype/freetype.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-FREETYPE_VERSION = 2.8.1
++FREETYPE_VERSION = 2.9.1
+ FREETYPE_SOURCE = freetype-$(FREETYPE_VERSION).tar.bz2
+ FREETYPE_SITE = http://download.savannah.gnu.org/releases/freetype
+ FREETYPE_INSTALL_STAGING = YES
+@@ -17,6 +17,10 @@ FREETYPE_CONFIG_SCRIPTS = freetype-config
+ HOST_FREETYPE_DEPENDENCIES = host-pkgconf
+ HOST_FREETYPE_CONF_OPTS = --without-zlib --without-bzip2 --without-png
+ 
++# since 2.9.1 needed for freetype-config install
++FREETYPE_CONF_OPTS += --enable-freetype-config
++HOST_FREETYPE_CONF_OPTS += --enable-freetype-config
++
+ ifeq ($(BR2_PACKAGE_ZLIB),y)
+ FREETYPE_DEPENDENCIES += zlib
+ FREETYPE_CONF_OPTS += --with-zlib
+diff --git a/package/ghostscript/ghostscript.hash b/package/ghostscript/ghostscript.hash
+index f8ca6c8d4e..15ef95e77a 100644
+--- a/package/ghostscript/ghostscript.hash
++++ b/package/ghostscript/ghostscript.hash
+@@ -1,5 +1,5 @@
+-# From https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs925/SHA512SUMS
+-sha512 7a1c0b7546ed523f50c1452d4a1c13fcf043d6060fc9708bbc4b543f66ecb1b619b6e71998094ac702ef44a2fd159b6523271de19b1cae352981ef51fb637651  ghostscript-9.25.tar.xz
++# From https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs926/SHA512SUMS
++sha512 3ddb83029edf32282357bf606f4045a9ac73df6543cd423cfad09158ec12ada083a0dbb5aac3b73ae24cbc6c1e9d7574257a5c1fae63ba8776fbb00150ef2a3e  ghostscript-9.26.tar.xz
+ 
+ # Hash for license file:
+ sha256 6f852249f975287b3efd43a5883875e47fa9f3125e2f1b18b5c09517ac30ecf2  LICENSE
+diff --git a/package/ghostscript/ghostscript.mk b/package/ghostscript/ghostscript.mk
+index b1f5e1edb1..357fd08c32 100644
+--- a/package/ghostscript/ghostscript.mk
++++ b/package/ghostscript/ghostscript.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-GHOSTSCRIPT_VERSION = 9.25
+-GHOSTSCRIPT_SITE = https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs925
++GHOSTSCRIPT_VERSION = 9.26
++GHOSTSCRIPT_SITE = https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs926
+ GHOSTSCRIPT_SOURCE = ghostscript-$(GHOSTSCRIPT_VERSION).tar.xz
+ GHOSTSCRIPT_LICENSE = AGPL-3.0
+ GHOSTSCRIPT_LICENSE_FILES = LICENSE
+diff --git a/package/glibc/glibc.hash b/package/glibc/glibc.hash
+index bfe40f1f96..f07cbfa19d 100644
+--- a/package/glibc/glibc.hash
++++ b/package/glibc/glibc.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated (fetched from Github)
+-sha256   acbec224e69f29c9c59c34f15f0fbb19eecf3fce347eba8bb928fac507ae86c6    glibc-glibc-2.26-175-gc5c90b480e4f21ed1d28e0e6d942b06b8d9e8bd7.tar.gz
++sha256  6c982204f990bef280359be29702143f22f41bd57491619970b70c315957812b     glibc-glibc-2.26-193-ga0bc5dd3bed4b04814047265b3bcead7ab973b87.tar.gz
+ # Locally calculated (fetched from Github)
+ sha256  5aa9adeac09727db0b8a52794186563771e74d70410e9fd86431e339953fd4bb     glibc-arc-2017.09-release.tar.gz
+diff --git a/package/glibc/glibc.mk b/package/glibc/glibc.mk
+index 2e93593b0d..3c6ad67882 100644
+--- a/package/glibc/glibc.mk
++++ b/package/glibc/glibc.mk
+@@ -10,7 +10,7 @@ GLIBC_SITE = $(call github,foss-for-synopsys-dwc-arc-processors,glibc,$(GLIBC_VE
+ else
+ # Generate version string using:
+ #   git describe --match 'glibc-*' --abbrev=40 origin/release/MAJOR.MINOR/master
+-GLIBC_VERSION = glibc-2.26-175-gc5c90b480e4f21ed1d28e0e6d942b06b8d9e8bd7
++GLIBC_VERSION = glibc-2.26-193-ga0bc5dd3bed4b04814047265b3bcead7ab973b87
+ # Upstream doesn't officially provide an https download link.
+ # There is one (https://sourceware.org/git/glibc.git) but it's not reliable,
+ # sometimes the connection times out. So use an unofficial github mirror.
+diff --git a/package/gnutls/gnutls.mk b/package/gnutls/gnutls.mk
+index 1cf1f281fa..1d8071a405 100644
+--- a/package/gnutls/gnutls.mk
++++ b/package/gnutls/gnutls.mk
+@@ -82,4 +82,11 @@ else
+ GNUTLS_CONF_OPTS += --without-zlib
+ endif
+ 
++# Provide a default CA cert location
++ifeq ($(BR2_PACKAGE_P11_KIT),y)
++GNUTLS_CONF_OPTS += --with-default-trust-store-pkcs11=pkcs11:model=p11-kit-trust
++else ifeq ($(BR2_PACKAGE_CA_CERTIFICATES),y)
++GNUTLS_CONF_OPTS += --with-default-trust-store-file=/etc/ssl/certs/ca-certificates.crt
++endif
++
+ $(eval $(autotools-package))
+diff --git a/package/go/go.hash b/package/go/go.hash
+index 445a0b7c20..ad14cd6393 100644
+--- a/package/go/go.hash
++++ b/package/go/go.hash
+@@ -1,2 +1,2 @@
+ # From https://golang.org/dl/
+-sha256	a4ab229028ed167ba1986825751463605264e44868362ca8e7accc8be057e993	go1.9.src.tar.gz
++sha256	582814fa45e8ecb0859a208e517b48aa0ad951e3b36c7fff203d834e0ef27722	go1.9.7.src.tar.gz
+diff --git a/package/go/go.mk b/package/go/go.mk
+index 23facbdd81..811e68fd49 100644
+--- a/package/go/go.mk
++++ b/package/go/go.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-GO_VERSION = 1.9
++GO_VERSION = 1.9.7
+ GO_SITE = https://storage.googleapis.com/golang
+ GO_SOURCE = go$(GO_VERSION).src.tar.gz
+ 
+diff --git a/package/libcurl/libcurl.mk b/package/libcurl/libcurl.mk
+index af82ae0c83..3dc04b15ed 100644
+--- a/package/libcurl/libcurl.mk
++++ b/package/libcurl/libcurl.mk
+@@ -46,7 +46,8 @@ LIBCURL_CONF_ENV += LD_LIBRARY_PATH=$(if $(LD_LIBRARY_PATH),$(LD_LIBRARY_PATH):)
+ LIBCURL_CONF_OPTS += --with-ssl=$(STAGING_DIR)/usr \
+ 	--with-ca-path=/etc/ssl/certs
+ else ifeq ($(BR2_PACKAGE_GNUTLS),y)
+-LIBCURL_CONF_OPTS += --with-gnutls=$(STAGING_DIR)/usr
++LIBCURL_CONF_OPTS += --with-gnutls=$(STAGING_DIR)/usr \
++	--with-ca-fallback
+ LIBCURL_DEPENDENCIES += gnutls
+ else ifeq ($(BR2_PACKAGE_LIBNSS),y)
+ LIBCURL_CONF_OPTS += --with-nss=$(STAGING_DIR)/usr
+diff --git a/package/libgpgme/libgpgme.mk b/package/libgpgme/libgpgme.mk
+index 5c46c7c561..bc3c1ce45c 100644
+--- a/package/libgpgme/libgpgme.mk
++++ b/package/libgpgme/libgpgme.mk
+@@ -12,6 +12,7 @@ LIBGPGME_LICENSE_FILES = COPYING.LESSER
+ LIBGPGME_INSTALL_STAGING = YES
+ LIBGPGME_DEPENDENCIES = libassuan libgpg-error
+ LIBGPGME_LANGUAGE_BINDINGS = cl
++LIBGPGME_CONFIG_SCRIPTS = gpgme-config
+ 
+ LIBGPGME_CONF_OPTS = \
+ 	--with-gpg-error-prefix=$(STAGING_DIR)/usr \
+diff --git a/package/libid3tag/0001-configure-automake-foreign.patch b/package/libid3tag/0001-configure-automake-foreign.patch
+new file mode 100644
+index 0000000000..8521d559f2
+--- /dev/null
++++ b/package/libid3tag/0001-configure-automake-foreign.patch
+@@ -0,0 +1,16 @@
++configure: don't require GNU-specific files when running automake
++
++Signed-off-by: "Yann E. MORIN" <yann.morin.1998@free.fr>
++
++diff -durN libid3tag-0.15.1b.orig/configure.ac libid3tag-0.15.1b/configure.ac
++--- libid3tag-0.15.1b.orig/configure.ac	2004-01-24 00:22:46.000000000 +0100
+++++ libid3tag-0.15.1b/configure.ac	2018-11-25 15:31:04.184342212 +0100
++@@ -26,7 +26,7 @@
++ 
++ AC_CONFIG_SRCDIR([id3tag.h])
++ 
++-AM_INIT_AUTOMAKE
+++AM_INIT_AUTOMAKE([foreign])
++ 
++ AM_CONFIG_HEADER([config.h])
++ 
+diff --git a/package/libid3tag/libid3tag.mk b/package/libid3tag/libid3tag.mk
+index 951ae09c77..402e154ae1 100644
+--- a/package/libid3tag/libid3tag.mk
++++ b/package/libid3tag/libid3tag.mk
+@@ -10,6 +10,9 @@ LIBID3TAG_LICENSE = GPL-2.0+
+ LIBID3TAG_LICENSE_FILES = COPYING COPYRIGHT
+ LIBID3TAG_INSTALL_STAGING = YES
+ LIBID3TAG_DEPENDENCIES = zlib
+-LIBID3TAG_LIBTOOL_PATCH = NO
++
++# Force autoreconf to be able to use a more recent libtool script, that
++# is able to properly behave in the face of a missing C++ compiler.
++LIBID3TAG_AUTORECONF = YES
+ 
+ $(eval $(autotools-package))
+diff --git a/package/libiscsi/libiscsi.mk b/package/libiscsi/libiscsi.mk
+index 6c8600829c..a34069d7bf 100644
+--- a/package/libiscsi/libiscsi.mk
++++ b/package/libiscsi/libiscsi.mk
+@@ -11,6 +11,8 @@ LIBISCSI_LICENSE_FILES = COPYING LICENCE-GPL-2.txt LICENCE-LGPL-2.1.txt
+ LIBISCSI_INSTALL_STAGING = YES
+ LIBISCSI_AUTORECONF = YES
+ 
++LIBISCSI_CONF_OPTS = --disable-werror --disable-manpages
++
+ # We need to create the m4 directory to make autoreconf work properly.
+ define LIBISCSI_CREATE_M4_DIR
+ 	mkdir -p $(@D)/m4
+diff --git a/package/libmpd/0001-Fix-build-on-archlinux-missing-include.patch b/package/libmpd/0001-Fix-build-on-archlinux-missing-include.patch
+new file mode 100644
+index 0000000000..be16eb9713
+--- /dev/null
++++ b/package/libmpd/0001-Fix-build-on-archlinux-missing-include.patch
+@@ -0,0 +1,24 @@
++From 4f946c01000fd97100e4a534b47f9c7ace0403df Mon Sep 17 00:00:00 2001
++From: QC <qball@gmpclient.org>
++Date: Thu, 9 Oct 2014 19:51:50 +0200
++Subject: [PATCH] Fix build on archlinux (missing include)
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Retrieved from:
++https://github.com/DaveDavenport/libmpd/commit/4f946c01000fd97100e4a534b47f9c7ace0403df]
++---
++ src/libmpd-internal.h | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/src/libmpd-internal.h b/src/libmpd-internal.h
++index c84c3a4..30cdc85 100644
++--- a/src/libmpd-internal.h
+++++ b/src/libmpd-internal.h
++@@ -21,6 +21,7 @@
++ #define __MPD_INTERNAL_LIB_
++ 
++ #include "libmpdclient.h"
+++#include <config.h>
++ struct _MpdData_real;
++ 
++ typedef struct _MpdData_real {
+diff --git a/package/libmpd/libmpd.hash b/package/libmpd/libmpd.hash
+index ca06c754fb..c0e5c6b3c3 100644
+--- a/package/libmpd/libmpd.hash
++++ b/package/libmpd/libmpd.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+ sha256	fe20326b0d10641f71c4673fae637bf9222a96e1712f71f170fca2fc34bf7a83	libmpd-11.8.17.tar.gz
++sha256	ab15fd526bd8dd18a9e77ebc139656bf4d33e97fc7238cd11bf60e2b9b8666c6	COPYING
+diff --git a/package/libopenssl/libopenssl.hash b/package/libopenssl/libopenssl.hash
+index 2b1e048751..83fb8bd513 100644
+--- a/package/libopenssl/libopenssl.hash
++++ b/package/libopenssl/libopenssl.hash
+@@ -1,7 +1,7 @@
+-# From https://www.openssl.org/source/openssl-1.0.2p.tar.gz.sha256
+-sha256	50a98e07b1a89eb8f6a99477f262df71c6fa7bef77df4dc83025a2845c827d00	openssl-1.0.2p.tar.gz
+-# From https://www.openssl.org/source/openssl-1.0.2p.tar.gz.sha1
+-sha1	f34b5322e92415755c7d58bf5d0d5cf37666382c				openssl-1.0.2p.tar.gz
++# From https://www.openssl.org/source/openssl-1.0.2q.tar.gz.sha256
++sha256	5744cfcbcec2b1b48629f7354203bc1e5e9b5466998bbccc5b5fcde3b18eb684	openssl-1.0.2q.tar.gz
++# From https://www.openssl.org/source/openssl-1.0.2q.tar.gz.sha1
++sha1	692f5f2f1b114f8adaadaa3e7be8cce1907f38c5				openssl-1.0.2q.tar.gz
+ # Locally computed
+ sha256	eddd8a5123748052c598214487ac178e4bfa4e31ba2ec520c70d59c8c5bfa2e9	openssl-1.0.2a-parallel-install-dirs.patch?id=c8abcbe8de5d3b6cdd68c162f398c011ff6e2d9d
+ sha256	147c3eeaad614c044749ea527cb433eae5e2d5cad34a78c6ba61cd967bfbe01f	openssl-1.0.2a-parallel-obj-headers.patch?id=c8abcbe8de5d3b6cdd68c162f398c011ff6e2d9d
+diff --git a/package/libopenssl/libopenssl.mk b/package/libopenssl/libopenssl.mk
+index d8e3dd8b56..dc15abf66a 100644
+--- a/package/libopenssl/libopenssl.mk
++++ b/package/libopenssl/libopenssl.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-LIBOPENSSL_VERSION = 1.0.2p
+-LIBOPENSSL_SITE = http://www.openssl.org/source
++LIBOPENSSL_VERSION = 1.0.2q
++LIBOPENSSL_SITE = https://www.openssl.org/source
+ LIBOPENSSL_SOURCE = openssl-$(LIBOPENSSL_VERSION).tar.gz
+ LIBOPENSSL_LICENSE = OpenSSL or SSLeay
+ LIBOPENSSL_LICENSE_FILES = LICENSE
+diff --git a/package/libpjsip/libpjsip.mk b/package/libpjsip/libpjsip.mk
+index db9e474be7..22b922586c 100644
+--- a/package/libpjsip/libpjsip.mk
++++ b/package/libpjsip/libpjsip.mk
+@@ -26,9 +26,6 @@ LIBPJSIP_CONF_ENV = \
+ 
+ LIBPJSIP_CONF_OPTS = \
+ 	--disable-sound \
+-	--disable-gsm-codec \
+-	--disable-speex-codec \
+-	--disable-speex-aec \
+ 	--disable-resample \
+ 	--disable-video \
+ 	--disable-opencore-amr \
+@@ -56,6 +53,16 @@ LIBPJSIP_CONF_OPTS = \
+ # so we want to use it.
+ LIBPJSIP_CONF_OPTS += --enable-epoll
+ 
++ifeq ($(BR2_PACKAGE_LIBGSM),y)
++LIBPJSIP_CONF_OPTS += \
++	--enable-gsm-codec \
++	--with-external-gsm
++LIBPJSIP_DEPENDENCIES += libgsm
++else
++LIBPJSIP_CONF_OPTS += \
++	--disable-gsm-codec
++endif
++
+ ifeq ($(BR2_PACKAGE_LIBOPENSSL),y)
+ LIBPJSIP_DEPENDENCIES += libopenssl
+ LIBPJSIP_CONF_OPTS += --with-ssl=$(STAGING_DIR)/usr
+@@ -63,8 +70,23 @@ else
+ LIBPJSIP_CONF_OPTS += --disable-ssl
+ endif
+ 
++ifeq ($(BR2_PACKAGE_SPEEX)$(BR2_PACKAGE_SPEEXDSP),yy)
++LIBPJSIP_CONF_OPTS += \
++	--enable-speex-aec \
++	--enable-speex-codec \
++	--with-external-speex
++LIBPJSIP_DEPENDENCIES += speex speexdsp
++else
++LIBPJSIP_CONF_OPTS += \
++	--disable-speex-aec \
++	--disable-speex-codec
++endif
++
+ ifeq ($(BR2_PACKAGE_UTIL_LINUX_LIBUUID),y)
+ LIBPJSIP_DEPENDENCIES += util-linux
+ endif
+ 
++# disable build of test binaries
++LIBPJSIP_MAKE_OPTS = lib
++
+ $(eval $(autotools-package))
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index 7145e95723..b2a27bf7fe 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -250,12 +250,12 @@ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+ 	default "3.2.102"	if BR2_KERNEL_HEADERS_3_2
+ 	default "4.1.52"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.164"	if BR2_KERNEL_HEADERS_4_4
+-	default "4.9.140"	if BR2_KERNEL_HEADERS_4_9
++	default "4.4.166"	if BR2_KERNEL_HEADERS_4_4
++	default "4.9.143"	if BR2_KERNEL_HEADERS_4_9
+ 	default "4.10.17"	if BR2_KERNEL_HEADERS_4_10
+ 	default "4.11.12"	if BR2_KERNEL_HEADERS_4_11
+ 	default "4.12.14"	if BR2_KERNEL_HEADERS_4_12
+ 	default "4.13.16"	if BR2_KERNEL_HEADERS_4_13
+-	default "4.14.83"	if BR2_KERNEL_HEADERS_4_14
++	default "4.14.86"	if BR2_KERNEL_HEADERS_4_14
+ 	default "4.15.18"	if BR2_KERNEL_HEADERS_4_15
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/liquid-dsp/liquid-dsp.mk b/package/liquid-dsp/liquid-dsp.mk
+index e3114a2d15..db67893844 100644
+--- a/package/liquid-dsp/liquid-dsp.mk
++++ b/package/liquid-dsp/liquid-dsp.mk
+@@ -32,6 +32,7 @@ endif
+ # use FFTW instead of built-in FFT
+ ifeq ($(BR2_PACKAGE_FFTW_PRECISION_SINGLE),y)
+ LIQUID_DSP_LDFLAGS += -lfftw3f
++LIQUID_DSP_DEPENDENCIES += fftw
+ endif
+ 
+ # disable altivec, it has build issues
+@@ -41,10 +42,12 @@ endif
+ 
+ ifeq ($(BR2_PACKAGE_FFTW_PRECISION_DOUBLE),y)
+ LIQUID_DSP_LDFLAGS += -lfftw3
++LIQUID_DSP_DEPENDENCIES += fftw
+ endif
+ 
+ ifeq ($(BR2_PACKAGE_FFTW_PRECISION_LONG_DOUBLE),y)
+ LIQUID_DSP_LDFLAGS += -lfftw3l
++LIQUID_DSP_DEPENDENCIES += fftw
+ endif
+ 
+ LIQUID_DSP_CONF_OPTS += \
+diff --git a/package/luvi/0002-luvi-executable-needs-to-export-symbols.patch b/package/luvi/0002-luvi-executable-needs-to-export-symbols.patch
+new file mode 100644
+index 0000000000..74b6537f9b
+--- /dev/null
++++ b/package/luvi/0002-luvi-executable-needs-to-export-symbols.patch
+@@ -0,0 +1,53 @@
++From 1ea2c1e372ab59b9a633a51f0dcefc24328528f1 Mon Sep 17 00:00:00 2001
++From: =?UTF-8?q?J=C3=B6rg=20Krause?= <joerg.krause@embedded.rocks>
++Date: Mon, 10 Sep 2018 08:18:38 +0200
++Subject: [PATCH] luvi executable needs to export symbols
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++Using CMake 3.12 running luvi fails with:
++
++```
++[string "return require('init')(...)"]:1: module 'init' not found:
++	no field package.preload['init']
++	no file './init.lua'
++	no file '/usr/share/luajit-2.0.5/init.lua'
++	no file '/usr/local/share/lua/5.1/init.lua'
++	no file '/usr/local/share/lua/5.1/init/init.lua'
++	no file '/usr/share/lua/5.1/init.lua'
++	no file '/usr/share/lua/5.1/init/init.lua'
++	no file './init.so'
++	no file '/usr/local/lib/lua/5.1/init.so'
++	no file '/usr/lib/lua/5.1/init.so'
++	no file '/usr/local/lib/lua/5.1/loadall.so'
++```
++
++Looking at link.txt for the luvi executable shows that `-rdynamic` is
++not set anymore in CMake 3.12. This has the effect, that symbols are
++missing in the `.dynsym` section.
++
++Therefore, set `ENABLE_EXPORTS` to true which set `-rdynamic` explicitly.
++
++Upstream status: b8781653dcb8815a3019a77baf4f3b7f7a255ebe
++
++Signed-off-by: Jörg Krause <joerg.krause@embedded.rocks>
++---
++ CMakeLists.txt | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/CMakeLists.txt b/CMakeLists.txt
++index e141f8e..8219d0b 100644
++--- a/CMakeLists.txt
+++++ b/CMakeLists.txt
++@@ -158,6 +158,7 @@ if("${CMAKE_SYSTEM_NAME}" MATCHES "Linux")
++ endif()
++ 
++ target_link_libraries(luvi ${LUVI_LIBRARIES} ${EXTRA_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+++set_target_properties(luvi PROPERTIES ENABLE_EXPORTS ON)
++ 
++ ###############################################################################
++ ## Installation Targets
++-- 
++2.19.1
++
+diff --git a/package/lynx/lynx.mk b/package/lynx/lynx.mk
+index a95326a14a..253f1e6d7a 100644
+--- a/package/lynx/lynx.mk
++++ b/package/lynx/lynx.mk
+@@ -10,7 +10,7 @@ LYNX_SITE = ftp://ftp.invisible-island.net/lynx/tarballs
+ LYNX_LICENSE = GPL-2.0
+ LYNX_LICENSE_FILES = COPYING
+ 
+-LYNX_DEPENDENCIES = $(TARGET_NLS_DEPENDENCIES)
++LYNX_DEPENDENCIES = host-pkgconf $(TARGET_NLS_DEPENDENCIES)
+ 
+ ifeq ($(BR2_PACKAGE_NCURSES),y)
+ LYNX_DEPENDENCIES += ncurses
+diff --git a/package/msgpack/msgpack.mk b/package/msgpack/msgpack.mk
+index 38df8f53af..abb6e2e214 100644
+--- a/package/msgpack/msgpack.mk
++++ b/package/msgpack/msgpack.mk
+@@ -9,7 +9,7 @@ MSGPACK_SITE = $(call github,msgpack,msgpack-c,cpp-$(MSGPACK_VERSION))
+ MSGPACK_LICENSE = BSL-1.0
+ MSGPACK_LICENSE_FILES = COPYING LICENSE_1_0.txt
+ MSGPACK_INSTALL_STAGING = YES
+-MSGPACK_CONF_OPTS = -DMSGPACK_BUILD_EXAMPLES=OFF
++MSGPACK_CONF_OPTS = -DMSGPACK_BUILD_EXAMPLES=OFF -DMSGPACK_BUILD_TESTS=OFF
+ 
+ ifeq ($(BR2_STATIC_LIBS),y)
+ MSGPACK_CONF_OPTS += -DMSGPACK_ENABLE_SHARED=OFF
+diff --git a/package/nginx/nginx.hash b/package/nginx/nginx.hash
+index c3e6b6a720..40dba402e2 100644
+--- a/package/nginx/nginx.hash
++++ b/package/nginx/nginx.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated after checking pgp signature
+-sha256	a3d8c67c2035808c7c0d475fffe263db8c353b11521aa7ade468b780ed826cc6	nginx-1.15.6.tar.gz
++sha256	8f22ea2f6c0e0a221b6ddc02b6428a3ff708e2ad55f9361102b1c9f4142bdf93	nginx-1.15.7.tar.gz
+ # License files, locally calculated
+ sha256	e18f05bcaad47528f8b21861d4a0fb9815ca1bbb4be946c51a51d36623758bcc	LICENSE
+diff --git a/package/nginx/nginx.mk b/package/nginx/nginx.mk
+index 5253174478..3bdd92b3f5 100644
+--- a/package/nginx/nginx.mk
++++ b/package/nginx/nginx.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-NGINX_VERSION = 1.15.6
++NGINX_VERSION = 1.15.7
+ NGINX_SITE = http://nginx.org/download
+ NGINX_LICENSE = BSD-2-Clause
+ NGINX_LICENSE_FILES = LICENSE
+diff --git a/package/nodejs/nodejs.hash b/package/nodejs/nodejs.hash
+index 8285172215..13a5c2daa5 100644
+--- a/package/nodejs/nodejs.hash
++++ b/package/nodejs/nodejs.hash
+@@ -1,5 +1,5 @@
+-# From http://nodejs.org/dist/v8.11.4/SHASUMS256.txt
+-sha256 fbce7de6d96b0bcb0db0bf77f0e6ea999b6755e6930568aedaab06847552a609  node-v8.11.4.tar.xz
++# From https://nodejs.org/dist/v8.14.0/SHASUMS256.txt
++sha256 8ce252913c9f6aaa9871f2d9661b6e54858dae2f0064bd3c624676edb09083c4  node-v8.14.0.tar.xz
+ 
+ # Hash for license file
+ sha256 b87be6c1479ed977481115869c2dd8b6d59e5ea55aa09939d6c898242121b2f5  LICENSE
+diff --git a/package/nodejs/nodejs.mk b/package/nodejs/nodejs.mk
+index 3c5e40a4d6..27751eef0b 100644
+--- a/package/nodejs/nodejs.mk
++++ b/package/nodejs/nodejs.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-NODEJS_VERSION = 8.11.4
++NODEJS_VERSION = 8.14.0
+ NODEJS_SOURCE = node-v$(NODEJS_VERSION).tar.xz
+ NODEJS_SITE = http://nodejs.org/dist/v$(NODEJS_VERSION)
+ NODEJS_DEPENDENCIES = host-python host-nodejs c-ares \
+diff --git a/package/php/0004-OPcache-flock-mechanism-is-obviously-linux-so-force-.patch b/package/php/0004-OPcache-flock-mechanism-is-obviously-linux-so-force-.patch
+index 9b530361c9..2c08437e4d 100644
+--- a/package/php/0004-OPcache-flock-mechanism-is-obviously-linux-so-force-.patch
++++ b/package/php/0004-OPcache-flock-mechanism-is-obviously-linux-so-force-.patch
+@@ -4,6 +4,8 @@ Date: Tue, 9 Aug 2016 11:52:19 +0200
+ Subject: [PATCH] OPcache: flock mechanism is obviously linux so force it.
+ 
+ Signed-off-by: Gustavo Zacarias <gustavo@zacarias.com.ar>
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++[Bernd: update for 7.2.12]
+ ---
+  ext/opcache/config.m4 | 34 ++--------------------------------
+  1 file changed, 2 insertions(+), 32 deletions(-)
+@@ -21,12 +23,12 @@ index fbb9b21..ffddc8e 100644
+ -AC_TRY_RUN([
+ -  #include <fcntl.h>
+ -  struct flock lock = { 1, 2, 3, 4, 5 };
+--  int main() { 
++-  int main() {
+ -    if(lock.l_type == 1 && lock.l_whence == 2 && lock.l_start == 3 && lock.l_len == 4) {
+ -		return 0;
+ -    }
+ -    return 1;
+--  } 
++-  }
+ -], [
+ -	flock_type=linux
+ -    AC_DEFINE([HAVE_FLOCK_LINUX], [], [Struct flock is Linux-type])
+@@ -37,15 +39,15 @@ index fbb9b21..ffddc8e 100644
+ -AC_TRY_RUN([
+ -  #include <fcntl.h>
+ -  struct flock lock = { 1, 2, 3, 4, 5 };
+--  int main() { 
++-  int main() {
+ -    if(lock.l_start == 1 && lock.l_len == 2 && lock.l_type == 4 && lock.l_whence == 5) {
+ -		return 0;
+ -    }
+ -    return 1;
+--  } 
++-  }
+ -], [
+ -	flock_type=bsd
+--    AC_DEFINE([HAVE_FLOCK_BSD], [], [Struct flock is BSD-type]) 
++-    AC_DEFINE([HAVE_FLOCK_BSD], [], [Struct flock is BSD-type])
+ -    AC_MSG_RESULT("yes")
+ -], AC_MSG_RESULT("no") )
+ +flock_type=linux
+diff --git a/package/php/0008-ext-xml-expat_compat.h-add-missing-php.h-include.patch b/package/php/0008-ext-xml-expat_compat.h-add-missing-php.h-include.patch
+deleted file mode 100644
+index daf004dcf7..0000000000
+--- a/package/php/0008-ext-xml-expat_compat.h-add-missing-php.h-include.patch
++++ /dev/null
+@@ -1,71 +0,0 @@
+-From fb1f0e17eed729204a6d5caf590715d6257dceb3 Mon Sep 17 00:00:00 2001
+-From: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
+-Date: Thu, 5 Apr 2018 22:50:00 +0200
+-Subject: [PATCH] ext/xml/expat_compat.h: add missing php.h include
+-
+-When expat support is disabled and libxml support is enabled, the
+-following part of the code in expat_compat.h gets used:
+-
+-and therefore "php".h" is included. However, when libexpat support is
+-enabled, HAVE_LIBEXPAT is defined, and therefore the following part of
+-the code is used:
+-
+-In this case, "php.h" is not included. Due to this, zend_alloc.h is
+-never included when building the ext/xmlrpc/libxmlrpc/xml_element.c
+-file, and therefore the estrdup -> _estrdup macros are never defined,
+-causing the following link time failure:
+-
+-ext/xmlrpc/libxmlrpc/xml_element.o: In function `xml_element_serialize':
+-/home/thomas/projets/php/ext/xmlrpc/libxmlrpc/xml_element.c:462: undefined reference to `efree'
+-ext/xmlrpc/libxmlrpc/xml_element.o: In function `xml_elem_entity_escape':
+-/home/thomas/projets/php/ext/xmlrpc/libxmlrpc/xml_element.c:347: undefined reference to `emalloc'
+-ext/xmlrpc/libxmlrpc/xml_element.o: In function `_xmlrpc_charHandler':
+-/home/thomas/projets/php/ext/xmlrpc/libxmlrpc/xml_element.c:646: undefined reference to `efree'
+-ext/xmlrpc/libxmlrpc/xml_element.o: In function `xml_elem_free_non_recurse':
+-/home/thomas/projets/php/ext/xmlrpc/libxmlrpc/xml_element.c:198: undefined reference to `efree'
+-/home/thomas/projets/php/ext/xmlrpc/libxmlrpc/xml_element.c:199: undefined reference to `efree'
+-/home/thomas/projets/php/ext/xmlrpc/libxmlrpc/xml_element.c:200: undefined reference to `efree'
+-/home/thomas/projets/php/ext/xmlrpc/libxmlrpc/xml_element.c:207: undefined reference to `efree'
+-ext/xmlrpc/libxmlrpc/xml_element.o: In function `xml_elem_new':
+-/home/thomas/projets/php/ext/xmlrpc/libxmlrpc/xml_element.c:263: undefined reference to `ecalloc'
+-ext/xmlrpc/libxmlrpc/xml_element.o: In function `_xmlrpc_startElement':
+-/home/thomas/projets/php/ext/xmlrpc/libxmlrpc/xml_element.c:602: undefined reference to `estrdup'
+-/home/thomas/projets/php/ext/xmlrpc/libxmlrpc/xml_element.c:607: undefined reference to `emalloc'
+-/home/thomas/projets/php/ext/xmlrpc/libxmlrpc/xml_element.c:609: undefined reference to `estrdup'
+-/home/thomas/projets/php/ext/xmlrpc/libxmlrpc/xml_element.c:610: undefined reference to `estrdup'
+-ext/xmlrpc/libxmlrpc/xml_element.o: In function `xml_elem_free_non_recurse':
+-/home/thomas/projets/php/ext/xmlrpc/libxmlrpc/xml_element.c:211: undefined reference to `efree'
+-collect2: error: ld returned 1 exit status
+-make: *** [Makefile:248: sapi/cgi/php-cgi] Error 1
+-
+-This link time failure can be produced with:
+-
+-./configure --prefix=/usr --with-libdir=/usr/lib64 --disable-all \
+-	    --without-pear --with-config-file-path=/etc --disable-phpdbg \
+-	    --disable-cli --enable-cgi --disable-fpm --enable-xmlreader \
+-	    --enable-xmlwriter --enable-libxml --enable-wddx --with-xmlrpc \
+-	    --with-libexpat-dir=/
+-
+-We fix it by including "php.h" in the HAVE_LIBEXPAT case.
+-
+-Signed-off-by: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
+-Upstream-status: https://github.com/php/php-src/pull/3212
+----
+- ext/xml/expat_compat.h | 1 +
+- 1 file changed, 1 insertion(+)
+-
+-diff --git a/ext/xml/expat_compat.h b/ext/xml/expat_compat.h
+-index ed621ab53d..29fe48a7dd 100644
+---- a/ext/xml/expat_compat.h
+-+++ b/ext/xml/expat_compat.h
+-@@ -154,6 +154,7 @@ PHP_XML_API const XML_Char *XML_ExpatVersion(void);
+- PHP_XML_API void XML_ParserFree(XML_Parser);
+- 
+- #elif defined(HAVE_LIBEXPAT)
+-+#include "php.h"
+- #include <expat.h>
+- #endif /* HAVE_LIBEXPAT */
+- 
+--- 
+-2.14.3
+-
+diff --git a/package/php/Config.ext b/package/php/Config.ext
+index 51dcbbf4a4..8406fdb79c 100644
+--- a/package/php/Config.ext
++++ b/package/php/Config.ext
+@@ -187,14 +187,15 @@ config BR2_PACKAGE_PHP_EXT_INTL
+ 	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_4_8 # icu
+ 	depends on !BR2_BINFMT_FLAT # icu
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS # icu
++	depends on !BR2_STATIC_LIBS
+ 	select BR2_PACKAGE_ICU
+ 	help
+ 	  Internationalization support
+ 
+-comment "intl support needs a toolchain w/ C++, wchar, threads, gcc >= 4.8, host gcc >= 4.8"
++comment "intl support needs a toolchain w/ C++, wchar, threads, dynamic library, gcc >= 4.8, host gcc >= 4.8"
+ 	depends on !BR2_BINFMT_FLAT
+ 	depends on !BR2_INSTALL_LIBSTDCPP || !BR2_USE_WCHAR || \
+-		!BR2_TOOLCHAIN_HAS_THREADS || \
++		!BR2_TOOLCHAIN_HAS_THREADS || BR2_STATIC_LIBS || \
+ 		!BR2_TOOLCHAIN_GCC_AT_LEAST_4_8 || \
+ 		!BR2_HOST_GCC_AT_LEAST_4_8
+ 
+diff --git a/package/php/php.hash b/package/php/php.hash
+index 2774c44d6d..094977c548 100644
+--- a/package/php/php.hash
++++ b/package/php/php.hash
+@@ -1,5 +1,5 @@
+ # From http://php.net/downloads.php
+-sha256 01c2154a3a8e3c0818acbdbc1a956832c828a0380ce6d1d14fea495ea21804f0  php-7.2.10.tar.xz
++sha256 14b0429abdb46b65c843e5882c9a8c46b31dfbf279c747293b8ab950c2644a4b  php-7.2.13.tar.xz
+ 
+ # License file
+-sha256 00e567a8d50359d93ee1f9afdd9511277660c1e70a0cbf3229f84403aa9aebb1  LICENSE
++sha256 f689b8fa63bea7950ce6a21bf52ed88ea0d77673ee76e6de12f51191174d91b8  LICENSE
+diff --git a/package/php/php.mk b/package/php/php.mk
+index f92e9b6565..b11ee4cf4a 100644
+--- a/package/php/php.mk
++++ b/package/php/php.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-PHP_VERSION = 7.2.10
++PHP_VERSION = 7.2.13
+ PHP_SITE = http://www.php.net/distributions
+ PHP_SOURCE = php-$(PHP_VERSION).tar.xz
+ PHP_INSTALL_STAGING = YES
+diff --git a/package/popt/0004-add-libiconv-to-popt.pc.patch b/package/popt/0004-add-libiconv-to-popt.pc.patch
+new file mode 100644
+index 0000000000..087a30bb7a
+--- /dev/null
++++ b/package/popt/0004-add-libiconv-to-popt.pc.patch
+@@ -0,0 +1,19 @@
++Add LTLIBICONV to popt.pc.in
++
++Add ${LTLIBICONV} to popt.pc.in so applications such as shairport-sync
++will know that they must link with -liconv when building statically
++
++Fixes:
++ - http://autobuild.buildroot.org/results/c5b0d1d2867e49c022a2ad971dd9f358ff0f3865
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++
++diff -Naurp popt-1.16-vanilla/popt.pc.in popt-1.16/popt.pc.in
++--- popt-1.16-vanilla/popt.pc.in	2018-11-22 20:26:55.735211662 +0100
+++++ popt-1.16/popt.pc.in	2018-11-22 20:34:11.371303724 +0100
++@@ -7,4 +7,5 @@ Name: popt
++ Version: @VERSION@
++ Description: popt library.
++ Libs: @POPT_PKGCONFIG_LIBS@
+++Libs.private: @LTLIBICONV@
++ Cflags: -I${includedir}
+diff --git a/package/pps-tools/pps-tools.hash b/package/pps-tools/pps-tools.hash
+index da7bce45bf..1e54c29463 100644
+--- a/package/pps-tools/pps-tools.hash
++++ b/package/pps-tools/pps-tools.hash
+@@ -1,2 +1,2 @@
+ # Locally calculated
+-sha256 eee0a76118cf11d94f575ee43804a6991379f2c734b400ba01ac4811d0498e97  pps-tools-47333f24af878f67ce48022e8af16419713aa1ac.tar.gz
++sha256 1168f1474235017af413afdb07288303ad7a7b12a0282f3bf9ed0e22fe0d7d2e  pps-tools-e2b25049df9a4da28168b7378016f1650d0dfa6b.tar.gz
+diff --git a/package/pps-tools/pps-tools.mk b/package/pps-tools/pps-tools.mk
+index 37bb7e1f8c..2d82cf7dad 100644
+--- a/package/pps-tools/pps-tools.mk
++++ b/package/pps-tools/pps-tools.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-PPS_TOOLS_VERSION = 47333f24af878f67ce48022e8af16419713aa1ac
++PPS_TOOLS_VERSION = e2b25049df9a4da28168b7378016f1650d0dfa6b
+ PPS_TOOLS_SITE = $(call github,ago,pps-tools,$(PPS_TOOLS_VERSION))
+ PPS_TOOLS_INSTALL_STAGING = YES
+ PPS_TOOLS_LICENSE = GPL-2.0+
+diff --git a/package/python-numpy/python-numpy.mk b/package/python-numpy/python-numpy.mk
+index d0d38371a3..14671ae2da 100644
+--- a/package/python-numpy/python-numpy.mk
++++ b/package/python-numpy/python-numpy.mk
+@@ -14,6 +14,8 @@ PYTHON_NUMPY_SETUP_TYPE = setuptools
+ ifeq ($(BR2_PACKAGE_CLAPACK),y)
+ PYTHON_NUMPY_DEPENDENCIES += clapack
+ PYTHON_NUMPY_SITE_CFG_LIBS += blas lapack
++else
++PYTHON_NUMPY_ENV += BLAS=None LAPACK=None
+ endif
+ 
+ PYTHON_NUMPY_BUILD_OPTS = --fcompiler=None
+diff --git a/package/python-requests/python-requests.hash b/package/python-requests/python-requests.hash
+index 2f182ea3bd..e3b77744af 100644
+--- a/package/python-requests/python-requests.hash
++++ b/package/python-requests/python-requests.hash
+@@ -1,3 +1,5 @@
+-# md5 from https://pypi.python.org/pypi/requests/json, sha256 locally computed
+-md5	40f723ed01dddeaf990d0609d073f021  requests-2.18.1.tar.gz
+-sha256	c6f3bdf4a4323ac7b45d01e04a6f6c20e32a052cd04de81e05103abc049ad9b9  requests-2.18.1.tar.gz
++# md5, sha256 from https://pypi.org/pypi/requests/json
++md5	2918817ea4688f4ea21cb4b11e353448  requests-2.20.1.tar.gz
++sha256	ea881206e59f41dbd0bd445437d792e43906703fff75ca8ff43ccdb11f33f263  requests-2.20.1.tar.gz
++# Locally computed sha256 checksums
++sha256	be41abac2c40f8530307e8d172c590b476f4a488bc6a68f8de57b7cf64786687  LICENSE
+diff --git a/package/python-requests/python-requests.mk b/package/python-requests/python-requests.mk
+index 504eb8d0ad..0c327759b0 100644
+--- a/package/python-requests/python-requests.mk
++++ b/package/python-requests/python-requests.mk
+@@ -4,9 +4,9 @@
+ #
+ ################################################################################
+ 
+-PYTHON_REQUESTS_VERSION = 2.18.1
++PYTHON_REQUESTS_VERSION = 2.20.1
+ PYTHON_REQUESTS_SOURCE = requests-$(PYTHON_REQUESTS_VERSION).tar.gz
+-PYTHON_REQUESTS_SITE = https://pypi.python.org/packages/2c/b5/2b6e8ef8dd18203b6399e9f28c7d54f6de7b7549853fe36d575bd31e29a7
++PYTHON_REQUESTS_SITE = https://files.pythonhosted.org/packages/40/35/298c36d839547b50822985a2cf0611b3b978a5ab7a5af5562b8ebe3e1369
+ PYTHON_REQUESTS_SETUP_TYPE = setuptools
+ PYTHON_REQUESTS_LICENSE = Apache-2.0
+ PYTHON_REQUESTS_LICENSE_FILES = LICENSE
+diff --git a/package/samba4/0001-libreplace-disable-libbsd-support.patch b/package/samba4/0001-libreplace-disable-libbsd-support.patch
+index 4794cb02fd..ae46c447fd 100644
+--- a/package/samba4/0001-libreplace-disable-libbsd-support.patch
++++ b/package/samba4/0001-libreplace-disable-libbsd-support.patch
+@@ -9,17 +9,17 @@ This causes redefinition conflicts for link(2) when both standard
+ unistd.h and bsd/unistd.h get included.
+ 
+ Signed-off-by: Gustavo Zacarias <gustavo@zacarias.com.ar>
+-(rebased for versions 4.7.3 & 4.8.0)
++[Bernd: rebased for versions 4.7.3, 4.8.0 & 4.8.5]
+ Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+ ---
+- lib/replace/wscript | 12 ------------
+- 1 file changed, 12 deletions(-)
++ lib/replace/wscript | 15 ---------------
++ 1 file changed, 15 deletions(-)
+ 
+ diff --git a/lib/replace/wscript b/lib/replace/wscript
+-index 1dfd902..456be9b 100644
++index 6c7de5953f0..ac230d719f7 100644
+ --- a/lib/replace/wscript
+ +++ b/lib/replace/wscript
+-@@ -296,21 +296,6 @@
++@@ -304,21 +304,6 @@ def configure(conf):
+  
+      strlcpy_in_bsd = False
+  
+@@ -42,5 +42,5 @@ index 1dfd902..456be9b 100644
+                  struct ucred cred;
+                  socklen_t cred_len;
+ -- 
+-2.7.3
++2.18.0
+ 
+diff --git a/package/samba4/0004-Disable-build-of-manpages-and-documentation.patch b/package/samba4/0004-Disable-build-of-manpages-and-documentation.patch
+index 41a06801c7..ad8712634e 100644
+--- a/package/samba4/0004-Disable-build-of-manpages-and-documentation.patch
++++ b/package/samba4/0004-Disable-build-of-manpages-and-documentation.patch
+@@ -19,12 +19,13 @@ the build of manpages and documentation.
+ Patch was downloaded from
+ https://github.com/LibreELEC/LibreELEC.tv/blob/master/packages/network/samba/patches/samba-950-no-man.patch
+ 
++[Bernd: rebased for samba-4.8.5]
+ Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+ ---
+- buildtools/wafsamba/wafsamba.py | 10 +++++-----
+- docs-xml/wscript_build          | 34 +++++++++++++++++-----------------
++ buildtools/wafsamba/wafsamba.py | 10 ++++-----
++ docs-xml/wscript_build          | 40 ++++++++++++++++-----------------
+  source4/scripting/wscript_build |  4 ++--
+- 3 files changed, 24 insertions(+), 24 deletions(-)
++ 3 files changed, 27 insertions(+), 27 deletions(-)
+ 
+ diff --git a/buildtools/wafsamba/wafsamba.py b/buildtools/wafsamba/wafsamba.py
+ index 4bb19d070e2..a255d841111 100644
+@@ -55,10 +56,10 @@ index 4bb19d070e2..a255d841111 100644
+  Build.BuildContext.SAMBA_BINARY = SAMBA_BINARY
+  
+ diff --git a/docs-xml/wscript_build b/docs-xml/wscript_build
+-index 954c62a29bc..1169158fd57 100644
++index ec5d28fc62a..f81c125bcd4 100644
+ --- a/docs-xml/wscript_build
+ +++ b/docs-xml/wscript_build
+-@@ -147,20 +147,20 @@ bld.SAMBA_GENERATOR(parameter_all,
++@@ -148,23 +148,23 @@ bld.SAMBA_GENERATOR(parameter_all,
+                      rule=smbdotconf_generate_parameter_list,
+                      dep_vars=bld.dynconfig_varnames())
+  
+@@ -77,6 +78,9 @@ index 954c62a29bc..1169158fd57 100644
+ -    if bld.CONFIG_SET('HAVE_KRB5_LOCATE_PLUGIN_H'):
+ -        bld.SAMBAMANPAGES(krb5_locator_manpages)
+ -
++-    if bld.CONFIG_SET('HAVE_KRB5_LOCALAUTH_PLUGIN_H'):
++-        bld.SAMBAMANPAGES(krb5_localauth_manpages)
++-
+ -    if bld.SAMBA3_IS_ENABLED_MODULE('vfs_zfsacl'):
+ -        bld.SAMBAMANPAGES('manpages/vfs_zfsacl.8')
+ +#def SMBDOTCONF_MANPAGE(bld, target):
+@@ -94,6 +98,9 @@ index 954c62a29bc..1169158fd57 100644
+ +#    if bld.CONFIG_SET('HAVE_KRB5_LOCATE_PLUGIN_H'):
+ +#        bld.SAMBAMANPAGES(krb5_locator_manpages)
+ +#
+++#    if bld.CONFIG_SET('HAVE_KRB5_LOCALAUTH_PLUGIN_H'):
+++#        bld.SAMBAMANPAGES(krb5_localauth_manpages)
+++#
+ +#    if bld.SAMBA3_IS_ENABLED_MODULE('vfs_zfsacl'):
+ +#        bld.SAMBAMANPAGES('manpages/vfs_zfsacl.8')
+ diff --git a/source4/scripting/wscript_build b/source4/scripting/wscript_build
+@@ -112,5 +119,5 @@ index 2f53cce12b7..9841ae0a116 100644
+  if bld.CONFIG_SET('AD_DC_BUILD_IS_ENABLED'):
+      bld.INSTALL_FILES('${BINDIR}',
+ -- 
+-2.14.4
++2.18.0
+ 
+diff --git a/package/samba4/samba4.hash b/package/samba4/samba4.hash
+index 00c8466078..2ecea7fa5a 100644
+--- a/package/samba4/samba4.hash
++++ b/package/samba4/samba4.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated after checking pgp signature
+-# https://download.samba.org/pub/samba/stable/samba-4.8.4.tar.asc
+-sha256 f5044d149e01894a08b1d114b8b69aed78171a7bb19608bd1fd771453b9a5406  samba-4.8.4.tar.gz
++# https://download.samba.org/pub/samba/stable/samba-4.8.7.tar.asc
++sha256 0f6f67932e8bb23ab83b43070037ac452f9fc5f20763857d2b67e209ee7cd362  samba-4.8.7.tar.gz
+ sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  COPYING
+diff --git a/package/samba4/samba4.mk b/package/samba4/samba4.mk
+index 83a02d54e6..ed860fbda2 100644
+--- a/package/samba4/samba4.mk
++++ b/package/samba4/samba4.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SAMBA4_VERSION = 4.8.4
++SAMBA4_VERSION = 4.8.7
+ SAMBA4_SITE = https://download.samba.org/pub/samba/stable
+ SAMBA4_SOURCE = samba-$(SAMBA4_VERSION).tar.gz
+ SAMBA4_INSTALL_STAGING = YES
+diff --git a/package/sdl2_net/sdl2_net.mk b/package/sdl2_net/sdl2_net.mk
+index 2fa4a8c2e0..93bf3a2eb3 100644
+--- a/package/sdl2_net/sdl2_net.mk
++++ b/package/sdl2_net/sdl2_net.mk
+@@ -10,6 +10,6 @@ SDL2_NET_SITE = http://www.libsdl.org/projects/SDL_net/release
+ SDL2_NET_LICENSE = Zlib
+ SDL2_NET_LICENSE_FILES = COPYING.txt
+ SDL2_NET_INSTALL_STAGING = YES
+-SDL2_NET_DEPENDENCIES = sdl2
++SDL2_NET_DEPENDENCIES = sdl2 host-pkgconf
+ 
+ $(eval $(autotools-package))
+diff --git a/package/squashfs/Config.in b/package/squashfs/Config.in
+index 70c0fc9808..b4d7becda3 100644
+--- a/package/squashfs/Config.in
++++ b/package/squashfs/Config.in
+@@ -2,7 +2,13 @@ config BR2_PACKAGE_SQUASHFS
+ 	bool "squashfs"
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS
+ 	depends on BR2_USE_MMU # fork()
+-	select BR2_PACKAGE_SQUASHFS_GZIP if !(BR2_PACKAGE_SQUASHFS_LZMA || BR2_PACKAGE_SQUASHFS_LZO)
++	# ensure at least on compression backend (defaults to gzip)
++	select BR2_PACKAGE_SQUASHFS_GZIP if !( \
++	       BR2_PACKAGE_SQUASHFS_LZ4 || \
++	       BR2_PACKAGE_SQUASHFS_LZMA || \
++	       BR2_PACKAGE_SQUASHFS_LZO || \
++	       BR2_PACKAGE_SQUASHFS_XZ || \
++	       BR2_PACKAGE_SQUASHFS_ZSTD)
+ 	help
+ 	  Tools to generate SquashFS filesystems.
+ 
+diff --git a/package/swupdate/0001-compat.h-introduce-compatibility-header.patch b/package/swupdate/0001-compat.h-introduce-compatibility-header.patch
+deleted file mode 100644
+index 5e3bfb0f49..0000000000
+--- a/package/swupdate/0001-compat.h-introduce-compatibility-header.patch
++++ /dev/null
+@@ -1,87 +0,0 @@
+-From 9867a9d6a21e6b0b9bcba57c3e2398fe671cea17 Mon Sep 17 00:00:00 2001
+-From: Christian Storm <christian.storm@siemens.com>
+-Date: Tue, 16 Jan 2018 10:34:52 +0100
+-Subject: [PATCH] compat.h: introduce compatibility header
+-MIME-Version: 1.0
+-Content-Type: text/plain; charset=UTF-8
+-Content-Transfer-Encoding: 8bit
+-
+-Introduce a compat.h housing compatibility definitions
+-and macros along the lines of commit 7b49b8d having
+-introduced a compatibility mechanism for Lua.
+-
+-First use case (and motivation) is the support for
+-musl (https://www.musl-libc.org/) which doesn't
+-bother to provide
+-    char *strndupa(const char *s, size_t n)
+-
+-Backported from: 9867a9d6a21e6b0b9bcba57c3e2398fe671cea17
+-
+-Reviewed-by: Stefano Babic <sbabic@denx.de>
+-Reported-by: Jörg Krause <joerg.krause@embedded.rocks>
+-Signed-off-by: Christian Storm <christian.storm@siemens.com>
+-Signed-off-by: Jörg Krause <joerg.krause@embedded.rocks>
+----
+- include/compat.h  | 24 ++++++++++++++++++++++++
+- include/util.h    |  1 +
+- ipc/network_ipc.c |  1 +
+- 3 files changed, 26 insertions(+)
+- create mode 100644 include/compat.h
+-
+-diff --git a/include/compat.h b/include/compat.h
+-new file mode 100644
+-index 0000000..29d7af1
+---- /dev/null
+-+++ b/include/compat.h
+-@@ -0,0 +1,24 @@
+-+/*
+-+ * Author: Christian Storm
+-+ * Copyright (C) 2018, Siemens AG
+-+ *
+-+ * SPDX-License-Identifier:     GPL-2.0-or-later
+-+ */
+-+
+-+#pragma once
+-+
+-+#ifndef strndupa
+-+/*
+-+ * Define char *strndupa(const char *s, size_t n)
+-+ * for, e.g., musl (https://www.musl-libc.org/)
+-+ * which does not bother to implement this function.
+-+ */
+-+#define strndupa(s, n)                          \
+-+	(__extension__({                            \
+-+		const char *__in = (s);                 \
+-+		size_t __len = strnlen(__in, (n)) + 1;  \
+-+		char *__out = (char *)alloca(__len);    \
+-+		__out[__len - 1] = '\0';                \
+-+		(char *)memcpy(__out, __in, __len - 1); \
+-+	}))
+-+#endif
+-diff --git a/include/util.h b/include/util.h
+-index bec2975..d43cd8c 100644
+---- a/include/util.h
+-+++ b/include/util.h
+-@@ -12,6 +12,7 @@
+- #include <string.h>
+- #include "swupdate.h"
+- #include "swupdate_status.h"
+-+#include "compat.h"
+- 
+- #define NOTIFY_BUF_SIZE 	2048
+- #define ENOMEM_ASPRINTF		-1
+-diff --git a/ipc/network_ipc.c b/ipc/network_ipc.c
+-index 3f197c7..48f6fcc 100644
+---- a/ipc/network_ipc.c
+-+++ b/ipc/network_ipc.c
+-@@ -27,6 +27,7 @@
+- #include <pthread.h>
+- 
+- #include "network_ipc.h"
+-+#include "compat.h"
+- 
+- #ifdef CONFIG_SOCKET_CTRL_PATH
+- static char* SOCKET_CTRL_PATH = (char*)CONFIG_SOCKET_CTRL_PATH;
+--- 
+-2.15.1
+-
+diff --git a/package/swupdate/0002-Fix-build-if-DOWNLOAD-is-set-but-no-JSON.patch b/package/swupdate/0002-Fix-build-if-DOWNLOAD-is-set-but-no-JSON.patch
+deleted file mode 100644
+index 5e07995582..0000000000
+--- a/package/swupdate/0002-Fix-build-if-DOWNLOAD-is-set-but-no-JSON.patch
++++ /dev/null
+@@ -1,107 +0,0 @@
+-From 37a6666a532e9cbc42b56301f27919ae7c00d2eb Mon Sep 17 00:00:00 2001
+-From: Stefano Babic <sbabic@denx.de>
+-Date: Tue, 23 Jan 2018 16:52:32 +0100
+-Subject: [PATCH] Fix build if DOWNLOAD is set, but no JSON
+-MIME-Version: 1.0
+-Content-Type: text/plain; charset=UTF-8
+-Content-Transfer-Encoding: 8bit
+-
+-The downloader does not require JSON, but channel_curl is built
+-even if not called. Build fails with the error:
+-
+-corelib/channel_curl.c:27:10: fatal error: json-c/json.h: No such file or directory
+-
+-Add a CONFIG_CHANNEL_CURL that is automatically set by the modules
+-reuiring it (suricatta and swuforwarder).
+-
+-Backported from: 37a6666a532e9cbc42b56301f27919ae7c00d2eb
+-
+-Signed-off-by: Stefano Babic <sbabic@denx.de>
+-Reported-by: Jörg Krause <joerg.krause@embedded.rocks>
+-Acked-by: Jörg Krause <joerg.krause@embedded.rocks>
+-Signed-off-by: Jörg Krause <joerg.krause@embedded.rocks>
+----
+- Kconfig             | 7 +++++++
+- corelib/Makefile    | 2 +-
+- handlers/Config.in  | 8 +++++---
+- suricatta/Config.in | 3 +--
+- 4 files changed, 14 insertions(+), 6 deletions(-)
+-
+-diff --git a/Kconfig b/Kconfig
+-index 4469096..e344572 100644
+---- a/Kconfig
+-+++ b/Kconfig
+-@@ -294,6 +294,13 @@ config DOWNLOAD
+- comment "Image downloading support needs libcurl"
+- 	depends on !HAVE_LIBCURL
+- 
+-+config CHANNEL_CURL
+-+	bool
+-+	depends on HAVE_LIBCURL
+-+	depends on HAVE_JSON_C
+-+	select CURL
+-+	select JSON
+-+
+- config HASH_VERIFY
+- 	bool "Allow to add sha256 hash to each image"
+- 	depends on HAVE_LIBSSL
+-diff --git a/corelib/Makefile b/corelib/Makefile
+-index 282bffd..4b30f9c 100644
+---- a/corelib/Makefile
+-+++ b/corelib/Makefile
+-@@ -17,4 +17,4 @@ lib-$(CONFIG_ENCRYPTED_IMAGES)	+= swupdate_decrypt.o
+- lib-$(CONFIG_LIBCONFIG)		+= swupdate_settings.o \
+- 				   parsing_library_libconfig.o
+- lib-$(CONFIG_JSON)		+= parsing_library_libjson.o
+--lib-$(CONFIG_CURL)		+= channel_curl.o
+-+lib-$(CONFIG_CHANNEL_CURL)	+= channel_curl.o
+-diff --git a/handlers/Config.in b/handlers/Config.in
+-index 596f069..6226b59 100644
+---- a/handlers/Config.in
+-+++ b/handlers/Config.in
+-@@ -54,7 +54,6 @@ config UBIVIDOFFSET
+- 	  if your NAND driver incorrectly reports that it can handle
+- 	  sub-page accesses when it should not.
+- 
+--
+- config CFI
+- 	bool "cfi"
+- 	depends on MTD
+-@@ -164,8 +163,8 @@ comment "remote handler needs zeromq"
+- config SWUFORWARDER_HANDLER
+- 	bool "SWU forwarder"
+- 	depends on HAVE_LIBCURL
+--	select CURL
+--	select JSON
+-+	depends on HAVE_JSON_C
+-+	select CHANNEL_CURL
+- 	default n
+- 	help
+- 	  This allows to build a chain of updater. A
+-@@ -174,6 +173,9 @@ config SWUFORWARDER_HANDLER
+- 	  embedded SWU to the other devices using the
+- 	  Webserver REST API.
+- 
+-+comment "swuforward handler needs json-c and curl"
+-+	depends on !HAVE_JSON_C || !HAVE_LIBCURL
+-+
+- comment "SWU forwarder requires libcurl"
+- 	depends on !HAVE_LIBCURL
+- 
+-diff --git a/suricatta/Config.in b/suricatta/Config.in
+-index 62e448a..2586169 100644
+---- a/suricatta/Config.in
+-+++ b/suricatta/Config.in
+-@@ -71,8 +71,7 @@ config SURICATTA_HAWKBIT
+- 	bool "hawkBit support"
+- 	depends on HAVE_LIBCURL
+- 	depends on HAVE_JSON_C
+--	select JSON
+--	select CURL
+-+	select CHANNEL_CURL
+- 	help
+- 	  Support for hawkBit server.
+- 	  https://projects.eclipse.org/projects/iot.hawkbit
+--- 
+-2.16.1
+-
+diff --git a/package/swupdate/swupdate.config b/package/swupdate/swupdate.config
+index 0f6e9615e5..730ebe500d 100644
+--- a/package/swupdate/swupdate.config
++++ b/package/swupdate/swupdate.config
+@@ -12,6 +12,7 @@ CONFIG_HAVE_DOT_CONFIG=y
+ # General Configuration
+ #
+ # CONFIG_CURL is not set
++# CONFIG_CURL_SSL is not set
+ # CONFIG_SYSTEMD is not set
+ CONFIG_SCRIPTS=y
+ # CONFIG_HW_COMPATIBILITY is not set
+@@ -49,6 +50,10 @@ CONFIG_EXTRA_LDLIBS=""
+ # CONFIG_WERROR is not set
+ # CONFIG_NOCLEANUP is not set
+ 
++#
++# EFI Boot Guard needs libebgenv and libz
++#
++
+ #
+ # U-Boot support needs libubootenv, libz
+ #
+@@ -72,29 +77,13 @@ CONFIG_BOOTLOADER_NONE=y
+ #
+ # CONFIG_SURICATTA is not set
+ CONFIG_WEBSERVER=y
+-
+-#
+-# Webserver Features
+-#
+ CONFIG_MONGOOSE=y
+-
+-#
+-# Mongoose Feature
+-#
+ CONFIG_MONGOOSEIPV6=y
+ 
+ #
+ # SSL support needs libcrypto, libssl
+ #
+ 
+-#
+-# Archival Features
+-#
+-
+-#
+-# gunzip support needs libz
+-#
+-
+ #
+ # Parser Features
+ #
+@@ -124,6 +113,10 @@ CONFIG_RAW=y
+ # remote handler needs zeromq
+ #
+ 
++#
++# swuforward handler needs json-c and curl
++#
++
+ #
+ # SWU forwarder requires libcurl
+ #
+diff --git a/package/swupdate/swupdate.hash b/package/swupdate/swupdate.hash
+index d1b69c9a03..339f40e1bb 100644
+--- a/package/swupdate/swupdate.hash
++++ b/package/swupdate/swupdate.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+-sha256  1e15d9675cf7e23886dca7ea058498282c35679a555845dbc85ffe688f2cc681  swupdate-2017.11.tar.gz
++sha256  a65884ca18523cde1b0744d952d6f91462dbd4ad07941305f5684c6d4ec833dc  swupdate-2018.11.tar.gz
++sha256  dcc100d4161cc0b7177545ab6e47216f84857cda3843847c792a25289852dcaa  COPYING
+diff --git a/package/swupdate/swupdate.mk b/package/swupdate/swupdate.mk
+index aa232e5837..08d6ba9372 100644
+--- a/package/swupdate/swupdate.mk
++++ b/package/swupdate/swupdate.mk
+@@ -4,12 +4,17 @@
+ #
+ ################################################################################
+ 
+-SWUPDATE_VERSION = 2017.11
++SWUPDATE_VERSION = 2018.11
+ SWUPDATE_SITE = $(call github,sbabic,swupdate,$(SWUPDATE_VERSION))
+-SWUPDATE_LICENSE = GPL-2.0+, MIT, Public Domain
++SWUPDATE_LICENSE = GPL-2.0+, LGPL-2.1+, MIT
+ SWUPDATE_LICENSE_FILES = COPYING
+ 
+-# swupdate bundles its own version of mongoose (version 3.8)
++# swupdate uses $CROSS-cc instead of $CROSS-gcc, which is not
++# available in all external toolchains, and use CC for linking. Ensure
++# TARGET_CC is used for both.
++SWUPDATE_MAKE_ENV = CC="$(TARGET_CC)" LD="$(TARGET_CC)"
++
++# swupdate bundles its own version of mongoose (version 6.11)
+ 
+ ifeq ($(BR2_PACKAGE_JSON_C),y)
+ SWUPDATE_DEPENDENCIES += json-c
+@@ -125,7 +130,7 @@ define SWUPDATE_INSTALL_TARGET_CMDS
+ 	$(INSTALL) -D -m 0755 $(@D)/swupdate $(TARGET_DIR)/usr/bin/swupdate
+ 	$(if $(BR2_PACKAGE_SWUPDATE_INSTALL_WEBSITE), \
+ 		mkdir -p $(TARGET_DIR)/var/www/swupdate; \
+-		cp -dpf $(@D)/www/* $(TARGET_DIR)/var/www/swupdate)
++		cp -dpfr $(@D)/examples/www/v2/* $(TARGET_DIR)/var/www/swupdate)
+ endef
+ 
+ # Checks to give errors that the user can understand
+diff --git a/package/uclibc/0002-statfs.h-sync-generic-header-with-glibc.patch b/package/uclibc/0002-statfs.h-sync-generic-header-with-glibc.patch
+new file mode 100644
+index 0000000000..b8753ed879
+--- /dev/null
++++ b/package/uclibc/0002-statfs.h-sync-generic-header-with-glibc.patch
+@@ -0,0 +1,169 @@
++From 8a73a967e18c55199785bae0f22dc94d9b2f8985 Mon Sep 17 00:00:00 2001
++From: Waldemar Brodkorb <wbrodkorb@conet.de>
++Date: Tue, 27 Nov 2018 15:41:37 +0100
++Subject: [PATCH] statfs.h: sync generic header with glibc
++
++Fix issues with aarch64 and df with mismatching header between kernel
++and libc.
++
++Signed-off-by: Waldemar Brodkorb <wbx@openadk.org>
++---
++ .../linux/common-generic/bits/statfs.h        | 84 +++++++++----------
++ libc/sysdeps/linux/common/fstatfs.c           |  9 --
++ libc/sysdeps/linux/common/statfs.c            | 10 ---
++ 3 files changed, 40 insertions(+), 63 deletions(-)
++
++diff --git a/libc/sysdeps/linux/common-generic/bits/statfs.h b/libc/sysdeps/linux/common-generic/bits/statfs.h
++index a2767b49a..23519a57e 100644
++--- a/libc/sysdeps/linux/common-generic/bits/statfs.h
+++++ b/libc/sysdeps/linux/common-generic/bits/statfs.h
++@@ -11,65 +11,61 @@
++ #include <endian.h>
++ #include <bits/align64bit.h>
++ #include <bits/types.h>
+++#include <bits/wordsize.h>
++ 
+++/* 64-bit libc uses the kernel's 'struct statfs', accessed via the
+++   statfs() syscall; 32-bit libc uses the kernel's 'struct statfs64'
+++   and accesses it via the statfs64() syscall.  All the various
+++   APIs offered by libc use the kernel shape for their struct statfs
+++   structure; the only difference is that 32-bit programs not
+++   using __USE_FILE_OFFSET64 only see the low 32 bits of some
+++   of the fields (the __fsblkcnt_t and __fsfilcnt_t fields).  */
+++
+++#if defined __USE_FILE_OFFSET64
+++# define __field64(type, type64, name) type64 name
+++#elif __WORDSIZE == 64
+++# define __field64(type, type64, name) type name
+++#elif __BYTE_ORDER == __LITTLE_ENDIAN
+++# define __field64(type, type64, name) \
+++  type name __attribute__((__aligned__ (__alignof__ (type64)))); int __##name##_pad
+++#else
+++# define __field64(type, type64, name) \
+++  int __##name##_pad __attribute__((__aligned__ (__alignof__ (type64)))); type name
+++#endif
++ 
++ struct statfs
++   {
++-    __U32_TYPE f_type;
++-    __U32_TYPE f_bsize;
++-#ifndef __USE_FILE_OFFSET64
++-# if __BYTE_ORDER == __LITTLE_ENDIAN
++-    __U32_TYPE f_blocks;
++-    __U32_TYPE __pad1;
++-    __U32_TYPE f_bfree;
++-    __U32_TYPE __pad2;
++-    __U32_TYPE f_bavail;
++-    __U32_TYPE __pad3;
++-    __U32_TYPE f_files;
++-    __U32_TYPE __pad4;
++-    __U32_TYPE f_ffree;
++-    __U32_TYPE __pad5;
++-# else
++-    __U32_TYPE __pad1;
++-    __U32_TYPE f_blocks;
++-    __U32_TYPE __pad2;
++-    __U32_TYPE f_bfree;
++-    __U32_TYPE __pad3;
++-    __U32_TYPE f_bavail;
++-    __U32_TYPE __pad4;
++-    __U32_TYPE f_files;
++-    __U32_TYPE __pad5;
++-    __U32_TYPE f_ffree;
++-# endif /* __LITTLE_ENDIAN */
++-#else
++-    __U64_TYPE f_blocks;
++-    __U64_TYPE f_bfree;
++-    __U64_TYPE f_bavail;
++-    __U64_TYPE f_files;
++-    __U64_TYPE f_ffree;
++-#endif /* __USE_FILE_OFFSET64 */
+++    __SWORD_TYPE f_type;
+++    __SWORD_TYPE f_bsize;
+++    __field64(__fsblkcnt_t, __fsblkcnt64_t, f_blocks);
+++    __field64(__fsblkcnt_t, __fsblkcnt64_t, f_bfree);
+++    __field64(__fsblkcnt_t, __fsblkcnt64_t, f_bavail);
+++    __field64(__fsfilcnt_t, __fsfilcnt64_t, f_files);
+++    __field64(__fsfilcnt_t, __fsfilcnt64_t, f_ffree);
++     __fsid_t f_fsid;
++-    __U32_TYPE f_namelen;
++-    __U32_TYPE f_frsize;
++-    __U32_TYPE f_flags;
++-    __U32_TYPE f_spare[4];
++-  } __ARCH_64BIT_ALIGNMENT__;
+++    __SWORD_TYPE f_namelen;
+++    __SWORD_TYPE f_frsize;
+++    __SWORD_TYPE f_flags;
+++    __SWORD_TYPE f_spare[4];
+++  };
+++
+++#undef __field64
++ 
++ #ifdef __USE_LARGEFILE64
++ struct statfs64
++   {
++-    __U32_TYPE f_type;
++-    __U32_TYPE f_bsize;
+++    __SWORD_TYPE f_type;
+++    __SWORD_TYPE f_bsize;
++     __U64_TYPE f_blocks;
++     __U64_TYPE f_bfree;
++     __U64_TYPE f_bavail;
++     __U64_TYPE f_files;
++     __U64_TYPE f_ffree;
++     __fsid_t f_fsid;
++-    __U32_TYPE f_namelen;
++-    __U32_TYPE f_frsize;
++-    __U32_TYPE f_flags;
++-    __U32_TYPE f_spare[4];
+++    __SWORD_TYPE f_namelen;
+++    __SWORD_TYPE f_frsize;
+++    __SWORD_TYPE f_flags;
+++    __SWORD_TYPE f_spare[4];
++   };
++ #endif
++ 
++diff --git a/libc/sysdeps/linux/common/fstatfs.c b/libc/sysdeps/linux/common/fstatfs.c
++index fcb0820eb..0b2709ce3 100644
++--- a/libc/sysdeps/linux/common/fstatfs.c
+++++ b/libc/sysdeps/linux/common/fstatfs.c
++@@ -30,15 +30,6 @@ _syscall2(int, __libc_fstatfs, int, fd, struct statfs *, buf)
++ int __libc_fstatfs (int __fildes, struct statfs *__buf)
++ {
++ 	int err = INLINE_SYSCALL(fstatfs64, 3, __fildes, sizeof(*__buf), __buf);
++-
++-	if (err == 0) {
++-		/* Did we overflow? */
++-		if (__buf->__pad1 || __buf->__pad2 || __buf->__pad3 ||
++-		    __buf->__pad4 || __buf->__pad5) {
++-			__set_errno(EOVERFLOW);
++-			return -1;
++-		}
++-	}
++ 	return err;
++ };
++ /* Redefined fstatfs because we need it for backwards compatibility */
++diff --git a/libc/sysdeps/linux/common/statfs.c b/libc/sysdeps/linux/common/statfs.c
++index ab9ec0e56..2990ff3e2 100644
++--- a/libc/sysdeps/linux/common/statfs.c
+++++ b/libc/sysdeps/linux/common/statfs.c
++@@ -18,16 +18,6 @@ extern __typeof(statfs) __libc_statfs attribute_hidden;
++ int __libc_statfs(const char *path, struct statfs *buf)
++ {
++ 	int err = INLINE_SYSCALL(statfs64, 3, path, sizeof(*buf), buf);
++-
++-	if (err == 0) {
++-		/* Did we overflow? */
++-		if (buf->__pad1 || buf->__pad2 || buf->__pad3 ||
++-		    buf->__pad4 || buf->__pad5) {
++-			__set_errno(EOVERFLOW);
++-			return -1;
++-		}
++-	}
++-
++ 	return err;
++ }
++ # if defined __UCLIBC_LINUX_SPECIFIC__ || defined __UCLIBC_HAS_THREADS_NATIVE__
++-- 
++2.19.1
++
+diff --git a/package/uclibc/0003-xtensa-add-custom-bits-poll.h.patch b/package/uclibc/0003-xtensa-add-custom-bits-poll.h.patch
+new file mode 100644
+index 0000000000..030938bbcd
+--- /dev/null
++++ b/package/uclibc/0003-xtensa-add-custom-bits-poll.h.patch
+@@ -0,0 +1,93 @@
++From 0cae9700a4a421dc22c80d205fbae4d01fdd1356 Mon Sep 17 00:00:00 2001
++From: Max Filippov <jcmvbkbc@gmail.com>
++Date: Wed, 12 Dec 2018 06:58:01 -0800
++Subject: [PATCH] xtensa: add custom bits/poll.h
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++Definitions of POLLWRNORM, POLLWRBAND and POLLREMOVE in xtensa linux
++kernel are non-standard. Provide bits/poll.h with correct values for
++these constants.
++
++This fixes the following strace build errors:
++
++  In file included from xlat/pollflags.h:4:0,
++                   from poll.c:34:
++  ./static_assert.h:40:24: error: static assertion failed: "POLLWRBAND != 0x0100"
++   # define static_assert _Static_assert
++                          ^
++  xlat/pollflags.h:75:1: note: in expansion of macro ‘static_assert’
++   static_assert((POLLWRBAND) == (0x0100), "POLLWRBAND != 0x0100");
++   ^~~~~~~~~~~~~
++  ./static_assert.h:40:24: error: static assertion failed: "POLLREMOVE != 0x0800"
++   # define static_assert _Static_assert
++                          ^
++  xlat/pollflags.h:117:1: note: in expansion of macro ‘static_assert’
++   static_assert((POLLREMOVE) == (0x0800), "POLLREMOVE != 0x0800");
++   ^~~~~~~~~~~~~
++
++Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
++---
++ libc/sysdeps/linux/xtensa/bits/poll.h | 49 +++++++++++++++++++++++++++++++++++
++ 1 file changed, 49 insertions(+)
++ create mode 100644 libc/sysdeps/linux/xtensa/bits/poll.h
++
++diff --git a/libc/sysdeps/linux/xtensa/bits/poll.h b/libc/sysdeps/linux/xtensa/bits/poll.h
++new file mode 100644
++index 000000000000..4588cc326006
++--- /dev/null
+++++ b/libc/sysdeps/linux/xtensa/bits/poll.h
++@@ -0,0 +1,49 @@
+++/* Copyright (C) 1997, 2001, 2006 Free Software Foundation, Inc.
+++   This file is part of the GNU C Library.
+++
+++   The GNU C Library is free software; you can redistribute it and/or
+++   modify it under the terms of the GNU Lesser General Public
+++   License as published by the Free Software Foundation; either
+++   version 2.1 of the License, or (at your option) any later version.
+++
+++   The GNU C Library is distributed in the hope that it will be useful,
+++   but WITHOUT ANY WARRANTY; without even the implied warranty of
+++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+++   Lesser General Public License for more details.
+++
+++   You should have received a copy of the GNU Lesser General Public
+++   License along with the GNU C Library; if not, see
+++   <http://www.gnu.org/licenses/>.  */
+++
+++#ifndef _SYS_POLL_H
+++# error "Never use <bits/poll.h> directly; include <sys/poll.h> instead."
+++#endif
+++
+++/* Event types that can be polled for.  These bits may be set in `events'
+++   to indicate the interesting event types; they will appear in `revents'
+++   to indicate the status of the file descriptor.  */
+++#define POLLIN		0x001		/* There is data to read.  */
+++#define POLLPRI		0x002		/* There is urgent data to read.  */
+++#define POLLOUT		0x004		/* Writing now will not block.  */
+++
+++#ifdef __USE_XOPEN
+++/* These values are defined in XPG4.2.  */
+++# define POLLRDNORM	0x040		/* Normal data may be read.  */
+++# define POLLRDBAND	0x080		/* Priority data may be read.  */
+++# define POLLWRNORM	POLLOUT		/* Writing now will not block.  */
+++# define POLLWRBAND	0x100		/* Priority data may be written.  */
+++#endif
+++
+++#ifdef __USE_GNU
+++/* These are extensions for Linux.  */
+++# define POLLMSG	0x400
+++# define POLLREMOVE	0x800
+++# define POLLRDHUP	0x2000
+++#endif
+++
+++/* Event types always implicitly polled for.  These bits need not be set in
+++   `events', but they will appear in `revents' to indicate the status of
+++   the file descriptor.  */
+++#define POLLERR		0x008		/* Error condition.  */
+++#define POLLHUP		0x010		/* Hung up.  */
+++#define POLLNVAL	0x020		/* Invalid polling request.  */
++-- 
++2.11.0
++
+diff --git a/package/webkitgtk/webkitgtk.hash b/package/webkitgtk/webkitgtk.hash
+index 15b1b56681..4cdefa75b7 100644
+--- a/package/webkitgtk/webkitgtk.hash
++++ b/package/webkitgtk/webkitgtk.hash
+@@ -1,7 +1,7 @@
+-# From https://webkitgtk.org/releases/webkitgtk-2.22.4.tar.xz.sums
+-md5 9f08d09cfc21c761a431a545549f301a webkitgtk-2.22.4.tar.xz
+-sha1 adf857c8a8b8fb79ba9b01bbe4b454956e633952 webkitgtk-2.22.4.tar.xz
+-sha256 fab5be2883802352ae0e735dd1eff4bc18abaff7ac78689cec72eb2f611943b8 webkitgtk-2.22.4.tar.xz
++# From https://webkitgtk.org/releases/webkitgtk-2.22.5.tar.xz.sums
++md5 96a731522b800f38e70f85c22f8de477 webkitgtk-2.22.5.tar.xz
++sha1 809b067a1672a81a4ce31363a0872c668cc72953 webkitgtk-2.22.5.tar.xz
++sha256 99d3863f418a7c3a3e37e5062950dbf2d91fb106ec1633459b0ef6f2d5f6cb13 webkitgtk-2.22.5.tar.xz
+ 
+ # Hashes for license files:
+ sha256 0b5d3a7cc325942567373b0ecd757d07c132e0ebd7c97bfc63f7e1a76094edb4 Source/WebCore/LICENSE-APPLE
+diff --git a/package/webkitgtk/webkitgtk.mk b/package/webkitgtk/webkitgtk.mk
+index cade28f99b..17984be21c 100644
+--- a/package/webkitgtk/webkitgtk.mk
++++ b/package/webkitgtk/webkitgtk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WEBKITGTK_VERSION = 2.22.4
++WEBKITGTK_VERSION = 2.22.5
+ WEBKITGTK_SITE = http://www.webkitgtk.org/releases
+ WEBKITGTK_SOURCE = webkitgtk-$(WEBKITGTK_VERSION).tar.xz
+ WEBKITGTK_INSTALL_STAGING = YES
+diff --git a/package/wine/wine.mk b/package/wine/wine.mk
+index 02c4c0f155..2728436671 100644
+--- a/package/wine/wine.mk
++++ b/package/wine/wine.mk
+@@ -10,6 +10,7 @@ WINE_SITE = https://dl.winehq.org/wine/source/3.0
+ WINE_LICENSE = LGPL-2.1+
+ WINE_LICENSE_FILES = COPYING.LIB LICENSE
+ WINE_DEPENDENCIES = host-bison host-flex host-wine
++HOST_WINE_DEPENDENCIES = host-bison host-flex
+ 
+ # Wine needs its own directory structure and tools for cross compiling
+ WINE_CONF_OPTS = \
+diff --git a/package/xfsprogs/xfsprogs.mk b/package/xfsprogs/xfsprogs.mk
+index e6e8493684..7346df5614 100644
+--- a/package/xfsprogs/xfsprogs.mk
++++ b/package/xfsprogs/xfsprogs.mk
+@@ -12,7 +12,7 @@ XFSPROGS_LICENSE_FILES = doc/COPYING
+ 
+ XFSPROGS_DEPENDENCIES = util-linux
+ 
+-XFSPROGS_CONF_ENV = ac_cv_header_aio_h=yes ac_cv_lib_rt_lio_listio=yes
++XFSPROGS_CONF_ENV = ac_cv_header_aio_h=yes ac_cv_lib_rt_lio_listio=yes PLATFORM="linux"
+ XFSPROGS_CONF_OPTS = \
+ 	--enable-lib64=no \
+ 	--enable-gettext=no \

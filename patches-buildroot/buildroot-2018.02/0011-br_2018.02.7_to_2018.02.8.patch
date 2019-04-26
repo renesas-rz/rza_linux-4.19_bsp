@@ -1,0 +1,4049 @@
+diff --git a/.gitlab-ci.yml b/.gitlab-ci.yml
+index 271b938842..48def54004 100644
+--- a/.gitlab-ci.yml
++++ b/.gitlab-ci.yml
+@@ -51,6 +51,11 @@ check-package:
+             - output/build/packages-file-list.txt
+ 
+ .runtime_test: &runtime_test
++    # Running the runtime tests for every push is too much, so limit to
++    # explicit triggers through the API.
++    only:
++        - triggers
++        - tags
+     # Keep build directories so the rootfs can be an artifact of the job. The
+     # runner will clean up those files for us.
+     # Multiply every emulator timeout by 10 to avoid sporadic failures in
+diff --git a/.gitlab-ci.yml.in b/.gitlab-ci.yml.in
+index c0e9563f2f..10de027ce1 100644
+--- a/.gitlab-ci.yml.in
++++ b/.gitlab-ci.yml.in
+@@ -51,6 +51,11 @@ check-package:
+             - output/build/packages-file-list.txt
+ 
+ .runtime_test: &runtime_test
++    # Running the runtime tests for every push is too much, so limit to
++    # explicit triggers through the API.
++    only:
++        - triggers
++        - tags
+     # Keep build directories so the rootfs can be an artifact of the job. The
+     # runner will clean up those files for us.
+     # Multiply every emulator timeout by 10 to avoid sporadic failures in
+diff --git a/CHANGES b/CHANGES
+index 0c073bdf20..cf35c540ec 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,50 @@
++2018.02.8, Released November 26th, 2018
++
++	Important / security related fixes.
++
++	fs: Drop intermediate tarball from the filesystem handling to
++	fix an issue with xattrs handling related to fakeroot. Ensure
++	tarball target includes xattrs.
++
++	download: Fix confusion in git submodule handling if dl/ is a
++	symlink.
++
++	toolchain: Only allow enabling stack protection on
++	architectures with control flow integrity (CFI) support. Only
++	allow FORTIFY_SOURCE support on gcc >= 6.
++
++	genrandconfig: Fix missing newline in BR2_WGET handling,
++	causing the following line to be ignored. This would affect
++	BR2_ENABLE_DEBUG, BR2_INIT_BUSYBOX, BR2_INIT_SYSTEMD,
++	BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV, BR2_STATIC_LIBS or
++	BR2_PACKAGE_PYTHON_PY_ONLY depending on the randomization.
++
++	show-build-order: Also include the dependencies of
++	rootfs-common.
++
++	Defconfigs: Fixes for Armadeus APF27, imx6sabre.
++
++	graph-depends: Fix for package names starting with a non-alpha
++	character.
++
++	Updated/fixed packages: attr, audit, bind, brotli, easydbus,
++	elfutils, gauche, gcc, giflib, gpsd, lcdproc, libcurl,
++	libiscsi, libnfs, libnspr, libnss, libkcapi, libsemanage,
++	liburiparser, lighttpd, linux, lua-curl, mariadb, mmc-utils,
++	mosquitto, mysql, neardal, netplug, network-manager,
++	nfs-utils, nginx, openocd, openswan, p11-kit, postgresql,
++	prosody, qemu, qt, rpm, ruby, samba4, squid, supertuxkart,
++	systemd, tar, trace-cmd, traceroute, twolame, uclibc,
++	usb_modeswitch, vtun, webkitgtk, xdriver_xf86-video-geode,
++	xlib_libfontenc, xproto_inputproto, xserver_xorg-server
++
++	Issues resolved (http://bugs.uclibc.org):
++
++	#11086: download/git submodule breaks on symlinked dl folder
++	#11251: Util scanpypi failes when package change - to _ in..
++	#11476: stdio2.h error invalid use of __builtin_va_arg_pack
++	#11481: Docs: Is external.desc required?
++
+ 2018.02.7, Released October 25th, 2018
+ 
+ 	Important / security related fixes.
+diff --git a/Config.in b/Config.in
+index 584a1f087f..102c8010e5 100644
+--- a/Config.in
++++ b/Config.in
+@@ -798,6 +798,8 @@ config BR2_FORTIFY_SOURCE_NONE
+ 
+ config BR2_FORTIFY_SOURCE_1
+ 	bool "Conservative"
++	# gcc bug https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61164
++	depends on !BR2_TOOLCHAIN_BUILDROOT || BR2_TOOLCHAIN_GCC_AT_LEAST_6
+ 	help
+ 	  This option sets _FORTIFY_SOURCE to 1 and only introduces
+ 	  checks that shouldn't change the behavior of conforming
+@@ -805,6 +807,8 @@ config BR2_FORTIFY_SOURCE_1
+ 
+ config BR2_FORTIFY_SOURCE_2
+ 	bool "Aggressive"
++	# gcc bug https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61164
++	depends on !BR2_TOOLCHAIN_BUILDROOT || BR2_TOOLCHAIN_GCC_AT_LEAST_6
+ 	help
+ 	  This option sets _FORTIFY_SOURCES to 2 and some more
+ 	  checking is added, but some conforming programs might fail.
+diff --git a/Makefile b/Makefile
+index 9fb131fe86..989d86f132 100644
+--- a/Makefile
++++ b/Makefile
+@@ -92,9 +92,9 @@ all:
+ .PHONY: all
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2018.02.7
++export BR2_VERSION := 2018.02.8
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1540493000
++BR2_VERSION_EPOCH = 1543272000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+diff --git a/board/freescale/imx6sabre/patches/uboot/0002-imx-Create-distinct-pre-processed-mkimage-config-fil.patch b/board/freescale/imx6sabre/patches/uboot/0002-imx-Create-distinct-pre-processed-mkimage-config-fil.patch
+new file mode 100644
+index 0000000000..b8989cb965
+--- /dev/null
++++ b/board/freescale/imx6sabre/patches/uboot/0002-imx-Create-distinct-pre-processed-mkimage-config-fil.patch
+@@ -0,0 +1,89 @@
++From 27a2cd6a1980adf3002412678c8fdec6528dc47d Mon Sep 17 00:00:00 2001
++From: Trent Piepho <tpiepho@impinj.com>
++Date: Fri, 6 Apr 2018 17:11:27 -0700
++Subject: [PATCH] imx: Create distinct pre-processed mkimage config files
++
++Each imx image is created by a separate sub-make and during this process
++the mkimage config file is run though cpp.
++
++The cpp output is to the same file no matter what imx image is being
++created.
++
++This means if two imx images are generated in parallel they will attempt
++to independently produce the same pre-processed mkimage config file at
++the same time.
++
++Avoid the problem by making the pre-processed config file name unique
++based on the imx image it will be used in.  This way each image will
++create a unique config file and they won't clobber each other when run
++in parallel.
++
++This should fixed the build bug referenced in b5b0e4e3 ("imximage:
++Remove failure when no IVT offset is found").
++
++Cc: Breno Lima <breno.lima@nxp.com>
++Cc: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
++Cc: Fabio Estevam <fabio.estevam@nxp.com>
++Signed-off-by: Trent Piepho <tpiepho@impinj.com>
++Tested-by: Fabio Estevam <fabio.estevam@nxp.com>
++[fabio: Adapted to imx_v2017.03_4.9.11_1.0.0_ga]
++Signed-off-by: Fabio Estevam <festevam@gmail.com>
++---
++ arch/arm/imx-common/Makefile | 15 ++++++++-------
++ 1 file changed, 8 insertions(+), 7 deletions(-)
++
++diff --git a/arch/arm/imx-common/Makefile b/arch/arm/imx-common/Makefile
++index d862258..f1bae8d 100644
++--- a/arch/arm/imx-common/Makefile
+++++ b/arch/arm/imx-common/Makefile
++@@ -69,9 +69,11 @@ endif
++ quiet_cmd_cpp_cfg = CFGS    $@
++       cmd_cpp_cfg = $(CPP) $(cpp_flags) -x c -o $@ $<
++ 
++-IMX_CONFIG = $(CONFIG_IMX_CONFIG:"%"=%).cfgtmp
+++# mkimage source config file
+++IMX_CONFIG = $(CONFIG_IMX_CONFIG:"%"=%)
++ 
++-$(IMX_CONFIG): %.cfgtmp: % FORCE
+++# How to create a cpp processed config file, they all use the same source
+++%.cfgout: $(IMX_CONFIG) FORCE
++ 	$(Q)mkdir -p $(dir $@)
++ 	$(call if_changed_dep,cpp_cfg)
++ 
++@@ -79,7 +81,7 @@ MKIMAGEFLAGS_u-boot.imx = -n $(filter-out $(PLUGIN).bin $< $(PHONY),$^) -T imxim
++ 	-e $(CONFIG_SYS_TEXT_BASE)
++ u-boot.imx: MKIMAGEOUTPUT = u-boot.imx.log
++ 
++-u-boot.imx: u-boot.bin $(IMX_CONFIG) $(PLUGIN).bin FORCE
+++u-boot.imx: u-boot.bin u-boot.cfgout $(PLUGIN).bin FORCE
++ 	$(call if_changed,mkimage)
++ 
++ ifeq ($(CONFIG_OF_SEPARATE),y)
++@@ -87,16 +89,15 @@ MKIMAGEFLAGS_u-boot-dtb.imx = -n $(filter-out $(PLUGIN).bin $< $(PHONY),$^) -T i
++ 	-e $(CONFIG_SYS_TEXT_BASE)
++ u-boot-dtb.imx: MKIMAGEOUTPUT = u-boot-dtb.imx.log
++ 
++-u-boot-dtb.imx: u-boot-dtb.bin $(IMX_CONFIG) $(PLUGIN).bin FORCE
+++u-boot-dtb.imx: u-boot-dtb.bin u-boot-dtb.cfgout $(PLUGIN).bin FORCE
++ 	$(call if_changed,mkimage)
++ endif
++ 
++ MKIMAGEFLAGS_SPL = -n $(filter-out $(PLUGIN).bin $< $(PHONY),$^) -T imximage \
++ 	-e $(CONFIG_SPL_TEXT_BASE)
++-
++ SPL: MKIMAGEOUTPUT = SPL.log
++ 
++-SPL: spl/u-boot-spl.bin $(IMX_CONFIG) $(PLUGIN).bin FORCE
+++SPL: spl/u-boot-spl.bin spl/u-boot-spl.cfgout $(PLUGIN).bin FORCE
++ 	$(call if_changed,mkimage)
++ 
++ MKIMAGEFLAGS_u-boot.uim = -A arm -O U-Boot -a $(CONFIG_SYS_TEXT_BASE) \
++@@ -124,4 +125,4 @@ cmd_u-boot-nand-spl_imx = (printf '\000\000\000\000\106\103\102\040\001' && \
++ spl/u-boot-nand-spl.imx: SPL FORCE
++ 	$(call if_changed,u-boot-nand-spl_imx)
++ 
++-targets += $(addprefix ../../../,$(IMX_CONFIG) SPL u-boot.uim spl/u-boot-nand-spl.imx)
+++targets += $(addprefix ../../../,SPL spl/u-boot-spl.cfgout u-boot-dtb.cfgout u-boot.cfgout u-boot.uim spl/u-boot-nand-spl.imx)
++-- 
++2.7.4
++
+diff --git a/board/freescale/imx6sabre/patches/uboot/0002-imximage-Remove-failure-when-no-IVT-offset-is-found.patch b/board/freescale/imx6sabre/patches/uboot/0002-imximage-Remove-failure-when-no-IVT-offset-is-found.patch
+deleted file mode 100644
+index 92eff7574d..0000000000
+--- a/board/freescale/imx6sabre/patches/uboot/0002-imximage-Remove-failure-when-no-IVT-offset-is-found.patch
++++ /dev/null
+@@ -1,55 +0,0 @@
+-From 24ba28680abe868e8db3442a9bf523ad3af1febd Mon Sep 17 00:00:00 2001
+-From: Fabio Estevam <fabio.estevam@nxp.com>
+-Date: Fri, 9 Mar 2018 08:25:00 -0300
+-Subject: [PATCH] imximage: Remove failure when no IVT offset is found
+-
+-Sometimes imximage throws the following error:
+-
+-  CFGS    board/freescale/vf610twr/imximage.cfg.cfgtmp
+-  CFGS    board/freescale/vf610twr/imximage.cfg.cfgtmp
+-  MKIMAGE u-boot-dtb.imx
+-Error: No BOOT_FROM tag in board/freescale/vf610twr/imximage.cfg.cfgtmp
+-arch/arm/mach-imx/Makefile:100: recipe for target 'u-boot-dtb.imx' failed
+-
+-Later on, when running mkimage for the u-boot.imx it will succeed in
+-finding the IVT offset.
+-
+-Looks like some race condition happening during parallel build when
+-processing mkimage for u-boot-dtb.imx and u-boot.imx.
+-
+-A proper fix still needs to be implemented, but as a workaround let's
+-remove the error when the IVT offset is not found.
+-
+-It is useful to have such message, especially during bring-up phase,
+-but the build error that it causes is severe, so better avoid the
+-build error for now.
+-
+-The error checking can be re-implemented later when we have a proper
+-fix.
+-
+-Reported-by: Breno Lima <breno.lima@nxp.com>
+-Reported-by: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
+-Signed-off-by: Fabio Estevam <fabio.estevam@nxp.com>
+----
+- tools/imximage.c | 5 -----
+- 1 file changed, 5 deletions(-)
+-
+-diff --git a/tools/imximage.c b/tools/imximage.c
+-index 0c43196..bef56f8 100644
+---- a/tools/imximage.c
+-+++ b/tools/imximage.c
+-@@ -765,11 +765,6 @@ static uint32_t parse_cfg_file(struct imx_header *imxhdr, char *name)
+- 	(*set_dcd_rst)(imxhdr, dcd_len, name, lineno);
+- 	fclose(fd);
+- 
+--	/* Exit if there is no BOOT_FROM field specifying the flash_offset */
+--	if (imximage_ivt_offset == FLASH_OFFSET_UNDEFINED) {
+--		fprintf(stderr, "Error: No BOOT_FROM tag in %s\n", name);
+--		exit(EXIT_FAILURE);
+--	}
+- 	return dcd_len;
+- }
+- 
+--- 
+-2.7.4
+-
+diff --git a/configs/armadeus_apf27_defconfig b/configs/armadeus_apf27_defconfig
+index 6f78b74d3a..457a14b02d 100644
+--- a/configs/armadeus_apf27_defconfig
++++ b/configs/armadeus_apf27_defconfig
+@@ -28,4 +28,7 @@ BR2_LINUX_KERNEL_INTREE_DTS_NAME="imx27-apf27dev"
+ 
+ # U-boot
+ BR2_TARGET_UBOOT=y
+-BR2_TARGET_UBOOT_BOARDNAME="apf27"
++BR2_TARGET_UBOOT_BUILD_SYSTEM_KCONFIG=y
++BR2_TARGET_UBOOT_CUSTOM_VERSION=y
++BR2_TARGET_UBOOT_CUSTOM_VERSION_VALUE="2018.09"
++BR2_TARGET_UBOOT_BOARD_DEFCONFIG="apf27"
+diff --git a/configs/at91sam9x5ek_dev_defconfig b/configs/at91sam9x5ek_dev_defconfig
+index 3af4ba74e8..3f711ffebb 100644
+--- a/configs/at91sam9x5ek_dev_defconfig
++++ b/configs/at91sam9x5ek_dev_defconfig
+@@ -60,7 +60,6 @@ BR2_PACKAGE_DTC_PROGRAMS=y
+ BR2_PACKAGE_BLUEZ_UTILS=y
+ BR2_PACKAGE_BRIDGE_UTILS=y
+ BR2_PACKAGE_CAN_UTILS=y
+-BR2_PACKAGE_DROPBEAR=y
+ BR2_PACKAGE_ETHTOOL=y
+ BR2_PACKAGE_IPERF=y
+ BR2_PACKAGE_IPROUTE2=y
+diff --git a/configs/at91sam9x5ek_mmc_dev_defconfig b/configs/at91sam9x5ek_mmc_dev_defconfig
+index 931cf7dec8..73c90a4951 100644
+--- a/configs/at91sam9x5ek_mmc_dev_defconfig
++++ b/configs/at91sam9x5ek_mmc_dev_defconfig
+@@ -63,7 +63,6 @@ BR2_PACKAGE_DTC_PROGRAMS=y
+ BR2_PACKAGE_BLUEZ_UTILS=y
+ BR2_PACKAGE_BRIDGE_UTILS=y
+ BR2_PACKAGE_CAN_UTILS=y
+-BR2_PACKAGE_DROPBEAR=y
+ BR2_PACKAGE_ETHTOOL=y
+ BR2_PACKAGE_IPERF=y
+ BR2_PACKAGE_IPROUTE2=y
+diff --git a/configs/atmel_sama5d27_som1_ek_mmc_dev_defconfig b/configs/atmel_sama5d27_som1_ek_mmc_dev_defconfig
+index 3752129202..0c04150151 100644
+--- a/configs/atmel_sama5d27_som1_ek_mmc_dev_defconfig
++++ b/configs/atmel_sama5d27_som1_ek_mmc_dev_defconfig
+@@ -52,7 +52,6 @@ BR2_PACKAGE_DTC_PROGRAMS=y
+ BR2_PACKAGE_BLUEZ_UTILS=y
+ BR2_PACKAGE_BRIDGE_UTILS=y
+ BR2_PACKAGE_CAN_UTILS=y
+-BR2_PACKAGE_DROPBEAR=y
+ BR2_PACKAGE_ETHTOOL=y
+ BR2_PACKAGE_IPERF=y
+ BR2_PACKAGE_IPROUTE2=y
+diff --git a/configs/atmel_sama5d2_xplained_mmc_dev_defconfig b/configs/atmel_sama5d2_xplained_mmc_dev_defconfig
+index 23a2582086..4563ed1163 100644
+--- a/configs/atmel_sama5d2_xplained_mmc_dev_defconfig
++++ b/configs/atmel_sama5d2_xplained_mmc_dev_defconfig
+@@ -66,7 +66,6 @@ BR2_PACKAGE_DTC_PROGRAMS=y
+ BR2_PACKAGE_BLUEZ_UTILS=y
+ BR2_PACKAGE_BRIDGE_UTILS=y
+ BR2_PACKAGE_CAN_UTILS=y
+-BR2_PACKAGE_DROPBEAR=y
+ BR2_PACKAGE_ETHTOOL=y
+ BR2_PACKAGE_IPERF=y
+ BR2_PACKAGE_IPROUTE2=y
+diff --git a/configs/atmel_sama5d3_xplained_dev_defconfig b/configs/atmel_sama5d3_xplained_dev_defconfig
+index f403e2308d..6a5ed37516 100644
+--- a/configs/atmel_sama5d3_xplained_dev_defconfig
++++ b/configs/atmel_sama5d3_xplained_dev_defconfig
+@@ -62,7 +62,6 @@ BR2_PACKAGE_DTC_PROGRAMS=y
+ BR2_PACKAGE_BLUEZ_UTILS=y
+ BR2_PACKAGE_BRIDGE_UTILS=y
+ BR2_PACKAGE_CAN_UTILS=y
+-BR2_PACKAGE_DROPBEAR=y
+ BR2_PACKAGE_ETHTOOL=y
+ BR2_PACKAGE_IPERF=y
+ BR2_PACKAGE_IPROUTE2=y
+diff --git a/configs/atmel_sama5d3_xplained_mmc_dev_defconfig b/configs/atmel_sama5d3_xplained_mmc_dev_defconfig
+index a3351482cf..37112ce434 100644
+--- a/configs/atmel_sama5d3_xplained_mmc_dev_defconfig
++++ b/configs/atmel_sama5d3_xplained_mmc_dev_defconfig
+@@ -65,7 +65,6 @@ BR2_PACKAGE_DTC_PROGRAMS=y
+ BR2_PACKAGE_BLUEZ_UTILS=y
+ BR2_PACKAGE_BRIDGE_UTILS=y
+ BR2_PACKAGE_CAN_UTILS=y
+-BR2_PACKAGE_DROPBEAR=y
+ BR2_PACKAGE_ETHTOOL=y
+ BR2_PACKAGE_IPERF=y
+ BR2_PACKAGE_IPROUTE2=y
+diff --git a/configs/atmel_sama5d4_xplained_dev_defconfig b/configs/atmel_sama5d4_xplained_dev_defconfig
+index 7ebfde173c..266411ff9e 100644
+--- a/configs/atmel_sama5d4_xplained_dev_defconfig
++++ b/configs/atmel_sama5d4_xplained_dev_defconfig
+@@ -63,7 +63,6 @@ BR2_PACKAGE_DTC_PROGRAMS=y
+ BR2_PACKAGE_BLUEZ_UTILS=y
+ BR2_PACKAGE_BRIDGE_UTILS=y
+ BR2_PACKAGE_CAN_UTILS=y
+-BR2_PACKAGE_DROPBEAR=y
+ BR2_PACKAGE_ETHTOOL=y
+ BR2_PACKAGE_IPERF=y
+ BR2_PACKAGE_IPROUTE2=y
+diff --git a/configs/atmel_sama5d4_xplained_mmc_dev_defconfig b/configs/atmel_sama5d4_xplained_mmc_dev_defconfig
+index c31f15a1ee..a295831912 100644
+--- a/configs/atmel_sama5d4_xplained_mmc_dev_defconfig
++++ b/configs/atmel_sama5d4_xplained_mmc_dev_defconfig
+@@ -66,7 +66,6 @@ BR2_PACKAGE_DTC_PROGRAMS=y
+ BR2_PACKAGE_BLUEZ_UTILS=y
+ BR2_PACKAGE_BRIDGE_UTILS=y
+ BR2_PACKAGE_CAN_UTILS=y
+-BR2_PACKAGE_DROPBEAR=y
+ BR2_PACKAGE_ETHTOOL=y
+ BR2_PACKAGE_IPERF=y
+ BR2_PACKAGE_IPROUTE2=y
+diff --git a/configs/imx6-sabresd_qt5_defconfig b/configs/imx6-sabresd_qt5_defconfig
+index 8e6065db5b..6e178eed56 100644
+--- a/configs/imx6-sabresd_qt5_defconfig
++++ b/configs/imx6-sabresd_qt5_defconfig
+@@ -43,6 +43,7 @@ BR2_LINUX_KERNEL_DEFCONFIG="imx_v6_v7"
+ BR2_LINUX_KERNEL_DTS_SUPPORT=y
+ BR2_LINUX_KERNEL_INTREE_DTS_NAME="imx6q-sabresd imx6dl-sabresd imx6qp-sabresd"
+ BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="board/freescale/imx6-sabresd/linux_qt5.fragment"
++BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL=y
+ 
+ # GL driver
+ BR2_PACKAGE_MESA3D=y
+diff --git a/docs/manual/customize-directory-structure.txt b/docs/manual/customize-directory-structure.txt
+index b177319f98..a3a7ad4cb9 100644
+--- a/docs/manual/customize-directory-structure.txt
++++ b/docs/manual/customize-directory-structure.txt
+@@ -50,6 +50,7 @@ to you.
+ |
+ +-- Config.in (if using a br2-external tree)
+ +-- external.mk (if using a br2-external tree)
+++-- external.desc (if using a br2-external tree)
+ ------
+ 
+ Details on the files shown above are given further in this chapter.
+diff --git a/fs/common.mk b/fs/common.mk
+index 6d579db810..ac8fd4c24a 100644
+--- a/fs/common.mk
++++ b/fs/common.mk
+@@ -122,7 +122,7 @@ rootfs-$(1): $$(BINARIES_DIR)/rootfs.$(1)
+ 
+ ifeq ($$(BR2_TARGET_ROOTFS_$(2)),y)
+ TARGETS_ROOTFS += rootfs-$(1)
+-PACKAGES += $$(filter-out rootfs-%,$$(ROOTFS_$(2)_DEPENDENCIES))
++PACKAGES += $$(filter-out rootfs-%,$$(ROOTFS_$(2)_DEPENDENCIES) $$(ROOTFS_COMMON_DEPENDENCIES))
+ endif
+ 
+ # Check for legacy POST_TARGETS rules
+diff --git a/fs/tar/tar.mk b/fs/tar/tar.mk
+index e39c2fdbf1..5535119724 100644
+--- a/fs/tar/tar.mk
++++ b/fs/tar/tar.mk
+@@ -8,7 +8,7 @@ TAR_OPTS := $(call qstrip,$(BR2_TARGET_ROOTFS_TAR_OPTIONS))
+ 
+ define ROOTFS_TAR_CMD
+ 	(cd $(TARGET_DIR); find -print0 | LC_ALL=C sort -z | \
+-		tar $(TAR_OPTS) -cf $@ --null --no-recursion -T - --numeric-owner)
++		tar $(TAR_OPTS) -cf $@ --null --xattrs-include='*' --no-recursion -T - --numeric-owner)
+ endef
+ 
+ $(eval $(rootfs))
+diff --git a/linux/linux.mk b/linux/linux.mk
+index cc5aeb69cd..38a67edcd1 100644
+--- a/linux/linux.mk
++++ b/linux/linux.mk
+@@ -287,6 +287,9 @@ define LINUX_KCONFIG_FIXUP_CMDS
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_DEVTMPFS_MOUNT,$(@D)/.config))
+ 	$(if $(BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV),
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_INOTIFY_USER,$(@D)/.config))
++	$(if $(BR2_PACKAGE_AUDIT),
++		$(call KCONFIG_ENABLE_OPT,CONFIG_NET,$(@D)/.config)
++		$(call KCONFIG_ENABLE_OPT,CONFIG_AUDIT,$(@D)/.config))
+ 	$(if $(BR2_PACKAGE_KTAP),
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_DEBUG_FS,$(@D)/.config)
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_ENABLE_DEFAULT_TRACERS,$(@D)/.config)
+@@ -413,9 +416,7 @@ define LINUX_INSTALL_HOST_TOOLS
+ 	# Installing dtc (device tree compiler) as host tool, if selected
+ 	if grep -q "CONFIG_DTC=y" $(@D)/.config; then	\
+ 		$(INSTALL) -D -m 0755 $(@D)/scripts/dtc/dtc $(HOST_DIR)/bin/linux-dtc ;	\
+-		if [ ! -e $(HOST_DIR)/bin/dtc ]; then	\
+-			ln -sf linux-dtc $(HOST_DIR)/bin/dtc ;	\
+-		fi	\
++		$(if $(BR2_PACKAGE_HOST_DTC),,ln -sf linux-dtc $(HOST_DIR)/bin/dtc;) \
+ 	fi
+ endef
+ 
+diff --git a/package/attr/0002-Switch-back-to-syscall.patch b/package/attr/0002-Switch-back-to-syscall.patch
+new file mode 100644
+index 0000000000..de879e23ab
+--- /dev/null
++++ b/package/attr/0002-Switch-back-to-syscall.patch
+@@ -0,0 +1,126 @@
++From 14adc898a36948267bfe5c63b399996879e94c98 Mon Sep 17 00:00:00 2001
++From: Andreas Gruenbacher <agruenba@redhat.com>
++Date: Fri, 17 Aug 2018 14:07:31 +0200
++Subject: Switch back to syscall()
++
++Switch back to syscall() for the *xattr system calls.  The current
++mechanism of forwarding those calls to glibc breaks libraries like
++libfakeroot (fakeroot) and libasan (the gcc address sanitizer; gcc
++-fsanitize=address).
++
++Those libraries provide wrappers for functions defined in other shared
++libraries, usually glibc, do their own processing, and forward calls to
++the original symbols looke dup via dlsym(RTLD_NEXT, "symbol_name").  In
++our case, dlsym returns the libattr_*xattr wrappers.  However, when our
++wrappers try calling glibc, they end up calling the libfakeroot /
++libasan wrappers instead because those override the original symbols =>
++recursion.
++
++The libattr_*xattr wrappers will only be used when symbols are looked up
++at runtime (dlopen / dlsym).  Programs linking against libattr will
++directly use the glibc provided symbols.  Therefore, the slightly worse
++performance of syscall() won't affect any of the "normal" users of
++libattr.
++
++[nicolas.cavallari: with uclibc-ng, the recursion always happen]
++Signed-off-by: Nicolas Cavallari <nicolas.cavallari@green-communications.fr>
++---
++ libattr/syscalls.c | 26 ++++++++++++++------------
++ 1 file changed, 14 insertions(+), 12 deletions(-)
++
++diff --git a/libattr/syscalls.c b/libattr/syscalls.c
++index 3013aa0..721ad7f 100644
++--- a/libattr/syscalls.c
+++++ b/libattr/syscalls.c
++@@ -22,6 +22,8 @@
++ 
++ #include "config.h"
++ 
+++#include <unistd.h>
+++#include <sys/syscall.h>
++ #include <sys/xattr.h>
++ 
++ #ifdef HAVE_VISIBILITY_ATTRIBUTE
++@@ -31,67 +33,67 @@
++ int libattr_setxattr(const char *path, const char *name,
++ 		     void *value, size_t size, int flags)
++ {
++-	return setxattr(path, name, value, size, flags);
+++	return syscall(__NR_setxattr, path, name, value, size, flags);
++ }
++ 
++ int libattr_lsetxattr(const char *path, const char *name,
++ 		      void *value, size_t size, int flags)
++ {
++-	return lsetxattr(path, name, value, size, flags);
+++	return syscall(__NR_lsetxattr, path, name, value, size, flags);
++ }
++ 
++ int libattr_fsetxattr(int filedes, const char *name,
++ 		      void *value, size_t size, int flags)
++ {
++-	return fsetxattr(filedes, name, value, size, flags);
+++	return syscall(__NR_fsetxattr, filedes, name, value, size, flags);
++ }
++ 
++ ssize_t libattr_getxattr(const char *path, const char *name,
++ 			 void *value, size_t size)
++ {
++-	return getxattr(path, name, value, size);
+++	return syscall(__NR_getxattr, path, name, value, size);
++ }
++ 
++ ssize_t libattr_lgetxattr(const char *path, const char *name,
++ 			  void *value, size_t size)
++ {
++-	return lgetxattr(path, name, value, size);
+++	return syscall(__NR_lgetxattr, path, name, value, size);
++ }
++ 
++ ssize_t libattr_fgetxattr(int filedes, const char *name,
++ 			  void *value, size_t size)
++ {
++-	return fgetxattr(filedes, name, value, size);
+++	return syscall(__NR_fgetxattr, filedes, name, value, size);
++ }
++ 
++ ssize_t libattr_listxattr(const char *path, char *list, size_t size)
++ {
++-	return listxattr(path, list, size);
+++	return syscall(__NR_listxattr, path, list, size);
++ }
++ 
++ ssize_t libattr_llistxattr(const char *path, char *list, size_t size)
++ {
++-	return llistxattr(path, list, size);
+++	return syscall(__NR_llistxattr, path, list, size);
++ }
++ 
++ ssize_t libattr_flistxattr(int filedes, char *list, size_t size)
++ {
++-	return flistxattr(filedes, list, size);
+++	return syscall(__NR_flistxattr, filedes, list, size);
++ }
++ 
++ int libattr_removexattr(const char *path, const char *name)
++ {
++-	return removexattr(path, name);
+++	return syscall(__NR_removexattr, path, name);
++ }
++ 
++ int libattr_lremovexattr(const char *path, const char *name)
++ {
++-	return lremovexattr(path, name);
+++	return syscall(__NR_lremovexattr, path, name);
++ }
++ 
++ int libattr_fremovexattr(int filedes, const char *name)
++ {
++-	return fremovexattr(filedes, name);
+++	return syscall(__NR_fremovexattr, filedes, name);
++ }
++ 
++ #ifdef HAVE_VISIBILITY_ATTRIBUTE
++-- 
++cgit v1.0-41-gc330
++
+diff --git a/package/audit/0001-Fix-audispd-path-in-auditd.conf.patch b/package/audit/0001-Fix-audispd-path-in-auditd.conf.patch
+new file mode 100644
+index 0000000000..ccf45db911
+--- /dev/null
++++ b/package/audit/0001-Fix-audispd-path-in-auditd.conf.patch
+@@ -0,0 +1,32 @@
++From 6e1fd09f7bc131c8f16d9cc43e2455ba4650c651 Mon Sep 17 00:00:00 2001
++From: Carlos Santos <casantos@datacom.com.br>
++Date: Sat, 3 Nov 2018 08:25:58 -0300
++Subject: [PATCH] Fix audispd path in auditd.conf
++
++audispd is installed at /usr/sbin but the configuration file pointed
++to /sbin, causing auditd to fail on startup.
++
++This patch cannot be sent upstream because audispd does not exist
++anymore on the master branch (it was merged to auditd).
++
++Signed-off-by: Carlos Santos <casantos@datacom.com.br>
++---
++ init.d/auditd.conf | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/init.d/auditd.conf b/init.d/auditd.conf
++index 4dcda83..998904f 100644
++--- a/init.d/auditd.conf
+++++ b/init.d/auditd.conf
++@@ -13,7 +13,7 @@ max_log_file = 8
++ num_logs = 5
++ priority_boost = 4
++ disp_qos = lossy
++-dispatcher = /sbin/audispd
+++dispatcher = /usr/sbin/audispd
++ name_format = NONE
++ ##name = mydomain
++ max_log_file_action = ROTATE
++-- 
++2.17.1
++
+diff --git a/package/audit/S01auditd b/package/audit/S02auditd
+similarity index 100%
+rename from package/audit/S01auditd
+rename to package/audit/S02auditd
+diff --git a/package/audit/audit.hash b/package/audit/audit.hash
+index fb37577782..d8c11a3d19 100644
+--- a/package/audit/audit.hash
++++ b/package/audit/audit.hash
+@@ -1,4 +1,4 @@
+ #Locally computed
+-sha256 67b59b2b77afee9ed87afa4d80ffc8e6f3a1f4bbedd5f2871f387c952147bcba audit-2.8.2.tar.gz
++sha256 a410694d09fc5708d980a61a5abcb9633a591364f1ecc7e97ad5daef9c898c38 audit-2.8.4.tar.gz
+ sha256 32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670 COPYING
+ sha256 f18a0811fa0e220ccbc42f661545e77f0388631e209585ed582a1c693029c6aa COPYING.LIB
+diff --git a/package/audit/audit.mk b/package/audit/audit.mk
+index 2f6e6653b3..0988f88d8d 100644
+--- a/package/audit/audit.mk
++++ b/package/audit/audit.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-AUDIT_VERSION = 2.8.2
++AUDIT_VERSION = 2.8.4
+ AUDIT_SITE = http://people.redhat.com/sgrubb/audit
+ AUDIT_LICENSE = GPL-2.0+ (programs), LGPL-2.1+ (libraries)
+ AUDIT_LICENSE_FILES = COPYING COPYING.LIB
+@@ -38,7 +38,7 @@ AUDIT_CONF_OPTS += --disable-systemd
+ endif
+ 
+ define AUDIT_INSTALL_INIT_SYSV
+-	$(INSTALL) -D -m 755 package/audit/S01auditd $(TARGET_DIR)/etc/init.d/S01auditd
++	$(INSTALL) -D -m 755 package/audit/S02auditd $(TARGET_DIR)/etc/init.d/S02auditd
+ endef
+ 
+ define AUDIT_INSTALL_INIT_SYSTEMD
+diff --git a/package/bind/0002-cross.patch b/package/bind/0001-cross.patch
+similarity index 100%
+rename from package/bind/0002-cross.patch
+rename to package/bind/0001-cross.patch
+diff --git a/package/bind/0003-Rename-ptrsize-to-ptr_size.patch b/package/bind/0003-Rename-ptrsize-to-ptr_size.patch
+deleted file mode 100644
+index e3b58e202d..0000000000
+--- a/package/bind/0003-Rename-ptrsize-to-ptr_size.patch
++++ /dev/null
+@@ -1,74 +0,0 @@
+-From 254dc19788ba2a03504fc6d1036fef477a60035f Mon Sep 17 00:00:00 2001
+-From: Gustavo Zacarias <gustavo@zacarias.com.ar>
+-Date: Fri, 22 Jan 2016 08:31:02 -0300
+-Subject: [PATCH] Rename ptrsize to ptr_size
+-
+-This is to compensate for a uClibc mess caused by commit
+-70a04a287a2875c82e6822c36e071afba5b63a62 where ptrsize is defined for
+-mips, hence causing build breakage under certain conditions for programs
+-that use this variable name.
+-
+-Status: definitely not upstreamable.
+-
+-Signed-off-by: Gustavo Zacarias <gustavo@zacarias.com.ar>
+----
+- lib/dns/rbt.c   | 6 +++---
+- lib/dns/rbtdb.c | 4 ++--
+- 2 files changed, 5 insertions(+), 5 deletions(-)
+-
+-diff --git a/lib/dns/rbt.c b/lib/dns/rbt.c
+-index 86b5183..5fd55de 100644
+---- a/lib/dns/rbt.c
+-+++ b/lib/dns/rbt.c
+-@@ -113,7 +113,7 @@ struct file_header {
+- 	 * information about the system on which the map file was generated
+- 	 * will be used to tell if we can load the map file or not
+- 	 */
+--	isc_uint32_t ptrsize;
+-+	isc_uint32_t ptr_size;
+- 	unsigned int bigendian:1;	/* big or little endian system */
+- 	unsigned int rdataset_fixed:1;	/* compiled with --enable-rrset-fixed */
+- 	unsigned int nodecount;		/* shadow from rbt structure */
+-@@ -517,7 +517,7 @@ write_header(FILE *file, dns_rbt_t *rbt, isc_uint64_t first_node_offset,
+- 	memmove(header.version1, FILE_VERSION, sizeof(header.version1));
+- 	memmove(header.version2, FILE_VERSION, sizeof(header.version2));
+- 	header.first_node_offset = first_node_offset;
+--	header.ptrsize = (isc_uint32_t) sizeof(void *);
+-+	header.ptr_size = (isc_uint32_t) sizeof(void *);
+- 	header.bigendian = (1 == htonl(1)) ? 1 : 0;
+- 
+- #ifdef DNS_RDATASET_FIXED
+-@@ -902,7 +902,7 @@ dns_rbt_deserialize_tree(void *base_address, size_t filesize,
+- 	}
+- #endif
+- 
+--	if (header->ptrsize != (isc_uint32_t) sizeof(void *)) {
+-+	if (header->ptr_size != (isc_uint32_t) sizeof(void *)) {
+- 		result = ISC_R_INVALIDFILE;
+- 		goto cleanup;
+- 	}
+-diff --git a/lib/dns/rbtdb.c b/lib/dns/rbtdb.c
+-index c7168cb..dbcf944 100644
+---- a/lib/dns/rbtdb.c
+-+++ b/lib/dns/rbtdb.c
+-@@ -114,7 +114,7 @@ typedef struct rbtdb_file_header rbtdb_file_header_t;
+- 
+- struct rbtdb_file_header {
+- 	char version1[32];
+--	isc_uint32_t ptrsize;
+-+	isc_uint32_t ptr_size;
+- 	unsigned int bigendian:1;
+- 	isc_uint64_t tree;
+- 	isc_uint64_t nsec;
+-@@ -7593,7 +7593,7 @@ rbtdb_write_header(FILE *rbtfile, off_t tree_location, off_t nsec_location,
+- 	memset(&header, 0, sizeof(rbtdb_file_header_t));
+- 	memmove(header.version1, FILE_VERSION, sizeof(header.version1));
+- 	memmove(header.version2, FILE_VERSION, sizeof(header.version2));
+--	header.ptrsize = (isc_uint32_t) sizeof(void *);
+-+	header.ptr_size = (isc_uint32_t) sizeof(void *);
+- 	header.bigendian = (1 == htonl(1)) ? 1 : 0;
+- 	header.tree = (isc_uint64_t) tree_location;
+- 	header.nsec = (isc_uint64_t) nsec_location;
+--- 
+-2.4.10
+-
+diff --git a/package/bind/bind.hash b/package/bind/bind.hash
+index 19d5f61f6d..ea76108cc0 100644
+--- a/package/bind/bind.hash
++++ b/package/bind/bind.hash
+@@ -1,4 +1,4 @@
+-# Verified from https://ftp.isc.org/isc/bind9/9.11.4-P1/bind-9.11.4-P1.tar.gz.asc
++# Verified from https://ftp.isc.org/isc/bind9/9.11.5/bind-9.11.5.tar.gz.asc
+ # with key BE0E9748B718253A28BB89FFF1B11BF05CF02E57
+-sha256 a85af7b629109d41285c7adeae1515daac638bbe4d5dc30d1f4b343dff09d811 bind-9.11.4-P2.tar.gz
++sha256 a4cae11dad954bdd4eb592178f875bfec09fcc7e29fe0f6b7a4e5b5c6bc61322 bind-9.11.5.tar.gz
+ sha256 336f3c40e37a1a13690efb4c63e20908faa4c40498cc02f3579fb67d3a1933a5 COPYRIGHT
+diff --git a/package/bind/bind.mk b/package/bind/bind.mk
+index 4b80eaf04f..b5424a99f0 100644
+--- a/package/bind/bind.mk
++++ b/package/bind/bind.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-BIND_VERSION = 9.11.4-P2
++BIND_VERSION = 9.11.5
+ BIND_SITE = http://ftp.isc.org/isc/bind9/$(BIND_VERSION)
+ # bind does not support parallel builds.
+ BIND_MAKE = $(MAKE1)
+diff --git a/package/binutils/Config.in.host b/package/binutils/Config.in.host
+index bc0e223e9f..99f78fc373 100644
+--- a/package/binutils/Config.in.host
++++ b/package/binutils/Config.in.host
+@@ -1,5 +1,11 @@
+ comment "Binutils Options"
+ 
++config BR2_PACKAGE_HOST_BINUTILS_SUPPORTS_CFI
++	bool
++	default y
++	depends on !BR2_microblaze
++	depends on !(BR2_nios2 && (BR2_BINUTILS_VERSION_2_28_X || BR2_BINUTILS_VERSION_2_29_X))
++
+ choice
+ 	prompt "Binutils Version"
+ 	default BR2_BINUTILS_VERSION_2_28_X if BR2_ARM_INSTRUCTIONS_THUMB
+diff --git a/package/brotli/0001-CMake-Allow-using-BUILD_SHARED_LIBS-to-choose-static.patch b/package/brotli/0001-CMake-Allow-using-BUILD_SHARED_LIBS-to-choose-static.patch
+index 33b9bb70ce..ae5386b1ce 100644
+--- a/package/brotli/0001-CMake-Allow-using-BUILD_SHARED_LIBS-to-choose-static.patch
++++ b/package/brotli/0001-CMake-Allow-using-BUILD_SHARED_LIBS-to-choose-static.patch
+@@ -1,4 +1,4 @@
+-From b60b613e7c2c9bf7a142c3c486ac6e77ad93f5d1 Mon Sep 17 00:00:00 2001
++From 7289e5a378ba13801996a84d89d8fe95c3fc4c11 Mon Sep 17 00:00:00 2001
+ From: Adrian Perez de Castro <aperez@igalia.com>
+ Date: Mon, 26 Mar 2018 19:08:31 +0100
+ Subject: [PATCH] CMake: Allow using BUILD_SHARED_LIBS to choose static/shared
+@@ -27,7 +27,7 @@ Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
+ Upstream-Status: Submitted [https://github.com/google/brotli/pull/655]
+ 
+ diff --git a/CMakeLists.txt b/CMakeLists.txt
+-index 99b9258..3867931 100644
++index fc45f80..3f87f13 100644
+ --- a/CMakeLists.txt
+ +++ b/CMakeLists.txt
+ @@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 2.8.6)
+@@ -120,25 +120,25 @@ index 99b9258..3867931 100644
+      DIRECTORY ${BROTLI_INCLUDE_DIRS}/brotli
+      DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+ diff --git a/c/fuzz/test_fuzzer.sh b/c/fuzz/test_fuzzer.sh
+-index 5c754e1..e85e12f 100755
++index 9985194..4b99947 100755
+ --- a/c/fuzz/test_fuzzer.sh
+ +++ b/c/fuzz/test_fuzzer.sh
+-@@ -14,12 +14,12 @@ mkdir bin
++@@ -13,12 +13,12 @@ mkdir bin
+  cd bin
+  
+- cmake $BROTLI -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
++ cmake $BROTLI -DCMAKE_C_COMPILER="$CC" \
+ -    -DBUILD_TESTING=OFF -DENABLE_SANITIZER=address
+ -make -j$(nproc) brotlidec-static
+ +    -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=OFF -DENABLE_SANITIZER=address
+ +make -j$(nproc) brotlidec
+  
+- ${CXX} -o run_decode_fuzzer -std=c++11 -fsanitize=address -I$SRC/include \
+-     $SRC/fuzz/decode_fuzzer.cc $SRC/fuzz/run_decode_fuzzer.cc \
++ ${CC} -o run_decode_fuzzer -std=c99 -fsanitize=address -I$SRC/include \
++     $SRC/fuzz/decode_fuzzer.c $SRC/fuzz/run_decode_fuzzer.c \
+ -    ./libbrotlidec-static.a ./libbrotlicommon-static.a
+ +    ./libbrotlidec.a ./libbrotlicommon.a
+  
+  mkdir decode_corpora
+  unzip $BROTLI/java/org/brotli/integration/fuzz_data.zip -d decode_corpora
+ -- 
+-2.16.3
++2.19.1
+ 
+diff --git a/package/brotli/0001-Tell-CMake-to-not-check-for-a-C-compiler.patch b/package/brotli/0001-Tell-CMake-to-not-check-for-a-C-compiler.patch
+deleted file mode 100644
+index 410de2830e..0000000000
+--- a/package/brotli/0001-Tell-CMake-to-not-check-for-a-C-compiler.patch
++++ /dev/null
+@@ -1,31 +0,0 @@
+-From fea0b1e46c486225d57e730cc0f94fa06b5b93fc Mon Sep 17 00:00:00 2001
+-From: Adrian Perez de Castro <aperez@igalia.com>
+-Date: Mon, 26 Mar 2018 12:12:00 +0100
+-Subject: [PATCH] Tell CMake to not check for a C++ compiler
+-
+-By default CMake checks both for C and C++ compilers, while the latter
+-is not needed. Setting the list of languages to just "C" in the call to
+-project() removes the unneeded check.
+----
+- CMakeLists.txt | 2 +-
+- 1 file changed, 1 insertion(+), 1 deletion(-)
+-
+-Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
+-Upstream-Status: Submitted [https://github.com/google/brotli/pull/653]
+-
+-diff --git a/CMakeLists.txt b/CMakeLists.txt
+-index 2dc7232..3fbcbfb 100644
+---- a/CMakeLists.txt
+-+++ b/CMakeLists.txt
+-@@ -4,7 +4,7 @@
+- # support 2.8.7.
+- cmake_minimum_required(VERSION 2.8.6)
+- 
+--project(brotli)
+-+project(brotli LANGUAGES C)
+- 
+- # If Brotli is being bundled in another project, we don't want to
+- # install anything.  However, we want to let people override this, so
+--- 
+-2.16.3
+-
+diff --git a/package/brotli/brotli.hash b/package/brotli/brotli.hash
+index 954d44eb70..82163040d1 100644
+--- a/package/brotli/brotli.hash
++++ b/package/brotli/brotli.hash
+@@ -1,5 +1,5 @@
+ # Locally generated:
+-sha512  93adcf437d730ac403e444285ac8aefbb2c8a6b5e1b064e8ee33684c067287a8159e0ee73d2217c167881e87da73fa494792d963a15508fd42b2ac4a5b52823c  v1.0.3.tar.gz
++sha512  a82362aa36d2f2094bca0b2808d9de0d57291fb3a4c29d7c0ca0a37e73087ec5ac4df299c8c363e61106fccf2fe7f58b5cf76eb97729e2696058ef43b1d3930a  v1.0.7.tar.gz
+ 
+ # Hash for license files:
+ sha512  bae78184c2f50f86d8c727826d3982c469454c42b9af81f4ef007e39036434fa894cf5be3bf5fc65b7de2301f0a72d067a8186e303327db8a96bd14867e0a3a8  LICENSE
+diff --git a/package/brotli/brotli.mk b/package/brotli/brotli.mk
+index cf1e811543..2c1ad48753 100644
+--- a/package/brotli/brotli.mk
++++ b/package/brotli/brotli.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-BROTLI_VERSION = 1.0.3
++BROTLI_VERSION = 1.0.7
+ BROTLI_SOURCE = v$(BROTLI_VERSION).tar.gz
+ BROTLI_SITE = https://github.com/google/brotli/archive
+ BROTLI_LICENSE = MIT
+diff --git a/package/easydbus/0001-easydbus-is-a-C-project-file.patch b/package/easydbus/0001-easydbus-is-a-C-project-file.patch
+new file mode 100644
+index 0000000000..1c149c582c
+--- /dev/null
++++ b/package/easydbus/0001-easydbus-is-a-C-project-file.patch
+@@ -0,0 +1,33 @@
++From a4bd47f593fbe55bd3ab17532e64be74aff5b29d Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Sat, 17 Nov 2018 11:38:05 +0100
++Subject: [PATCH] easydbus is a C project file
++
++Specify that easydbus is a C project file otherwise build will fail if
++no C++ compiler is found by cmake
++
++Fixes:
++ - http://autobuild.buildroot.org/results/486c3cd98124e7415dee2fd1463bd5e0fcc9ba91
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Upstream status: https://github.com/mniestroj/easydbus/pull/2]
++---
++ CMakeLists.txt | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/CMakeLists.txt b/CMakeLists.txt
++index 58ccb2d..575eb24 100644
++--- a/CMakeLists.txt
+++++ b/CMakeLists.txt
++@@ -5,7 +5,7 @@
++ #
++ 
++ cmake_minimum_required(VERSION 2.6)
++-project(easydbus)
+++project(easydbus C)
++ 
++ add_definitions("-Wall -Wextra -Wno-unused-parameter")
++ set(CMAKE_C_FLAGS_RELEASE "-O2")
++-- 
++2.17.1
++
+diff --git a/package/elfutils/0002-disable-progs.patch b/package/elfutils/0001-Add-a-enable-disable-progs-configure-option.patch
+similarity index 100%
+rename from package/elfutils/0002-disable-progs.patch
+rename to package/elfutils/0001-Add-a-enable-disable-progs-configure-option.patch
+diff --git a/package/elfutils/0003-fts.patch b/package/elfutils/0002-Add-an-implementation-of-the-fts_-functions.patch
+similarity index 100%
+rename from package/elfutils/0003-fts.patch
+rename to package/elfutils/0002-Add-an-implementation-of-the-fts_-functions.patch
+diff --git a/package/elfutils/0005-really-make-werror-conditional-to-build-werror.patch b/package/elfutils/0003-Really-make-Werror-conditional-to-BUILD_WERROR.patch
+similarity index 80%
+rename from package/elfutils/0005-really-make-werror-conditional-to-build-werror.patch
+rename to package/elfutils/0003-Really-make-Werror-conditional-to-BUILD_WERROR.patch
+index a7017d6e88..21ffa7f31b 100644
+--- a/package/elfutils/0005-really-make-werror-conditional-to-build-werror.patch
++++ b/package/elfutils/0003-Really-make-Werror-conditional-to-BUILD_WERROR.patch
+@@ -1,4 +1,4 @@
+-From 1d8f27d73df6369b19ddd6732960df0d4fdec338 Mon Sep 17 00:00:00 2001
++From 2688a0238eaf825d6659c16c012db0c16f07e197 Mon Sep 17 00:00:00 2001
+ From: Vicente Olivert Riera <Vincent.Riera@imgtec.com>
+ Date: Mon, 29 May 2017 23:24:42 +0300
+ Subject: [PATCH] Really make -Werror conditional to BUILD_WERROR
+@@ -20,17 +20,17 @@ Signed-off-by: Vicente Olivert Riera <Vincent.Riera@imgtec.com>
+  1 file changed, 1 deletion(-)
+ 
+ diff --git a/config/eu.am b/config/eu.am
+-index 8fe1e259f9e2..c5a6209a4e04 100644
++index c2cc349ce876..99b368e09060 100644
+ --- a/config/eu.am
+ +++ b/config/eu.am
+-@@ -71,7 +71,6 @@ AM_CFLAGS = -std=gnu99 -Wall -Wshadow -Wformat=2 \
++@@ -73,7 +73,6 @@ AM_CFLAGS = -std=gnu99 -Wall -Wshadow -Wformat=2 \
+  	    -Wold-style-definition -Wstrict-prototypes \
+  	    $(LOGICAL_OP_WARNING) $(DUPLICATED_COND_WARNING) \
+  	    $(NULL_DEREFERENCE_WARNING) $(IMPLICIT_FALLTHROUGH_WARNING) \
+ -	    $(if $($(*F)_no_Werror),,-Werror) \
+  	    $(if $($(*F)_no_Wunused),,-Wunused -Wextra) \
+  	    $(if $($(*F)_no_Wstack_usage),,$(STACK_USAGE_WARNING)) \
+- 	    $($(*F)_CFLAGS)
++ 	    $(if $($(*F)_no_Wpacked_not_aligned),-Wno-packed-not-aligned,) \
+ -- 
+-2.11.0
++2.17.1
+ 
+diff --git a/package/elfutils/0004-disable-po.patch b/package/elfutils/0004-disable-po.patch
+deleted file mode 100644
+index c45c580463..0000000000
+--- a/package/elfutils/0004-disable-po.patch
++++ /dev/null
+@@ -1,24 +0,0 @@
+-Disable the build of the po/ directory
+-
+-Building the po/ directory complains that the scripts in there have
+-been generated with gettext 0.17, while we use gettext 0.18 in
+-Buildroot. Since we don't care that much about po files anyway, just
+-disable the build of this directory.
+-
+-Based on the former patch by Thomas Petazzoni.
+-
+-Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+-Signed-off-by: Vicente Olivert Riera <Vincent.Riera@imgtec.com>
+-
+-diff -rup a/Makefile.am b/Makefile.am
+---- a/Makefile.am	2014-11-07 15:14:39.018060884 +0000
+-+++ b/Makefile.am	2014-11-07 15:30:02.864918229 +0000
+-@@ -28,7 +28,7 @@ endif
+-
+- # Add doc back when we have some real content.
+- SUBDIRS = config m4 lib libelf libebl libdwelf libdwfl libdw libcpu libasm \
+--	  backends $(PROGS_SUBDIR) po tests
+-+	  backends $(PROGS_SUBDIR) tests
+-
+- EXTRA_DIST = elfutils.spec GPG-KEY NOTES CONTRIBUTING \
+-	     COPYING COPYING-GPLV2 COPYING-LGPLV3
+diff --git a/package/elfutils/0006-memcpy-def.patch b/package/elfutils/0006-memcpy-def.patch
+deleted file mode 100644
+index 509482774c..0000000000
+--- a/package/elfutils/0006-memcpy-def.patch
++++ /dev/null
+@@ -1,26 +0,0 @@
+-Provide a compatibility alias __memcpy
+-
+-For some reason, libelf uses the internal glibc alias __memcpy, which
+-doesn't exist in uClibc. Add a manual alias so that the build can
+-proceed with uClibc.
+-
+-Based on the former patch by Thomas Petazzoni.
+-
+-Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+-Signed-off-by: Vicente Olivert Riera <Vincent.Riera@imgtec.com>
+-
+-diff -rup a/libelf/libelf.h b/libelf/libelf.h
+---- a/libelf/libelf.h	2014-08-27 10:25:17.000000000 +0100
+-+++ b/libelf/libelf.h	2014-11-07 15:13:08.743508221 +0000
+-@@ -34,6 +34,11 @@
+- /* Get the ELF types.  */
+- #include <elf.h>
+-
+-+#ifndef _LIBC
+-+#ifndef __mempcpy
+-+#define __mempcpy mempcpy
+-+#endif
+-+#endif
+-
+- /* Known translation types.  */
+- typedef enum
+diff --git a/package/elfutils/elfutils.hash b/package/elfutils/elfutils.hash
+index 76b6dc6458..5a76cd5868 100644
+--- a/package/elfutils/elfutils.hash
++++ b/package/elfutils/elfutils.hash
+@@ -1,2 +1,6 @@
+-# From https://sourceware.org/elfutils/ftp/0.169/sha512.sum
+-sha512 0a81a20bb2aff533d035d6b76f1403437b2e11bce390db57e34b8c26e4b9b3150346d83dddcbfbbdc58063f046ca3223508dba35c6ce88e375d201e7a777a8b9  elfutils-0.169.tar.bz2
++# From https://sourceware.org/elfutils/ftp/0.174/sha512.sum
++sha512 696708309c2a9a076099748809ecdc0490f4a8a842b2efc1aae0d746e7c5a8b203743f5626739eff837216b0c052696516b2821f5d3cc3f2eef86597c96d42df  elfutils-0.174.tar.bz2
++# Locally calculated
++sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  COPYING
++sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  COPYING-GPLV2
++sha256 da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768  COPYING-LGPLV3
+diff --git a/package/elfutils/elfutils.mk b/package/elfutils/elfutils.mk
+index 5570a3b37f..2d62017bba 100644
+--- a/package/elfutils/elfutils.mk
++++ b/package/elfutils/elfutils.mk
+@@ -4,12 +4,12 @@
+ #
+ ################################################################################
+ 
+-ELFUTILS_VERSION = 0.169
++ELFUTILS_VERSION = 0.174
+ ELFUTILS_SOURCE = elfutils-$(ELFUTILS_VERSION).tar.bz2
+ ELFUTILS_SITE = https://sourceware.org/elfutils/ftp/$(ELFUTILS_VERSION)
+ ELFUTILS_INSTALL_STAGING = YES
+ ELFUTILS_LICENSE = GPL-2.0+ or LGPL-3.0+ (library)
+-ELFUTILS_LICENSE_FILES = COPYING-GPLV2 COPYING-LGPLV3
++ELFUTILS_LICENSE_FILES = COPYING COPYING-GPLV2 COPYING-LGPLV3
+ ELFUTILS_DEPENDENCIES = zlib $(TARGET_NLS_DEPENDENCIES)
+ HOST_ELFUTILS_DEPENDENCIES = host-zlib host-bzip2 host-xz
+ 
+diff --git a/package/gauche/0004-rfc-needs-srfi.patch b/package/gauche/0004-rfc-needs-srfi.patch
+new file mode 100644
+index 0000000000..8b83b7872b
+--- /dev/null
++++ b/package/gauche/0004-rfc-needs-srfi.patch
+@@ -0,0 +1,35 @@
++From 33ba5e73ec09f1308f897128334e955debd9ea43 Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Wed, 21 Nov 2018 08:58:25 +0100
++Subject: [PATCH] rfc: needs srfi
++
++ext/rfc needs srfi-19 since version 0.9.5 and
++https://github.com/shirok/Gauche/commit/bd22bc82361c5eeb5d3b58c3836236566746bb96
++
++So add a dependency on srfi for rfc target in Makefile.in
++
++Fixes:
++ - http://autobuild.buildroot.org/results/f4935e29ce6aaebdaa47d46c56120b7e97145d1b
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Upstream status: https://github.com/shirok/Gauche/pull/397]
++---
++ ext/Makefile.in | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/ext/Makefile.in b/ext/Makefile.in
++index 57ddf457e..de8d59a4d 100644
++--- a/ext/Makefile.in
+++++ b/ext/Makefile.in
++@@ -54,7 +54,7 @@ bcrypt: mt-random
++ 
++ dbm : threads
++ 
++-rfc: gauche util
+++rfc: gauche srfi util
++ 
++ test : check
++ 
++-- 
++2.14.1
++
+diff --git a/package/gcc/6.4.0/0004-gcc-xtensa-don-t-force-PIC-for-uclinux-target.patch b/package/gcc/6.4.0/0004-gcc-xtensa-don-t-force-PIC-for-uclinux-target.patch
+new file mode 100644
+index 0000000000..360947cbb1
+--- /dev/null
++++ b/package/gcc/6.4.0/0004-gcc-xtensa-don-t-force-PIC-for-uclinux-target.patch
+@@ -0,0 +1,41 @@
++From 960a2552f7b418134cdf7a31e96023a3811b98dd Mon Sep 17 00:00:00 2001
++From: Max Filippov <jcmvbkbc@gmail.com>
++Date: Sun, 4 Nov 2018 23:55:59 -0800
++Subject: [PATCH] gcc: xtensa: don't force PIC for uclinux target
++
++xtensa-uclinux uses bFLT executable file format that cannot relocate
++fields representing offsets from data to code. C++ objects built as PIC
++use offsets to encode FDE structures. As a result C++ exception handling
++doesn't work correctly on xtensa-uclinux. Don't use PIC by default on
++xtensa-uclinux.
++
++gcc/
++2018-11-05  Max Filippov  <jcmvbkbc@gmail.com>
++
++	* config/xtensa/uclinux.h (XTENSA_ALWAYS_PIC): Change to 0.
++
++Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
++---
++Backported from: r265823
++
++ gcc/config/xtensa/uclinux.h | 4 ++--
++ 1 file changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/gcc/config/xtensa/uclinux.h b/gcc/config/xtensa/uclinux.h
++index ba26187c8f7a..c7743df9d97c 100644
++--- a/gcc/config/xtensa/uclinux.h
+++++ b/gcc/config/xtensa/uclinux.h
++@@ -59,8 +59,8 @@ along with GCC; see the file COPYING3.  If not see
++ #undef LOCAL_LABEL_PREFIX
++ #define LOCAL_LABEL_PREFIX	"."
++ 
++-/* Always enable "-fpic" for Xtensa Linux.  */
++-#define XTENSA_ALWAYS_PIC 1
+++/* Don't enable "-fpic" for Xtensa uclinux.  */
+++#define XTENSA_ALWAYS_PIC 0
++ 
++ #undef TARGET_LIBC_HAS_FUNCTION
++ #define TARGET_LIBC_HAS_FUNCTION no_c99_libc_has_function
++-- 
++2.11.0
++
+diff --git a/package/gcc/7.3.0/0005-gcc-xtensa-don-t-force-PIC-for-uclinux-target.patch b/package/gcc/7.3.0/0005-gcc-xtensa-don-t-force-PIC-for-uclinux-target.patch
+new file mode 100644
+index 0000000000..360947cbb1
+--- /dev/null
++++ b/package/gcc/7.3.0/0005-gcc-xtensa-don-t-force-PIC-for-uclinux-target.patch
+@@ -0,0 +1,41 @@
++From 960a2552f7b418134cdf7a31e96023a3811b98dd Mon Sep 17 00:00:00 2001
++From: Max Filippov <jcmvbkbc@gmail.com>
++Date: Sun, 4 Nov 2018 23:55:59 -0800
++Subject: [PATCH] gcc: xtensa: don't force PIC for uclinux target
++
++xtensa-uclinux uses bFLT executable file format that cannot relocate
++fields representing offsets from data to code. C++ objects built as PIC
++use offsets to encode FDE structures. As a result C++ exception handling
++doesn't work correctly on xtensa-uclinux. Don't use PIC by default on
++xtensa-uclinux.
++
++gcc/
++2018-11-05  Max Filippov  <jcmvbkbc@gmail.com>
++
++	* config/xtensa/uclinux.h (XTENSA_ALWAYS_PIC): Change to 0.
++
++Signed-off-by: Max Filippov <jcmvbkbc@gmail.com>
++---
++Backported from: r265823
++
++ gcc/config/xtensa/uclinux.h | 4 ++--
++ 1 file changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/gcc/config/xtensa/uclinux.h b/gcc/config/xtensa/uclinux.h
++index ba26187c8f7a..c7743df9d97c 100644
++--- a/gcc/config/xtensa/uclinux.h
+++++ b/gcc/config/xtensa/uclinux.h
++@@ -59,8 +59,8 @@ along with GCC; see the file COPYING3.  If not see
++ #undef LOCAL_LABEL_PREFIX
++ #define LOCAL_LABEL_PREFIX	"."
++ 
++-/* Always enable "-fpic" for Xtensa Linux.  */
++-#define XTENSA_ALWAYS_PIC 1
+++/* Don't enable "-fpic" for Xtensa uclinux.  */
+++#define XTENSA_ALWAYS_PIC 0
++ 
++ #undef TARGET_LIBC_HAS_FUNCTION
++ #define TARGET_LIBC_HAS_FUNCTION no_c99_libc_has_function
++-- 
++2.11.0
++
+diff --git a/package/giflib/giflib.mk b/package/giflib/giflib.mk
+index c1471de408..29666eebea 100644
+--- a/package/giflib/giflib.mk
++++ b/package/giflib/giflib.mk
+@@ -18,6 +18,8 @@ GIFLIB_BINS = \
+ 	gifrsize gifspnge giftext giftool gifwedge icon2gif raw2gif rgb2gif \
+ 	text2gif
+ 
++GIFLIB_CONF_ENV = ac_cv_prog_have_xmlto=no
++
+ define GIFLIB_BINS_CLEANUP
+ 	rm -f $(addprefix $(TARGET_DIR)/usr/bin/,$(GIFLIB_BINS))
+ endef
+diff --git a/package/glibc/Config.in b/package/glibc/Config.in
+index 57a2e833d2..7821251087 100644
+--- a/package/glibc/Config.in
++++ b/package/glibc/Config.in
+@@ -4,6 +4,7 @@ config BR2_PACKAGE_GLIBC
+ 	bool
+ 	default y
+ 	select BR2_PACKAGE_LINUX_HEADERS
+-	select BR2_TOOLCHAIN_HAS_SSP
+-
++	select BR2_TOOLCHAIN_HAS_SSP if BR2_PACKAGE_HOST_BINUTILS_SUPPORTS_CFI
++	help
++	  https://www.gnu.org/software/libc/
+ endif
+diff --git a/package/gpsd/gpsd.mk b/package/gpsd/gpsd.mk
+index 8c8023e818..e734d222af 100644
+--- a/package/gpsd/gpsd.mk
++++ b/package/gpsd/gpsd.mk
+@@ -19,6 +19,7 @@ GPSD_SCONS_ENV = $(TARGET_CONFIGURE_OPTS)
+ 
+ GPSD_SCONS_OPTS = \
+ 	arch=$(ARCH)\
++	manbuild=no \
+ 	prefix=/usr\
+ 	sysroot=$(STAGING_DIR)\
+ 	strip=no\
+diff --git a/package/lcdproc/lcdproc.mk b/package/lcdproc/lcdproc.mk
+index e5b6172b15..96e59da409 100644
+--- a/package/lcdproc/lcdproc.mk
++++ b/package/lcdproc/lcdproc.mk
+@@ -18,7 +18,9 @@ endif
+ 
+ LCDPROC_DEPENDENCIES = freetype ncurses zlib
+ 
+-LCDPROC_CONF_ENV += ac_cv_path_FT2_CONFIG=$(STAGING_DIR)/usr/bin/freetype-config
++LCDPROC_CONF_ENV += \
++	ac_cv_mtab_file=/etc/mtab \
++	ac_cv_path_FT2_CONFIG=$(STAGING_DIR)/usr/bin/freetype-config
+ 
+ ifeq ($(BR2_PACKAGE_LIBPNG),y)
+ LCDPROC_DEPENDENCIES += libpng
+diff --git a/package/libcurl/libcurl.hash b/package/libcurl/libcurl.hash
+index 395307653d..432943538a 100644
+--- a/package/libcurl/libcurl.hash
++++ b/package/libcurl/libcurl.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated after checking pgp signature
+-# https://curl.haxx.se/download/curl-7.61.1.tar.xz.asc
++# https://curl.haxx.se/download/curl-7.62.0.tar.xz.asc
+ # with key 27EDEAF22F3ABCEB50DB9A125CC908FDB71E12C2
+-sha256 3d5913d6a39bd22e68e34dff697fd6e4c3c81563f580c76fca2009315cd81891  curl-7.61.1.tar.xz
++sha256 dab5643a5fe775ae92570b9f3df6b0ef4bc2a827a959361fb130c73b721275c1  curl-7.62.0.tar.xz
+ sha256 5f3849ec38ddb927e79f514bf948890c41b8d1407286a49609b8fb1585931095  COPYING
+diff --git a/package/libcurl/libcurl.mk b/package/libcurl/libcurl.mk
+index 7993062c6e..af82ae0c83 100644
+--- a/package/libcurl/libcurl.mk
++++ b/package/libcurl/libcurl.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBCURL_VERSION = 7.61.1
++LIBCURL_VERSION = 7.62.0
+ LIBCURL_SOURCE = curl-$(LIBCURL_VERSION).tar.xz
+ LIBCURL_SITE = https://curl.haxx.se/download
+ LIBCURL_DEPENDENCIES = host-pkgconf \
+diff --git a/package/libiscsi/0002-avoid-truncation-when-logging-message-that-includes-target-name.patch b/package/libiscsi/0002-avoid-truncation-when-logging-message-that-includes-target-name.patch
+new file mode 100644
+index 0000000000..1334a8352c
+--- /dev/null
++++ b/package/libiscsi/0002-avoid-truncation-when-logging-message-that-includes-target-name.patch
+@@ -0,0 +1,29 @@
++From bffafc1c3003c2ee05d28eaa345e5854bc36014d Mon Sep 17 00:00:00 2001
++From: Paolo Bonzini <pbonzini@redhat.com>
++Date: Mon, 1 Oct 2018 14:16:14 +0200
++Subject: [PATCH] avoid truncation when logging message that includes target
++ name
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Retrieved from:
++https://github.com/sahlberg/libiscsi/commit/bffafc1c3003c2ee05d28eaa345e5854bc36014d]
++---
++ lib/logging.c | 4 ++--
++ 1 file changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/lib/logging.c b/lib/logging.c
++index be518fc5..61c74407 100644
++--- a/lib/logging.c
+++++ b/lib/logging.c
++@@ -73,9 +73,9 @@ iscsi_log_message(struct iscsi_context *iscsi, int level, const char *format, ..
++ 	}
++ 
++ 	if (iscsi->target_name[0]) {
++-		static char message2[1024];
+++		static char message2[1282];
++ 
++-		snprintf(message2, 1024, "%s [%s]", message, iscsi->target_name);
+++		snprintf(message2, 1282, "%s [%s]", message, iscsi->target_name);
++ 		iscsi->log_fn(level, message2);
++ 	}
++ 	else
+diff --git a/package/libiscsi/0003-avoid-fallthrough.patch b/package/libiscsi/0003-avoid-fallthrough.patch
+new file mode 100644
+index 0000000000..94f653a99c
+--- /dev/null
++++ b/package/libiscsi/0003-avoid-fallthrough.patch
+@@ -0,0 +1,24 @@
++From 679d0abe7c142df178a907397551c4d9695cc667 Mon Sep 17 00:00:00 2001
++From: Paolo Bonzini <pbonzini@redhat.com>
++Date: Mon, 1 Oct 2018 14:14:24 +0200
++Subject: [PATCH] avoid fallthrough
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Retrieved from:
++https://github.com/sahlberg/libiscsi/commit/679d0abe7c142df178a907397551c4d9695cc667]
++---
++ lib/scsi-lowlevel.c | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/lib/scsi-lowlevel.c b/lib/scsi-lowlevel.c
++index 5ddd709c..747ce0c4 100644
++--- a/lib/scsi-lowlevel.c
+++++ b/lib/scsi-lowlevel.c
++@@ -1086,6 +1086,7 @@ scsi_maintenancein_datain_getfullsize(struct scsi_task *task)
++ 				(task_get_uint8(task, 1) & 0x80) ? 12 : 0 +
++ 				task_get_uint16(task, 2);
++ 		}
+++		return -1;
++ 	default:
++ 		return -1;
++ 	}
+diff --git a/package/libiscsi/libiscsi.hash b/package/libiscsi/libiscsi.hash
+index 4f7d1af50e..0688f2dd2f 100644
+--- a/package/libiscsi/libiscsi.hash
++++ b/package/libiscsi/libiscsi.hash
+@@ -1,2 +1,5 @@
+ # Locally computed:
+ sha256 464d104e12533dc11f0dd7662cbc2f01c132f94aa4f5bd519e3413ef485830e8  libiscsi-1.18.0.tar.gz
++sha256 88e3eccc48722b2a0eaff456dda94b8e8e123848d01f631969bec8e3c6c6eb85  COPYING
++sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  LICENCE-GPL-2.txt
++sha256 dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551  LICENCE-LGPL-2.1.txt
+diff --git a/package/libkcapi/libkcapi.mk b/package/libkcapi/libkcapi.mk
+index d21c81b168..1e27371702 100644
+--- a/package/libkcapi/libkcapi.mk
++++ b/package/libkcapi/libkcapi.mk
+@@ -11,6 +11,10 @@ LIBKCAPI_AUTORECONF = YES
+ LIBKCAPI_INSTALL_STAGING = YES
+ LIBKCAPI_LICENSE = BSD-3-Clause (library), BSD-3-Clause or GPL-2.0 (programs)
+ LIBKCAPI_LICENSE_FILES = COPYING COPYING.gplv2 COPYING.bsd
++LIBKCAPI_CONF_ENV = \
++	ac_cv_path_DB2PDF="" \
++	ac_cv_path_DB2PS="" \
++	ac_cv_path_XMLTO=""
+ 
+ ifeq ($(BR2_PACKAGE_LIBKCAPI_APPS),y)
+ LIBKCAPI_CONF_OPTS += \
+diff --git a/package/libnfs/0001-Fix-include-sys-time.h.patch b/package/libnfs/0001-Fix-include-sys-time.h.patch
+new file mode 100644
+index 0000000000..15b281672a
+--- /dev/null
++++ b/package/libnfs/0001-Fix-include-sys-time.h.patch
+@@ -0,0 +1,41 @@
++From 9df082012cba1dc32d83e5e8b0bdc0892f250058 Mon Sep 17 00:00:00 2001
++From: =?UTF-8?q?J=C3=B6rg=20Krause?= <joerg.krause@embedded.rocks>
++Date: Mon, 5 Nov 2018 00:43:07 +0100
++Subject: [PATCH] Fix include sys/time.h
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++POSIX says `struct timeval` is defined if <sys/time.h> is included.
++
++Instead of the mess that is currently done based on the system on which
++the stuff is being compiled, include it unconditionally.
++
++Reported upstream:
++https://github.com/sahlberg/libnfs/issues/272
++
++Signed-off-by: Jörg Krause <joerg.krause@embedded.rocks>
++---
++ include/nfsc/libnfs.h | 5 -----
++ 1 file changed, 5 deletions(-)
++
++diff --git a/include/nfsc/libnfs.h b/include/nfsc/libnfs.h
++index 09dcf1c..b6db58c 100755
++--- a/include/nfsc/libnfs.h
+++++ b/include/nfsc/libnfs.h
++@@ -24,12 +24,7 @@
++ #define _LIBNFS_H_
++ 
++ #include <stdint.h>
++-#if defined(__ANDROID__) || defined(AROS) \
++- || ( defined(__APPLE__) && defined(__MACH__) )
++ #include <sys/time.h>
++-#else
++-#include <time.h>
++-#endif
++ 
++ #ifdef __cplusplus
++ extern "C" {
++-- 
++2.19.1
++
+diff --git a/package/libnspr/0001-nios2.patch b/package/libnspr/0001-nios2.patch
+index e10e7e9a66..2a967c4593 100644
+--- a/package/libnspr/0001-nios2.patch
++++ b/package/libnspr/0001-nios2.patch
+@@ -2,14 +2,16 @@ Add Nios-II support
+ 
+ [Gustavo: update for nspr 4.10.9]
+ Signed-off-by: Ezequiel Garcia <ezequiel@vanguardiasur.com.ar>
++[Fabrice: update for nspr 4.20]
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
+ 
+ Index: b/nspr/pr/include/md/_linux.cfg
+ ===================================================================
+ --- a/nspr/pr/include/md/_linux.cfg
+ +++ b/nspr/pr/include/md/_linux.cfg
+-@@ -1017,6 +1017,51 @@
+- #define PR_BYTES_PER_WORD_LOG2   2
+- #define PR_BYTES_PER_DWORD_LOG2  3
++@@ -1112,6 +1112,51 @@
++ #define PR_BYTES_PER_WORD_LOG2  3
++ #define PR_BYTES_PER_DWORD_LOG2 3
+  
+ +#elif defined(__nios2__)
+ +
+@@ -64,9 +66,9 @@ Index: b/nspr/pr/include/md/_linux.h
+ --- a/nspr/pr/include/md/_linux.h
+ +++ b/nspr/pr/include/md/_linux.h
+ @@ -57,6 +57,8 @@
+- #define _PR_SI_ARCHITECTURE "m32r"
+- #elif defined(__or1k__)
+- #define _PR_SI_ARCHITECTURE "or1k"
++ #define _PR_SI_ARCHITECTURE "riscv32"
++ #elif defined(__riscv) && (__riscv_xlen == 64)
++ #define _PR_SI_ARCHITECTURE "riscv64"
+ +#elif defined(__nios2__)
+ +#define _PR_SI_ARCHITECTURE "nios2"
+  #else
+diff --git a/package/libnspr/0002-microblaze.patch b/package/libnspr/0002-microblaze.patch
+index 7cf1f0dfac..4c23259d58 100644
+--- a/package/libnspr/0002-microblaze.patch
++++ b/package/libnspr/0002-microblaze.patch
+@@ -2,12 +2,14 @@ Add Microblaze support
+ 
+ [Gustavo: update for nspr 4.10.9]
+ Signed-off-by: Spenser Gilliland <spenser@gillilanding.com>
++[Fabrice: update for nspr 4.20]
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
+ 
+ Index: b/nspr/pr/include/md/_linux.cfg
+ ===================================================================
+ --- a/nspr/pr/include/md/_linux.cfg
+ +++ b/nspr/pr/include/md/_linux.cfg
+-@@ -1062,6 +1062,56 @@
++@@ -1157,6 +1157,56 @@
+  #define PR_BYTES_PER_WORD_LOG2   2
+  #define PR_BYTES_PER_DWORD_LOG2  3
+  
+@@ -69,9 +71,9 @@ Index: b/nspr/pr/include/md/_linux.h
+ --- a/nspr/pr/include/md/_linux.h
+ +++ b/nspr/pr/include/md/_linux.h
+ @@ -57,6 +57,8 @@
+- #define _PR_SI_ARCHITECTURE "m32r"
+- #elif defined(__or1k__)
+- #define _PR_SI_ARCHITECTURE "or1k"
++ #define _PR_SI_ARCHITECTURE "riscv32"
++ #elif defined(__riscv) && (__riscv_xlen == 64)
++ #define _PR_SI_ARCHITECTURE "riscv64"
+ +#elif defined(__microblaze__)
+ +#define _PR_SI_ARCHITECTURE "microblaze"
+  #elif defined(__nios2__)
+diff --git a/package/libnspr/libnspr.hash b/package/libnspr/libnspr.hash
+index 46c091e0da..33710b65a9 100644
+--- a/package/libnspr/libnspr.hash
++++ b/package/libnspr/libnspr.hash
+@@ -1,4 +1,4 @@
+-# From https://ftp.mozilla.org/pub/nspr/releases/v4.17/src/SHA256SUMS
+-sha256	590a0aea29412ae22d7728038c21ef2ab42646e48172a47d2e4bb782846d1095  nspr-4.17.tar.gz
++# From https://ftp.mozilla.org/pub/nspr/releases/v4.20/src/SHA256SUMS
++sha256	2c8964913da89ffbaf464d49ce44d79e8804e1794ef9a8c52a7bff7224d1556e  nspr-4.20.tar.gz
+ # Locally calculated
+ sha256	fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85  nspr/LICENSE
+diff --git a/package/libnspr/libnspr.mk b/package/libnspr/libnspr.mk
+index 0c782ae309..c87947e5fb 100644
+--- a/package/libnspr/libnspr.mk
++++ b/package/libnspr/libnspr.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBNSPR_VERSION = 4.17
++LIBNSPR_VERSION = 4.20
+ LIBNSPR_SOURCE = nspr-$(LIBNSPR_VERSION).tar.gz
+ LIBNSPR_SITE = https://ftp.mozilla.org/pub/mozilla.org/nspr/releases/v$(LIBNSPR_VERSION)/src
+ LIBNSPR_SUBDIR = nspr
+diff --git a/package/libnss/0001-fix-uclibc-build.patch b/package/libnss/0001-fix-uclibc-build.patch
+new file mode 100644
+index 0000000000..a9e84c264b
+--- /dev/null
++++ b/package/libnss/0001-fix-uclibc-build.patch
+@@ -0,0 +1,22 @@
++Fix build with uClibc-ng
++
++The elf.h header in uClibc-ng is missing the AT_HWCAP2 definition. Add it in
++the code.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: Not upstreamable; uClibc needs to update elf.h
++
++diff -Nuar nss-3.38.orig/nss/lib/freebl/blinit.c nss-3.38/nss/lib/freebl/blinit.c
++--- nss-3.38.orig/nss/lib/freebl/blinit.c	2018-06-21 12:24:45.000000000 +0300
+++++ nss-3.38/nss/lib/freebl/blinit.c	2018-06-26 13:13:55.636434720 +0300
++@@ -100,6 +100,9 @@
++     defined(__GNUC__) && __GNUC__ >= 2 && defined(__ELF__)
++ #include <sys/auxv.h>
++ extern unsigned long getauxval(unsigned long type) __attribute__((weak));
+++#ifndef AT_HWCAP2
+++#define AT_HWCAP2	26
+++#endif
++ #else
++ static unsigned long (*getauxval)(unsigned long) = NULL;
++ #define AT_HWCAP2 0
+diff --git a/package/libnss/0001-uclibc.patch b/package/libnss/0001-uclibc.patch
+deleted file mode 100644
+index b81db930be..0000000000
+--- a/package/libnss/0001-uclibc.patch
++++ /dev/null
+@@ -1,20 +0,0 @@
+-uCLibc does not define RTLD_NOLOAD.
+-
+-[Gustavo: update for nss 3.16.1]
+-Signed-off-by: Will Newton <will.newton@imgtec.com>
+-
+-diff -Nura nss-3.16.1.orig/nss/lib/freebl/stubs.c nss-3.16.1/nss/lib/freebl/stubs.c
+---- nss-3.16.1.orig/nss/lib/freebl/stubs.c	2014-06-18 10:34:30.529997002 -0300
+-+++ nss-3.16.1/nss/lib/freebl/stubs.c	2014-06-18 10:36:25.508882650 -0300
+-@@ -594,6 +594,11 @@
+-     return SECSuccess;
+- }
+- 
+-+/* uClibc does not define RTLD_NOLOAD. */
+-+#ifndef RTLD_NOLOAD
+-+#define RTLD_NOLOAD 0
+-+#endif
+-+
+- /*
+-  * fetch the library if it's loaded. For NSS it should already be loaded
+-  */
+diff --git a/package/libnss/0004-Bug-1438426-Avoid-stringop-truncation-warning-r-fran.patch b/package/libnss/0004-Bug-1438426-Avoid-stringop-truncation-warning-r-fran.patch
+deleted file mode 100644
+index c14880b117..0000000000
+--- a/package/libnss/0004-Bug-1438426-Avoid-stringop-truncation-warning-r-fran.patch
++++ /dev/null
+@@ -1,33 +0,0 @@
+-From f0ce70989526fc9a0223398c99ea0d09777ea5df Mon Sep 17 00:00:00 2001
+-From: Martin Thomson <martin.thomson@gmail.com>
+-Date: Thu, 15 Feb 2018 16:34:02 +1100
+-Subject: [PATCH] Bug 1438426 - Avoid stringop-truncation warning, r=franziskus
+-
+---HG--
+-extra : rebase_source : 4ea1630d0da0ce3523309e3da33ee50961682242
+-
+-Upstream-commit: https://github.com/nss-dev/nss/commit/f0ce70989526fc9a0223398c99ea0d09777ea5df
+-[Thomas: edited after git format-patch to add the nss/ prefix needed
+-for the patch to apply properly on the source code extracted by the
+-tarball.]
+-Signed-off-by: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
+----
+- nss/coreconf/nsinstall/pathsub.c | 2 +-
+- 1 file changed, 1 insertion(+), 1 deletion(-)
+-
+-diff --git a/nss/coreconf/nsinstall/pathsub.c b/nss/coreconf/nsinstall/pathsub.c
+-index a42a9f30a..c31a946f0 100644
+---- a/nss/coreconf/nsinstall/pathsub.c
+-+++ b/nss/coreconf/nsinstall/pathsub.c
+-@@ -212,7 +212,7 @@ reversepath(char *inpath, char *name, int len, char *outpath)
+- 	    xchdir("..");
+- 	} else {
+- 	    cp -= 3;
+--	    strncpy(cp, "../", 3);
+-+	    memcpy(cp, "../", 3);
+- 	    xchdir(buf);
+- 	}
+-     }
+--- 
+-2.14.3
+-
+diff --git a/package/libnss/libnss.hash b/package/libnss/libnss.hash
+index 6c8ce83784..9c3cefd818 100644
+--- a/package/libnss/libnss.hash
++++ b/package/libnss/libnss.hash
+@@ -1,4 +1,4 @@
+-# From https://ftp.mozilla.org/pub/security/nss/releases/NSS_3_33_RTM/src/SHA256SUMS
+-sha256	98f0dabd36408e83dd3a11727336cc3cdfee4cbdd9aede2b2831eb2389c284e4  nss-3.33.tar.gz
++# From https://ftp.mozilla.org/pub/security/nss/releases/NSS_3_39_RTM/src/SHA256SUMS
++sha256	6be64dd76f212415cc8bc34343ac1e7389048db4db9a023a84873c411dc5864b  nss-3.39.tar.gz
+ # Locally calculated
+ sha256	a20c1a32d1f8102432360b42e932869f7c11c7cdbacf9cac554c422132af47f4  nss/COPYING
+diff --git a/package/libnss/libnss.mk b/package/libnss/libnss.mk
+index 27d305cc34..e3558718a5 100644
+--- a/package/libnss/libnss.mk
++++ b/package/libnss/libnss.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBNSS_VERSION = 3.33
++LIBNSS_VERSION = 3.39
+ LIBNSS_SOURCE = nss-$(LIBNSS_VERSION).tar.gz
+ LIBNSS_SITE = https://ftp.mozilla.org/pub/mozilla.org/security/nss/releases/NSS_$(subst .,_,$(LIBNSS_VERSION))_RTM/src
+ LIBNSS_DISTDIR = dist
+@@ -23,6 +23,12 @@ endef
+ LIBNSS_PRE_CONFIGURE_HOOKS += LIBNSS_DROP_GC_SECTIONS
+ endif
+ 
++ifeq ($(BR2_aarch64_be),y)
++LIBNSS_ARCH = aarch64
++else
++LIBNSS_ARCH = $(ARCH)
++endif
++
+ LIBNSS_BUILD_VARS = \
+ 	MOZILLA_CLIENT=1 \
+ 	NSPR_INCLUDE_DIR=$(STAGING_DIR)/usr/include/nspr \
+@@ -35,7 +41,7 @@ LIBNSS_BUILD_VARS = \
+ 	NATIVE_CC="$(HOSTCC)" \
+ 	OS_ARCH="Linux" \
+ 	OS_RELEASE="2.6" \
+-	OS_TEST="$(ARCH)"
++	OS_TEST="$(LIBNSS_ARCH)"
+ 
+ # #pragma usage needs gcc >= 4.8
+ # See https://bugzilla.mozilla.org/show_bug.cgi?id=1226179
+diff --git a/package/libsemanage/libsemanage.mk b/package/libsemanage/libsemanage.mk
+index b6e50e2848..6ef81bf7e2 100644
+--- a/package/libsemanage/libsemanage.mk
++++ b/package/libsemanage/libsemanage.mk
+@@ -31,7 +31,8 @@ HOST_LIBSEMANAGE_DEPENDENCIES = host-bison host-audit host-libsepol host-libseli
+ HOST_LIBSEMANAGE_MAKE_OPTS += \
+ 	$(HOST_CONFIGURE_OPTS) \
+ 	PREFIX=$(HOST_DIR) \
+-	SWIG_LIB="$(HOST_DIR)/share/swig/$(SWIG_VERSION)/"
++	SWIG_LIB="$(HOST_DIR)/share/swig/$(SWIG_VERSION)/" \
++	DEFAULT_SEMANAGE_CONF_LOCATION=$(HOST_DIR)/etc/selinux/semanage.conf
+ 
+ ifeq ($(BR2_PACKAGE_PYTHON3),y)
+ HOST_LIBSEMANAGE_DEPENDENCIES += host-python3
+diff --git a/package/liburiparser/Config.in b/package/liburiparser/Config.in
+index e85a2626d2..b39e3907dd 100644
+--- a/package/liburiparser/Config.in
++++ b/package/liburiparser/Config.in
+@@ -4,4 +4,4 @@ config BR2_PACKAGE_LIBURIPARSER
+ 	  uriparser is a strictly RFC 3986 compliant URI parsing and
+ 	  handling library written in C.
+ 
+-	  http://uriparser.sourceforge.net
++	  https://uriparser.github.io
+diff --git a/package/liburiparser/liburiparser.hash b/package/liburiparser/liburiparser.hash
+index 9e9517c17f..f71dd5cc7b 100644
+--- a/package/liburiparser/liburiparser.hash
++++ b/package/liburiparser/liburiparser.hash
+@@ -1,5 +1,3 @@
+-# From http://sourceforge.net/projects/uriparser/files/Sources/0.8.4/
+-md5	9aabdc3611546f553f4af372167de6d6		uriparser-0.8.4.tar.bz2
+-sha1	7a1948c20bed54b04dad0e1d7d2fa8f80fc7b2b3	uriparser-0.8.4.tar.bz2
+ # Locally calculated
+-sha256  c6ef125800c2ef13a41a22126bfc77e8b8c08993a6b96196117695988ea76249  COPYING
++sha256  ec67eb34feda8eac166f281799f03ed48387694fca44f6f5852f61f8fb535e2c  uriparser-0.9.0.tar.bz2
++sha256  ee90029e62d11f48faa59360d15c3ad8e7c094c74cc25b055716d92340da561f  COPYING
+diff --git a/package/liburiparser/liburiparser.mk b/package/liburiparser/liburiparser.mk
+index 856a6aafd4..62bc8d30d1 100644
+--- a/package/liburiparser/liburiparser.mk
++++ b/package/liburiparser/liburiparser.mk
+@@ -4,9 +4,9 @@
+ #
+ ################################################################################
+ 
+-LIBURIPARSER_VERSION = 0.8.4
++LIBURIPARSER_VERSION = 0.9.0
+ LIBURIPARSER_SOURCE = uriparser-$(LIBURIPARSER_VERSION).tar.bz2
+-LIBURIPARSER_SITE = http://sourceforge.net/projects/uriparser/files/Sources/$(LIBURIPARSER_VERSION)
++LIBURIPARSER_SITE = https://github.com/uriparser/uriparser/releases/download/uriparser-$(LIBURIPARSER_VERSION)
+ LIBURIPARSER_LICENSE = BSD-3-Clause
+ LIBURIPARSER_LICENSE_FILES = COPYING
+ LIBURIPARSER_INSTALL_STAGING = YES
+diff --git a/package/lighttpd/lighttpd.hash b/package/lighttpd/lighttpd.hash
+index 813d1cd0e0..0829c6b4c9 100644
+--- a/package/lighttpd/lighttpd.hash
++++ b/package/lighttpd/lighttpd.hash
+@@ -1,4 +1,4 @@
+-# From http://www.lighttpd.net/
+-sha256 0f8ad5aac7529d7b948b9d7e8cd0b4a9e177309d85d6bf6516e28e6e40d74f36  lighttpd-1.4.48.tar.xz
++# From https://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-1.4.51.sha256sum
++sha256 2af9fdb265d1f025bfa634e13770239712ecbd585e4975b8226edf1df74e9c82  lighttpd-1.4.51.tar.xz
+ # Locally calculated
+ sha256 5c98cad2fbaf5c5e2562bcbab401a7c557c1bb1bac9914ecc63730925052fb13  COPYING
+diff --git a/package/lighttpd/lighttpd.mk b/package/lighttpd/lighttpd.mk
+index 0a09d9127b..44bee6f90f 100644
+--- a/package/lighttpd/lighttpd.mk
++++ b/package/lighttpd/lighttpd.mk
+@@ -5,13 +5,15 @@
+ ################################################################################
+ 
+ LIGHTTPD_VERSION_MAJOR = 1.4
+-LIGHTTPD_VERSION = $(LIGHTTPD_VERSION_MAJOR).48
++LIGHTTPD_VERSION = $(LIGHTTPD_VERSION_MAJOR).51
+ LIGHTTPD_SOURCE = lighttpd-$(LIGHTTPD_VERSION).tar.xz
+ LIGHTTPD_SITE = http://download.lighttpd.net/lighttpd/releases-$(LIGHTTPD_VERSION_MAJOR).x
+ LIGHTTPD_LICENSE = BSD-3-Clause
+ LIGHTTPD_LICENSE_FILES = COPYING
+ LIGHTTPD_DEPENDENCIES = host-pkgconf
+ LIGHTTPD_CONF_OPTS = \
++	--without-pam \
++	--without-wolfssl \
+ 	--libdir=/usr/lib/lighttpd \
+ 	--libexecdir=/usr/lib
+ 
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index 51b8b3768d..7145e95723 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -250,12 +250,12 @@ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+ 	default "3.2.102"	if BR2_KERNEL_HEADERS_3_2
+ 	default "4.1.52"	if BR2_KERNEL_HEADERS_4_1
+-	default "4.4.161"	if BR2_KERNEL_HEADERS_4_4
+-	default "4.9.133"	if BR2_KERNEL_HEADERS_4_9
++	default "4.4.164"	if BR2_KERNEL_HEADERS_4_4
++	default "4.9.140"	if BR2_KERNEL_HEADERS_4_9
+ 	default "4.10.17"	if BR2_KERNEL_HEADERS_4_10
+ 	default "4.11.12"	if BR2_KERNEL_HEADERS_4_11
+ 	default "4.12.14"	if BR2_KERNEL_HEADERS_4_12
+ 	default "4.13.16"	if BR2_KERNEL_HEADERS_4_13
+-	default "4.14.76"	if BR2_KERNEL_HEADERS_4_14
++	default "4.14.83"	if BR2_KERNEL_HEADERS_4_14
+ 	default "4.15.18"	if BR2_KERNEL_HEADERS_4_15
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+diff --git a/package/lua-curl/0001-Fix-build-with-curl-7.62.0.patch b/package/lua-curl/0001-Fix-build-with-curl-7.62.0.patch
+new file mode 100644
+index 0000000000..456afb30f7
+--- /dev/null
++++ b/package/lua-curl/0001-Fix-build-with-curl-7.62.0.patch
+@@ -0,0 +1,58 @@
++From 4e3764ecf2b2c3f62475579fee6af4a753729f07 Mon Sep 17 00:00:00 2001
++From: Baruch Siach <baruch@tkos.co.il>
++Date: Thu, 1 Nov 2018 19:12:20 +0200
++Subject: [PATCH] Fix build with curl 7.62.0
++
++Fixes #134.
++
++curl 7.62.0 deprecates the CURLE_SSL_CACERT error code, and unifies it
++with CURLE_PEER_FAILED_VERIFICATION. Adjust the errors list to match.
++
++This fixes the following build failure:
++
++src/lcerr_easy.h: In function 'lcurl_err_easy_mnemo':
++src/lcerror.c:32:22: error: duplicate case value
++ #define ERR_ENTRY(E) case CURLE_##E: return #E;
++                      ^
++src/lcerr_easy.h:74:1: note: in expansion of macro 'ERR_ENTRY'
++ ERR_ENTRY ( SSL_CACERT               )
++ ^~~~~~~~~
++src/lcerror.c:32:22: note: previously used here
++ #define ERR_ENTRY(E) case CURLE_##E: return #E;
++                      ^
++src/lcerr_easy.h:65:1: note: in expansion of macro 'ERR_ENTRY'
++ ERR_ENTRY ( PEER_FAILED_VERIFICATION )
++ ^~~~~~~~~
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: https://github.com/Lua-cURL/Lua-cURLv3/pull/136
++
++diff --git a/src/lcerr_easy.h b/src/lcerr_easy.h
++index 94ad143c3bfe..895c6d87d72f 100644
++--- a/Lua-cURLv3-0.3.7/src/lcerr_easy.h
+++++ b/Lua-cURLv3-0.3.7/src/lcerr_easy.h
++@@ -62,7 +62,11 @@ ERR_ENTRY ( UNKNOWN_TELNET_OPTION    ) /* User specified an unknown option */
++ #endif
++ ERR_ENTRY ( TELNET_OPTION_SYNTAX     )
++ ERR_ENTRY ( OBSOLETE50               )
+++#if LCURL_CURL_VER_GE(7,62,0)
+++ERR_ENTRY ( OBSOLETE51               )
+++#else
++ ERR_ENTRY ( PEER_FAILED_VERIFICATION )
+++#endif
++ ERR_ENTRY ( GOT_NOTHING              )
++ ERR_ENTRY ( SSL_ENGINE_NOTFOUND      )
++ ERR_ENTRY ( SSL_ENGINE_SETFAILED     )
++@@ -71,7 +75,11 @@ ERR_ENTRY ( RECV_ERROR               )
++ ERR_ENTRY ( OBSOLETE57               )
++ ERR_ENTRY ( SSL_CERTPROBLEM          )
++ ERR_ENTRY ( SSL_CIPHER               )
+++#if LCURL_CURL_VER_GE(7,62,0)
+++ERR_ENTRY ( PEER_FAILED_VERIFICATION )
+++#else
++ ERR_ENTRY ( SSL_CACERT               )
+++#endif
++ ERR_ENTRY ( BAD_CONTENT_ENCODING     )
++ ERR_ENTRY ( LDAP_INVALID_URL         )
++ ERR_ENTRY ( FILESIZE_EXCEEDED        )
+diff --git a/package/mariadb/mariadb.hash b/package/mariadb/mariadb.hash
+index e4736465e0..7730ae0cb0 100644
+--- a/package/mariadb/mariadb.hash
++++ b/package/mariadb/mariadb.hash
+@@ -1,9 +1,9 @@
+-# From https://downloads.mariadb.org/mariadb/10.1.35/
+-md5 935f401314ff08a4177beb70fed6055c  mariadb-10.1.35.tar.gz
+-sha1 d322f0da17f4de475832dd534657eba5a936f77b  mariadb-10.1.35.tar.gz
+-sha256 9e91d985ed4f662126e3e5791fe91ec8a2f44ec811113c2b6fbc72fa14553c4d  mariadb-10.1.35.tar.gz
+-sha512 88e6049f3bbc3aa047e108f91a2c4f335758e80f25bfa2974b5f8c2e13f5758824d7835dece021b515c531e5641b9998e4de92256ad4b47b7f694da99bd471aa  mariadb-10.1.35.tar.gz
++# From https://downloads.mariadb.org/mariadb/10.1.37/
++md5 123b37bec63ddca19260e45f0f2276bb  mariadb-10.1.37.tar.gz
++sha1 35e9c15b5532c2e7c746b1e7452952053d7d5b5a  mariadb-10.1.37.tar.gz
++sha256 8cd516b0a7f7aa36a7c1d6e687dbbad8c0b08c92d5fd60c6e691b19a6cab4d46  mariadb-10.1.37.tar.gz
++sha512 b7c35cd67ad265ce2e3a4db20a2ae2b78745db96dc70a211f027a39b6dbb3dc900991c2ee1021ee6a97d12489c3e2a70252e2adf348a458af38b99c3de5a4f25  mariadb-10.1.37.tar.gz
+ 
+ # Hash for license files
+-sha256 69ce89a0cadbe35a858398c258be93c388715e84fc0ca04e5a1fd1aa9770dd3a  README
++sha256 d89f09a82da1666d389916bba8c21278d3ef5ac43c2139587234576a128428d4  README
+ sha256 ab15fd526bd8dd18a9e77ebc139656bf4d33e97fc7238cd11bf60e2b9b8666c6  COPYING
+diff --git a/package/mariadb/mariadb.mk b/package/mariadb/mariadb.mk
+index e8ccf7a2a9..4e1c4addb8 100644
+--- a/package/mariadb/mariadb.mk
++++ b/package/mariadb/mariadb.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MARIADB_VERSION = 10.1.35
++MARIADB_VERSION = 10.1.37
+ MARIADB_SITE = https://downloads.mariadb.org/interstitial/mariadb-$(MARIADB_VERSION)/source
+ MARIADB_LICENSE = GPL-2.0 (server), GPL-2.0 with FLOSS exception (GPL client library), LGPL-2.0 (LGPL client library)
+ # Tarball no longer contains LGPL license text
+@@ -112,8 +112,6 @@ endif
+ # We also don't need the test suite on the target
+ define MARIADB_POST_INSTALL
+ 	mkdir -p $(TARGET_DIR)/var/lib/mysql
+-	$(INSTALL) -D -m 644 $(TARGET_DIR)/usr/share/mysql/my-small.cnf \
+-		$(TARGET_DIR)/etc/mysql/my.cnf
+ 	$(RM) $(TARGET_DIR)/usr/bin/mysql_config
+ 	$(RM) -r $(TARGET_DIR)/usr/share/mysql/test
+ endef
+diff --git a/package/mmc-utils/0002-fix-overlapping-with-strncpy.patch b/package/mmc-utils/0002-fix-overlapping-with-strncpy.patch
+new file mode 100644
+index 0000000000..a134dd3c5a
+--- /dev/null
++++ b/package/mmc-utils/0002-fix-overlapping-with-strncpy.patch
+@@ -0,0 +1,44 @@
++From 1c90a7534658056b884d71ef82dc7ca8bad4271b Mon Sep 17 00:00:00 2001
++From: =?UTF-8?q?Cl=C3=A9ment=20P=C3=A9ron?= <peron.clem@gmail.com>
++Date: Wed, 24 Oct 2018 13:00:47 +0200
++Subject: [PATCH 1/1] mmc-utils: fix overlapping with strncpy
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++GCC 8.2 warns about an overlapping using strncpy.
++
++Replace strncpy with a memmove to avoid this issue.
++
++In file included from /usr/include/string.h:494,
++                 from lsmmc.c:46:
++In function ‘strncpy’,
++    inlined from ‘read_file’ at lsmmc.c:356:3:
++/usr/include/x86_64-linux-gnu/bits/string_fortified.h:106:10: error: ‘__builtin_strncpy’ accessing 4096 bytes at offsets 0 and 1 overlaps 4095 bytes at offset 1 [-Werror=restrict]
++   return __builtin___strncpy_chk (__dest, __src, __len, __bos (__dest));
++          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++cc1: all warnings being treated as errors
++make: *** [Makefile:36: lsmmc.o] Error 1
++
++Signed-off-by: Clément Péron <peron.clem@gmail.com>
++Signed-off-by: Sébastien Szymanski <sebastien.szymanski@armadeus.com>
++---
++ lsmmc.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/lsmmc.c b/lsmmc.c
++index c4faa00..bcb854d 100644
++--- a/lsmmc.c
+++++ b/lsmmc.c
++@@ -353,7 +353,7 @@ char *read_file(char *name)
++ 		line[strlen(line) - 1] = '\0';
++ 
++ 	while (isspace(line[0]))
++-		strncpy(&line[0], &line[1], sizeof(line));
+++		memmove(&line[0], &line[1], sizeof(line)-1);
++ 
++ 	return strdup(line);
++ }
++-- 
++2.16.4
++
+diff --git a/package/mosquitto/0001-websockets.c-unbreak-build-without-TLS.patch b/package/mosquitto/0001-websockets.c-unbreak-build-without-TLS.patch
+deleted file mode 100644
+index e977fae56c..0000000000
+--- a/package/mosquitto/0001-websockets.c-unbreak-build-without-TLS.patch
++++ /dev/null
+@@ -1,49 +0,0 @@
+-From 4822aa97da80a86033ec6e4a8b2f4ad0911235cf Mon Sep 17 00:00:00 2001
+-From: Peter Korsgaard <peter@korsgaard.com>
+-Date: Sat, 3 Mar 2018 11:04:47 +0100
+-Subject: [PATCH] websockets.c: unbreak build without TLS
+-
+-Commit 7943072b1f3b (Fix use_identity_as_username not working on websockets
+-clients) added code which unconditionally accesses mosq-ssl, breaking the
+-build when TLS support is disabled.
+-
+-Fix it by guarding this logic inside #ifdef WITH_TLS.
+-
+-[Upstream: https://dev.eclipse.org/mhonarc/lists/mosquitto-dev/msg01813.html]
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- src/websockets.c | 4 ++++
+- 1 file changed, 4 insertions(+)
+-
+-diff --git a/src/websockets.c b/src/websockets.c
+-index d4d7961..a796f0a 100644
+---- a/src/websockets.c
+-+++ b/src/websockets.c
+-@@ -201,12 +201,14 @@ static int callback_mqtt(struct libwebsocket_context *context,
+- 				mosq->ws_context = context;
+- #endif
+- 				mosq->wsi = wsi;
+-+#ifdef WITH_TLS
+- 				if(in){
+- 					mosq->ssl = (SSL *)in;
+- 					if(!mosq->listener->ssl_ctx){
+- 						mosq->listener->ssl_ctx = SSL_get_SSL_CTX(mosq->ssl);
+- 					}
+- 				}
+-+#endif
+- 				u->mosq = mosq;
+- 			}else{
+- 				return -1;
+-@@ -240,7 +242,9 @@ static int callback_mqtt(struct libwebsocket_context *context,
+- 					mosq->pollfd_index = -1;
+- 				}
+- 				mosq->wsi = NULL;
+-+#ifdef WITH_TLS
+- 				mosq->ssl = NULL;
+-+#endif
+- 				do_disconnect(db, mosq);
+- 			}
+- 			break;
+--- 
+-2.11.0
+-
+diff --git a/package/mosquitto/mosquitto.hash b/package/mosquitto/mosquitto.hash
+index 91c855cb4e..96e2ae9369 100644
+--- a/package/mosquitto/mosquitto.hash
++++ b/package/mosquitto/mosquitto.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated after checking gpg signature
+-sha256 7d3b3e245a3b4ec94b05678c8199c806359737949f4cfe0bf936184f6ca89a83  mosquitto-1.4.15.tar.gz
++sha256 5fd7f3454fd6d286645d032bc07f44a1c8583cec02ef2422c9eb32e0a89a9b2f  mosquitto-1.5.4.tar.gz
+ 
+ # License files
+ sha256 cc77e25bafd40637b7084f04086d606f0a200051b61806f97c93405926670bc1  LICENSE.txt
+diff --git a/package/mosquitto/mosquitto.mk b/package/mosquitto/mosquitto.mk
+index ec5fc02f9f..d01811e5aa 100644
+--- a/package/mosquitto/mosquitto.mk
++++ b/package/mosquitto/mosquitto.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MOSQUITTO_VERSION = 1.4.15
++MOSQUITTO_VERSION = 1.5.4
+ MOSQUITTO_SITE = https://mosquitto.org/files/source
+ MOSQUITTO_LICENSE = EPL-1.0 or EDLv1.0
+ MOSQUITTO_LICENSE_FILES = LICENSE.txt epl-v10 edl-v10
+@@ -17,6 +17,13 @@ MOSQUITTO_MAKE_OPTS = \
+ 	WITH_WRAP=no \
+ 	WITH_DOCS=no
+ 
++# uses malloc_usable_size which was only added in uClibc-ng 1.0.29
++ifeq ($(BR2_TOOLCHAIN_USES_UCLIBC),y)
++MOSQUITTO_MAKE_OPTS += WITH_MEMORY_TRACKING=no
++else
++MOSQUITTO_MAKE_OPTS += WITH_MEMORY_TRACKING=yes
++endif
++
+ # adns uses getaddrinfo_a
+ ifeq ($(BR2_TOOLCHAIN_USES_GLIBC),y)
+ MOSQUITTO_MAKE_OPTS += WITH_ADNS=yes
+diff --git a/package/musl/Config.in b/package/musl/Config.in
+index bedc50cd45..67e9e78a14 100644
+--- a/package/musl/Config.in
++++ b/package/musl/Config.in
+@@ -4,6 +4,7 @@ config BR2_PACKAGE_MUSL
+ 	depends on BR2_TOOLCHAIN_USES_MUSL
+ 	select BR2_PACKAGE_LINUX_HEADERS
+ 	# SSP broken on i386/ppc: http://www.openwall.com/lists/musl/2016/12/04/2
+-	select BR2_TOOLCHAIN_HAS_SSP if !(BR2_i386 || BR2_powerpc)
++	select BR2_TOOLCHAIN_HAS_SSP if BR2_PACKAGE_HOST_BINUTILS_SUPPORTS_CFI \
++		&& !(BR2_i386 || BR2_powerpc)
+ 	# Compatibility headers: cdefs.h, queue.h
+ 	select BR2_PACKAGE_MUSL_COMPAT_HEADERS
+diff --git a/package/mysql/Config.in b/package/mysql/Config.in
+index 66bd0faa57..b4e49e47fa 100644
+--- a/package/mysql/Config.in
++++ b/package/mysql/Config.in
+@@ -55,8 +55,8 @@ config BR2_PACKAGE_MARIADB_SERVER
+ 	  Install the mariadb server on the target.
+ 
+ config BR2_PACKAGE_MARIADB_SERVER_EMBEDDED
+-	depends on BR2_PACKAGE_MARIADB_SERVER
+ 	bool "mariadb embedded server"
++	depends on BR2_PACKAGE_MARIADB_SERVER
+ 	help
+ 	  Install the mariadb embedded server on the target.
+ 
+diff --git a/package/neardal/0001-fix-static-linking-with-libedit-or-readline.patch b/package/neardal/0001-fix-static-linking-with-libedit-or-readline.patch
+new file mode 100644
+index 0000000000..bae0edae96
+--- /dev/null
++++ b/package/neardal/0001-fix-static-linking-with-libedit-or-readline.patch
+@@ -0,0 +1,45 @@
++From 62ae1bf0206960d0ba5ff8f90238030e67f1a5cd Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Sun, 28 Oct 2018 20:58:55 +0100
++Subject: [PATCH] fix static linking with libedit or readline
++
++Use PKG_CHECK_MODULES to find libedit or readline and continue to use
++AC_SEARCH_LIBS as a fallback
++
++By using PKG_CHECK_MODULES, static link will work as -lncurses or -lbsd
++will be automatically added
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Upstream status: https://github.com/connectivity/neardal/pull/7]
++---
++ configure.ac | 14 ++++++++++----
++ 1 file changed, 10 insertions(+), 4 deletions(-)
++
++diff --git a/configure.ac b/configure.ac
++index f0cebed..211b896 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -68,10 +68,16 @@ PKG_CHECK_MODULES(gio, gio-unix-2.0 >= 2.30,
++ 	AC_SUBST([gio_LIBS]),
++ 	AC_MSG_ERROR(gio-unix-2.0 >= 2.30 is required))
++ 
++-AC_SEARCH_LIBS([rl_initialize], [edit readline],
++-	[AS_IF([echo $LIBS | grep -q "-ledit"],
++-		[CPPFLAGS="-DHAVE_LIBEDIT $CPPFLAGS"])],
++-	[AC_MSG_ERROR(editline or readline is required)])
+++PKG_CHECK_MODULES(libedit, libedit,
+++	[CPPFLAGS="-DHAVE_LIBEDIT $libedit_CFLAGS $CPPFLAGS"
+++	 LIBS="$libedit_LIBS $LIBS"],
+++	[PKG_CHECK_MODULES(readline, readline,
+++		[CPPFLAGS="$readline_CFLAGS $CPPFLAGS"
+++		 LIBS="$readline_LIBS $LIBS"],
+++		AC_SEARCH_LIBS([rl_initialize], [edit readline],
+++			[AS_IF([echo $LIBS | grep -q "-ledit"],
+++				[CPPFLAGS="-DHAVE_LIBEDIT $CPPFLAGS"])],
+++			[AC_MSG_ERROR(editline or readline is required)]))])
++ 
++ AC_PATH_TOOL([DOXYGEN], [doxygen])
++ AM_CONDITIONAL([HAVE_DOXYGEN], [test ! -z "$DOXYGEN"])
++-- 
++2.17.1
++
+diff --git a/package/neardal/neardal.mk b/package/neardal/neardal.mk
+index f3e55fd99f..3883011932 100644
+--- a/package/neardal/neardal.mk
++++ b/package/neardal/neardal.mk
+@@ -21,13 +21,6 @@ else ifeq ($(BR2_PACKAGE_LIBEDIT),y)
+ NEARDAL_DEPENDENCIES += libedit
+ endif
+ 
+-# Both readline and libedit link with ncurses but the configure script
+-# forgets to take that into account, causing the detection to fail
+-# when linking statically
+-ifeq ($(BR2_STATIC_LIBS),y)
+-NEARDAL_CONF_ENV += LIBS="`$(PKG_CONFIG_HOST_BINARY) --libs ncurses`"
+-endif
+-
+ define NEARDAL_INSTALL_NCL
+ 	$(INSTALL) -m 0755 -D $(@D)/ncl/ncl $(TARGET_DIR)/usr/bin/ncl
+ endef
+diff --git a/package/netplug/S29netplug b/package/netplug/S29netplug
+index 66459061b3..cef0e6a945 100755
+--- a/package/netplug/S29netplug
++++ b/package/netplug/S29netplug
+@@ -26,7 +26,7 @@ if [ -f /etc/default/network ]; then
+ 	. /etc/default/network
+ 
+ 	# Check that networking is up.
+-	[ ${NETWORKING} = "no" ] && exit 0
++	[ "${NETWORKING}" = "no" ] && exit 0
+ elif [ ! -f /etc/network/interfaces ]; then
+ 	# No network support
+ 	exit 0
+diff --git a/package/network-manager/0001-dhcp6-make-sure-we-have-enough-space-for-the-DHCP6-o.patch b/package/network-manager/0001-dhcp6-make-sure-we-have-enough-space-for-the-DHCP6-o.patch
+new file mode 100644
+index 0000000000..c6066abe28
+--- /dev/null
++++ b/package/network-manager/0001-dhcp6-make-sure-we-have-enough-space-for-the-DHCP6-o.patch
+@@ -0,0 +1,38 @@
++From 01ca2053bbea09f35b958c8cc7631e15469acb79 Mon Sep 17 00:00:00 2001
++From: Lennart Poettering <lennart@poettering.net>
++Date: Fri, 19 Oct 2018 12:12:33 +0200
++Subject: dhcp6: make sure we have enough space for the DHCP6 option header
++
++Fixes a vulnerability originally discovered by Felix Wilhelm from
++Google.
++
++CVE-2018-15688
++LP: #1795921
++https://bugzilla.redhat.com/show_bug.cgi?id=1639067
++
++(cherry picked from commit 4dac5eaba4e419b29c97da38a8b1f82336c2c892)
++
++Patch downloaded from upstream commit:
++https://cgit.freedesktop.org/NetworkManager/NetworkManager/commit/?id=01ca2053bbea09f35b958c8cc7631e15469acb79
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++---
++ src/systemd/src/libsystemd-network/dhcp6-option.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/src/systemd/src/libsystemd-network/dhcp6-option.c b/src/systemd/src/libsystemd-network/dhcp6-option.c
++index d178fe2..9027c14 100644
++--- a/src/systemd/src/libsystemd-network/dhcp6-option.c
+++++ b/src/systemd/src/libsystemd-network/dhcp6-option.c
++@@ -108,7 +108,7 @@ int dhcp6_option_append_ia(uint8_t **buf, size_t *buflen, const DHCP6IA *ia) {
++                 return -EINVAL;
++         }
++ 
++-        if (*buflen < len)
+++        if (*buflen < offsetof(DHCP6Option, data) + len)
++                 return -ENOBUFS;
++ 
++         ia_hdr = *buf;
++-- 
++cgit v1.1
++
+diff --git a/package/nfs-utils/0006-Include-sys-sysmacros.h-where-appropriate.patch b/package/nfs-utils/0006-Include-sys-sysmacros.h-where-appropriate.patch
+new file mode 100644
+index 0000000000..a593ca3b6f
+--- /dev/null
++++ b/package/nfs-utils/0006-Include-sys-sysmacros.h-where-appropriate.patch
+@@ -0,0 +1,50 @@
++From e3918d70b0b4a1d0f5421318e542ec807833da3f Mon Sep 17 00:00:00 2001
++From: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
++Date: Fri, 2 Nov 2018 10:45:21 +0100
++Subject: [PATCH] Include <sys/sysmacros.h> where appropriate
++
++Since glibc 2.28, the major() and minor() macros need to explicitly
++include <sys/sysmacros.h>.
++
++Patch initially contributed by
++Timothy Pearson <tpearson@raptorengineering.com>.
++
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
++---
++ support/nfs/nfsexport.c | 4 ++++
++ utils/mountd/cache.c    | 4 ++++
++ 2 files changed, 8 insertions(+)
++
++diff --git a/support/nfs/nfsexport.c b/support/nfs/nfsexport.c
++index afd7c90..a7cbc14 100644
++--- a/support/nfs/nfsexport.c
+++++ b/support/nfs/nfsexport.c
++@@ -17,6 +17,10 @@
++ #include <unistd.h>
++ #include <fcntl.h>
++ 
+++#ifdef __GLIBC__
+++#include <sys/sysmacros.h>
+++#endif
+++
++ #include "nfslib.h"
++ #include "misc.h"
++ 
++diff --git a/utils/mountd/cache.c b/utils/mountd/cache.c
++index 179ea18..61f9b14 100644
++--- a/utils/mountd/cache.c
+++++ b/utils/mountd/cache.c
++@@ -36,6 +36,10 @@
++ #include "blkid/blkid.h"
++ #endif
++ 
+++#ifdef __GLIBC__
+++#include <sys/sysmacros.h>
+++#endif
+++
++ /*
++  * Invoked by RPC service loop
++  */
++-- 
++2.14.4
++
+diff --git a/package/nginx/0003-auto-set-ngx_feature_run_force_result-for-each-featu.patch b/package/nginx/0003-auto-set-ngx_feature_run_force_result-for-each-featu.patch
+index be1df7fb33..f186becdf8 100644
+--- a/package/nginx/0003-auto-set-ngx_feature_run_force_result-for-each-featu.patch
++++ b/package/nginx/0003-auto-set-ngx_feature_run_force_result-for-each-featu.patch
+@@ -1,4 +1,4 @@
+-From 71939b727a8fa9f722934700948a5b68960f6183 Mon Sep 17 00:00:00 2001
++From 57d9d632be9a9f7e3ac00f9eb10b069afd0b1543 Mon Sep 17 00:00:00 2001
+ From: Samuel Martin <s.martin49@gmail.com>
+ Date: Thu, 29 May 2014 18:52:10 +0200
+ Subject: [PATCH] auto/*: set ngx_feature_run_force_result for each feature
+@@ -25,18 +25,18 @@ Signed-off-by: Danomi Manchego <danomimanchego123@gmail.com>
+  6 files changed, 20 insertions(+)
+ 
+ diff --git a/auto/cc/conf b/auto/cc/conf
+-index edc6d74..a61ade4 100644
++index afbca62b..ad42c800 100644
+ --- a/auto/cc/conf
+ +++ b/auto/cc/conf
+-@@ -181,6 +181,7 @@ if [ "$NGX_PLATFORM" != win32 ]; then
+-     ngx_feature="gcc builtin atomic operations"
+-     ngx_feature_name=NGX_HAVE_GCC_ATOMIC
+-     ngx_feature_run=yes
+-+    ngx_feature_run_force_result="$ngx_force_gcc_have_atomic"
+-     ngx_feature_incs=
+-     ngx_feature_path=
+-     ngx_feature_libs=
+-@@ -201,6 +203,7 @@ if [ "$NGX_PLATFORM" != win32 ]; then
++@@ -184,6 +184,7 @@ if [ "$NGX_PLATFORM" != win32 ]; then
++         ngx_feature="gcc builtin atomic operations"
++         ngx_feature_name=NGX_HAVE_GCC_ATOMIC
++         ngx_feature_run=yes
+++        ngx_feature_run_force_result="$ngx_force_gcc_have_atomic"
++         ngx_feature_incs=
++         ngx_feature_path=
++         ngx_feature_libs=
++@@ -205,6 +206,7 @@ if [ "$NGX_PLATFORM" != win32 ]; then
+          ngx_feature="C99 variadic macros"
+          ngx_feature_name="NGX_HAVE_C99_VARIADIC_MACROS"
+          ngx_feature_run=yes
+@@ -44,7 +44,7 @@ index edc6d74..a61ade4 100644
+          ngx_feature_incs="#include <stdio.h>
+  #define var(dummy, ...)  sprintf(__VA_ARGS__)"
+          ngx_feature_path=
+-@@ -215,6 +220,7 @@ if [ "$NGX_PLATFORM" != win32 ]; then
++@@ -219,6 +221,7 @@ if [ "$NGX_PLATFORM" != win32 ]; then
+      ngx_feature="gcc variadic macros"
+      ngx_feature_name="NGX_HAVE_GCC_VARIADIC_MACROS"
+      ngx_feature_run=yes
+@@ -53,7 +53,7 @@ index edc6d74..a61ade4 100644
+  #define var(dummy, args...)  sprintf(args)"
+      ngx_feature_path=
+ diff --git a/auto/cc/name b/auto/cc/name
+-index 51a7ed9..d237d47 100644
++index ded93f5b..7c3cb74a 100644
+ --- a/auto/cc/name
+ +++ b/auto/cc/name
+ @@ -8,6 +8,7 @@ if [ "$NGX_PLATFORM" != win32 ]; then
+@@ -65,7 +65,7 @@ index 51a7ed9..d237d47 100644
+      ngx_feature_path=
+      ngx_feature_libs=
+ diff --git a/auto/lib/libatomic/conf b/auto/lib/libatomic/conf
+-index d1e484a..3724916 100644
++index d1e484ab..37249161 100644
+ --- a/auto/lib/libatomic/conf
+ +++ b/auto/lib/libatomic/conf
+ @@ -15,6 +15,7 @@ else
+@@ -77,10 +77,10 @@ index d1e484a..3724916 100644
+                        #include <atomic_ops.h>"
+      ngx_feature_path=
+ diff --git a/auto/os/darwin b/auto/os/darwin
+-index 1d3e3d3..11b7276 100644
++index 429468f7..1ed47cca 100644
+ --- a/auto/os/darwin
+ +++ b/auto/os/darwin
+-@@ -30,6 +30,7 @@ NGX_KQUEUE_CHECKED=YES
++@@ -33,6 +33,7 @@ NGX_KQUEUE_CHECKED=YES
+  ngx_feature="kqueue's EVFILT_TIMER"
+  ngx_feature_name="NGX_HAVE_TIMER_EVENT"
+  ngx_feature_run=yes
+@@ -88,7 +88,7 @@ index 1d3e3d3..11b7276 100644
+  ngx_feature_incs="#include <sys/event.h>
+                    #include <sys/time.h>"
+  ngx_feature_path=
+-@@ -60,6 +61,7 @@ ngx_feature_test="int      kq;
++@@ -63,6 +64,7 @@ ngx_feature_test="int      kq;
+  ngx_feature="Darwin 64-bit kqueue millisecond timeout bug"
+  ngx_feature_name=NGX_DARWIN_KEVENT_BUG
+  ngx_feature_run=bug
+@@ -96,7 +96,7 @@ index 1d3e3d3..11b7276 100644
+  ngx_feature_incs="#include <sys/event.h>
+                    #include <sys/time.h>"
+  ngx_feature_path=
+-@@ -90,6 +92,7 @@ CC_AUX_FLAGS="$CC_AUX_FLAGS"
++@@ -92,6 +94,7 @@ ngx_feature_test="int  kq;
+  ngx_feature="sendfile()"
+  ngx_feature_name="NGX_HAVE_SENDFILE"
+  ngx_feature_run=yes
+@@ -105,7 +105,7 @@ index 1d3e3d3..11b7276 100644
+                    #include <sys/socket.h>
+                    #include <sys/uio.h>
+ diff --git a/auto/os/linux b/auto/os/linux
+-index 19bf832..16848b2 100644
++index 2c8a9bb8..eb4513ee 100644
+ --- a/auto/os/linux
+ +++ b/auto/os/linux
+ @@ -37,6 +37,7 @@ fi
+@@ -141,7 +141,7 @@ index 19bf832..16848b2 100644
+  ngx_feature_path=
+  ngx_feature_libs=
+ diff --git a/auto/unix b/auto/unix
+-index 6e54531..7dbf9d1 100755
++index 43d3b25a..3da00537 100644
+ --- a/auto/unix
+ +++ b/auto/unix
+ @@ -100,6 +100,7 @@ if test -z "$NGX_KQUEUE_CHECKED"; then
+@@ -152,7 +152,7 @@ index 6e54531..7dbf9d1 100755
+          ngx_feature_incs="#include <sys/event.h>
+                            #include <sys/time.h>"
+          ngx_feature_path=
+-@@ -702,6 +703,7 @@ ngx_feature_test="char buf[1]; ssize_t n; n = pwrite(1, buf, 1, 0);
++@@ -730,6 +731,7 @@ ngx_feature_test="char buf[1]; struct iovec vec[1]; ssize_t n;
+  ngx_feature="sys_nerr"
+  ngx_feature_name="NGX_SYS_NERR"
+  ngx_feature_run=value
+@@ -160,7 +160,7 @@ index 6e54531..7dbf9d1 100755
+  ngx_feature_incs='#include <errno.h>
+                    #include <stdio.h>'
+  ngx_feature_path=
+-@@ -716,6 +718,7 @@ if [ $ngx_found = no ]; then
++@@ -744,6 +746,7 @@ if [ $ngx_found = no ]; then
+      ngx_feature="_sys_nerr"
+      ngx_feature_name="NGX_SYS_NERR"
+      ngx_feature_run=value
+@@ -168,7 +168,7 @@ index 6e54531..7dbf9d1 100755
+      ngx_feature_incs='#include <errno.h>
+                        #include <stdio.h>'
+      ngx_feature_path=
+-@@ -731,6 +734,7 @@ if [ $ngx_found = no ]; then
++@@ -759,6 +762,7 @@ if [ $ngx_found = no ]; then
+      ngx_feature='maximum errno'
+      ngx_feature_name=NGX_SYS_NERR
+      ngx_feature_run=value
+@@ -176,7 +176,7 @@ index 6e54531..7dbf9d1 100755
+      ngx_feature_incs='#include <errno.h>
+                        #include <string.h>
+                        #include <stdio.h>'
+-@@ -789,6 +793,7 @@ ngx_feature_test="void *p; p = memalign(4096, 4096);
++@@ -841,6 +845,7 @@ ngx_feature_test="void *p; p = memalign(4096, 4096);
+  ngx_feature="mmap(MAP_ANON|MAP_SHARED)"
+  ngx_feature_name="NGX_HAVE_MAP_ANON"
+  ngx_feature_run=yes
+@@ -184,7 +184,7 @@ index 6e54531..7dbf9d1 100755
+  ngx_feature_incs="#include <sys/mman.h>"
+  ngx_feature_path=
+  ngx_feature_libs=
+-@@ -802,6 +807,7 @@ ngx_feature_test="void *p;
++@@ -854,6 +859,7 @@ ngx_feature_test="void *p;
+  ngx_feature='mmap("/dev/zero", MAP_SHARED)'
+  ngx_feature_name="NGX_HAVE_MAP_DEVZERO"
+  ngx_feature_run=yes
+@@ -192,7 +192,7 @@ index 6e54531..7dbf9d1 100755
+  ngx_feature_incs="#include <sys/mman.h>
+                    #include <sys/stat.h>
+                    #include <fcntl.h>"
+-@@ -817,6 +823,7 @@ ngx_feature_test='void *p; int  fd;
++@@ -869,6 +875,7 @@ ngx_feature_test='void *p; int  fd;
+  ngx_feature="System V shared memory"
+  ngx_feature_name="NGX_HAVE_SYSVSHM"
+  ngx_feature_run=yes
+@@ -200,7 +200,7 @@ index 6e54531..7dbf9d1 100755
+  ngx_feature_incs="#include <sys/ipc.h>
+                    #include <sys/shm.h>"
+  ngx_feature_path=
+-@@ -831,6 +838,7 @@ ngx_feature_test="int  id;
++@@ -883,6 +890,7 @@ ngx_feature_test="int  id;
+  ngx_feature="POSIX semaphores"
+  ngx_feature_name="NGX_HAVE_POSIX_SEM"
+  ngx_feature_run=yes
+@@ -209,5 +209,5 @@ index 6e54531..7dbf9d1 100755
+  ngx_feature_path=
+  ngx_feature_libs=
+ -- 
+-1.9.1
++2.17.1
+ 
+diff --git a/package/nginx/0004-auto-lib-libxslt-conf-use-pkg-config.patch b/package/nginx/0004-auto-lib-libxslt-conf-use-pkg-config.patch
+index 103f90b305..09e708b73c 100644
+--- a/package/nginx/0004-auto-lib-libxslt-conf-use-pkg-config.patch
++++ b/package/nginx/0004-auto-lib-libxslt-conf-use-pkg-config.patch
+@@ -1,4 +1,4 @@
+-From 211b9f19a3a62826fadef55d2f89d6f66fbf4aa6 Mon Sep 17 00:00:00 2001
++From 7783d63c87f94797aa134786214b0a84c000be75 Mon Sep 17 00:00:00 2001
+ From: Samuel Martin <s.martin49@gmail.com>
+ Date: Thu, 29 May 2014 19:22:27 +0200
+ Subject: [PATCH] auto/lib/libxslt/conf: use pkg-config
+@@ -7,12 +7,14 @@ Change to using pkg-config to find the path to libxslt and its
+ dependencies.
+ 
+ Signed-off-by: Martin Bark <martin@barkynet.com>
++[Peter: updated for 1.15.6]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+ ---
+- auto/lib/libxslt/conf | 4 ++--
+- 1 file changed, 2 insertions(+), 2 deletions(-)
++ auto/lib/libxslt/conf | 5 +++--
++ 1 file changed, 3 insertions(+), 2 deletions(-)
+ 
+ diff --git a/auto/lib/libxslt/conf b/auto/lib/libxslt/conf
+-index 3a0f37b..3c2a60e 100644
++index 3063ac7c..3209e364 100644
+ --- a/auto/lib/libxslt/conf
+ +++ b/auto/lib/libxslt/conf
+ @@ -12,8 +12,9 @@
+@@ -26,7 +28,7 @@ index 3a0f37b..3c2a60e 100644
+ +    ngx_feature_libs="$(${PKG_CONFIG:=pkg-config} --libs libxslt)"
+      ngx_feature_test="xmlParserCtxtPtr    ctxt = NULL;
+                        xsltStylesheetPtr   sheet = NULL;
+-                       xmlDocPtr           doc;
++                       xmlDocPtr           doc = NULL;
+ -- 
+-2.8.2
++2.11.0
+ 
+diff --git a/package/nginx/0006-auto-lib-openssl-conf-use-pkg-config.patch b/package/nginx/0006-auto-lib-openssl-conf-use-pkg-config.patch
+index 0bd4d337c8..4338729658 100644
+--- a/package/nginx/0006-auto-lib-openssl-conf-use-pkg-config.patch
++++ b/package/nginx/0006-auto-lib-openssl-conf-use-pkg-config.patch
+@@ -1,4 +1,4 @@
+-From 756556d127da291cad8a2c007a89124a692aef7f Mon Sep 17 00:00:00 2001
++From 4ba4b1e0bd1b69e124eb34c95ae9e7c087370efa Mon Sep 17 00:00:00 2001
+ From: Martin Bark <martin@barkynet.com>
+ Date: Fri, 6 May 2016 14:48:31 +0100
+ Subject: [PATCH] auto/lib/openssl/conf: use pkg-config
+@@ -8,25 +8,244 @@ dependencies.
+ 
+ Signed-off-by: Martin Bark <martin@barkynet.com>
+ ---
+- auto/lib/openssl/conf | 4 ++--
+- 1 file changed, 2 insertions(+), 2 deletions(-)
++ auto/lib/openssl/conf | 187 +++++++++++++++++++++---------------------
++ 1 file changed, 94 insertions(+), 93 deletions(-)
+ 
+ diff --git a/auto/lib/openssl/conf b/auto/lib/openssl/conf
+-index 39d9602..995c6f3 100644
++index 4fb52df7..9f30490d 100644
+ --- a/auto/lib/openssl/conf
+ +++ b/auto/lib/openssl/conf
+-@@ -58,8 +58,9 @@ else
+-         ngx_feature_name="NGX_OPENSSL"
+-         ngx_feature_run=no
+-         ngx_feature_incs="#include <openssl/ssl.h>"
++@@ -1,4 +1,3 @@
++-
++ # Copyright (C) Igor Sysoev
++ # Copyright (C) Nginx, Inc.
++ 
++@@ -7,123 +6,125 @@ if [ $OPENSSL != NONE ]; then
++ 
++     case "$CC" in
++ 
++-        cl | bcc32)
++-            have=NGX_OPENSSL . auto/have
++-            have=NGX_SSL . auto/have
++-
++-            CFLAGS="$CFLAGS -DNO_SYS_TYPES_H"
++-
++-            CORE_INCS="$CORE_INCS $OPENSSL/openssl/include"
++-            CORE_DEPS="$CORE_DEPS $OPENSSL/openssl/include/openssl/ssl.h"
++-
++-            if [ -f $OPENSSL/ms/do_ms.bat ]; then
++-                # before OpenSSL 1.1.0
++-                CORE_LIBS="$CORE_LIBS $OPENSSL/openssl/lib/ssleay32.lib"
++-                CORE_LIBS="$CORE_LIBS $OPENSSL/openssl/lib/libeay32.lib"
++-            else
++-                # OpenSSL 1.1.0+
++-                CORE_LIBS="$CORE_LIBS $OPENSSL/openssl/lib/libssl.lib"
++-                CORE_LIBS="$CORE_LIBS $OPENSSL/openssl/lib/libcrypto.lib"
++-            fi
++-
++-            # libeay32.lib requires gdi32.lib
++-            CORE_LIBS="$CORE_LIBS gdi32.lib"
++-            # OpenSSL 1.0.0 requires crypt32.lib
++-            CORE_LIBS="$CORE_LIBS crypt32.lib"
++-        ;;
++-
++-        *)
++-            have=NGX_OPENSSL . auto/have
++-            have=NGX_SSL . auto/have
++-
++-            CORE_INCS="$CORE_INCS $OPENSSL/.openssl/include"
++-            CORE_DEPS="$CORE_DEPS $OPENSSL/.openssl/include/openssl/ssl.h"
++-            CORE_LIBS="$CORE_LIBS $OPENSSL/.openssl/lib/libssl.a"
++-            CORE_LIBS="$CORE_LIBS $OPENSSL/.openssl/lib/libcrypto.a"
++-            CORE_LIBS="$CORE_LIBS $NGX_LIBDL"
++-            CORE_LIBS="$CORE_LIBS $NGX_LIBPTHREAD"
++-
++-            if [ "$NGX_PLATFORM" = win32 ]; then
++-                CORE_LIBS="$CORE_LIBS -lgdi32 -lcrypt32 -lws2_32"
++-            fi
++-        ;;
+++	cl | bcc32)
+++	    have=NGX_OPENSSL . auto/have
+++	    have=NGX_SSL . auto/have
+++
+++	    CFLAGS="$CFLAGS -DNO_SYS_TYPES_H"
+++
+++	    CORE_INCS="$CORE_INCS $OPENSSL/openssl/include"
+++	    CORE_DEPS="$CORE_DEPS $OPENSSL/openssl/include/openssl/ssl.h"
+++
+++	    if [ -f $OPENSSL/ms/do_ms.bat ]; then
+++		# before OpenSSL 1.1.0
+++		CORE_LIBS="$CORE_LIBS $OPENSSL/openssl/lib/ssleay32.lib"
+++		CORE_LIBS="$CORE_LIBS $OPENSSL/openssl/lib/libeay32.lib"
+++	    else
+++		# OpenSSL 1.1.0+
+++		CORE_LIBS="$CORE_LIBS $OPENSSL/openssl/lib/libssl.lib"
+++		CORE_LIBS="$CORE_LIBS $OPENSSL/openssl/lib/libcrypto.lib"
+++	    fi
+++
+++	    # libeay32.lib requires gdi32.lib
+++	    CORE_LIBS="$CORE_LIBS gdi32.lib"
+++	    # OpenSSL 1.0.0 requires crypt32.lib
+++	    CORE_LIBS="$CORE_LIBS crypt32.lib"
+++	;;
+++
+++	*)
+++	    have=NGX_OPENSSL . auto/have
+++	    have=NGX_SSL . auto/have
+++
+++	    CORE_INCS="$CORE_INCS $OPENSSL/.openssl/include"
+++	    CORE_DEPS="$CORE_DEPS $OPENSSL/.openssl/include/openssl/ssl.h"
+++	    CORE_LIBS="$CORE_LIBS $OPENSSL/.openssl/lib/libssl.a"
+++	    CORE_LIBS="$CORE_LIBS $OPENSSL/.openssl/lib/libcrypto.a"
+++	    CORE_LIBS="$CORE_LIBS $NGX_LIBDL"
+++	    CORE_LIBS="$CORE_LIBS $NGX_LIBPTHREAD"
+++
+++	    if [ "$NGX_PLATFORM" = win32 ]; then
+++		CORE_LIBS="$CORE_LIBS -lgdi32 -lcrypt32 -lws2_32"
+++	    fi
+++	;;
++     esac
++ 
++ else
++ 
++     if [ "$NGX_PLATFORM" != win32 ]; then
++ 
++-        OPENSSL=NO
+++	OPENSSL=NO
++ 
++-        ngx_feature="OpenSSL library"
++-        ngx_feature_name="NGX_OPENSSL"
++-        ngx_feature_run=no
++-        ngx_feature_incs="#include <openssl/ssl.h>"
+ -        ngx_feature_path=
+--        ngx_feature_libs="-lssl -lcrypto $NGX_LIBDL"
+-+        ngx_feature_path="$(${PKG_CONFIG:=pkg-config} --cflags-only-I openssl|
+-+			     sed -re 's/(^|\s)-I\s*(\S+)/\1\2/g')"
+-+        ngx_feature_libs="$(${PKG_CONFIG:=pkg-config} --libs openssl)"
+-         ngx_feature_test="SSL_CTX_set_options(NULL, 0)"
+-         . auto/feature
++-        ngx_feature_libs="-lssl -lcrypto $NGX_LIBDL $NGX_LIBPTHREAD"
++-        ngx_feature_test="SSL_CTX_set_options(NULL, 0)"
++-        . auto/feature
+++	ngx_feature="OpenSSL library"
+++	ngx_feature_name="NGX_OPENSSL"
+++	ngx_feature_run=no
+++	ngx_feature_incs="#include <openssl/ssl.h>"
+++	ngx_feature_path=
+++	ngx_feature_path="$(${PKG_CONFIG:=pkg-config} --cflags-only-I openssl|
+++			    sed -re 's/(^|\s)-I\s*(\S+)/\1\2/g')"
+++	ngx_feature_libs="$(${PKG_CONFIG:=pkg-config} --libs openssl)"
+++	ngx_feature_test="SSL_CTX_set_options(NULL, 0)"
+++	. auto/feature
++ 
++-        if [ $ngx_found = no ]; then
+++	if [ $ngx_found = no ]; then
++ 
++-            # FreeBSD port
+++	    # FreeBSD port
++ 
++-            ngx_feature="OpenSSL library in /usr/local/"
++-            ngx_feature_path="/usr/local/include"
+++	    ngx_feature="OpenSSL library in /usr/local/"
+++	    ngx_feature_path="/usr/local/include"
++ 
++-            if [ $NGX_RPATH = YES ]; then
++-                ngx_feature_libs="-R/usr/local/lib -L/usr/local/lib -lssl -lcrypto"
++-            else
++-                ngx_feature_libs="-L/usr/local/lib -lssl -lcrypto"
++-            fi
+++	    if [ $NGX_RPATH = YES ]; then
+++		ngx_feature_libs="-R/usr/local/lib -L/usr/local/lib -lssl -lcrypto"
+++	    else
+++		ngx_feature_libs="-L/usr/local/lib -lssl -lcrypto"
+++	    fi
++ 
++-            ngx_feature_libs="$ngx_feature_libs $NGX_LIBDL $NGX_LIBPTHREAD"
+++	    ngx_feature_libs="$ngx_feature_libs $NGX_LIBDL $NGX_LIBPTHREAD"
++ 
++-            . auto/feature
++-        fi
+++	    . auto/feature
+++	fi
++ 
++-        if [ $ngx_found = no ]; then
+++	if [ $ngx_found = no ]; then
++ 
++-            # NetBSD port
+++	    # NetBSD port
++ 
++-            ngx_feature="OpenSSL library in /usr/pkg/"
++-            ngx_feature_path="/usr/pkg/include"
+++	    ngx_feature="OpenSSL library in /usr/pkg/"
+++	    ngx_feature_path="/usr/pkg/include"
++ 
++-            if [ $NGX_RPATH = YES ]; then
++-                ngx_feature_libs="-R/usr/pkg/lib -L/usr/pkg/lib -lssl -lcrypto"
++-            else
++-                ngx_feature_libs="-L/usr/pkg/lib -lssl -lcrypto"
++-            fi
+++	    if [ $NGX_RPATH = YES ]; then
+++		ngx_feature_libs="-R/usr/pkg/lib -L/usr/pkg/lib -lssl -lcrypto"
+++	    else
+++		ngx_feature_libs="-L/usr/pkg/lib -lssl -lcrypto"
+++	    fi
++ 
++-            ngx_feature_libs="$ngx_feature_libs $NGX_LIBDL $NGX_LIBPTHREAD"
+++	    ngx_feature_libs="$ngx_feature_libs $NGX_LIBDL $NGX_LIBPTHREAD"
++ 
++-            . auto/feature
++-        fi
+++	    . auto/feature
+++	fi
++ 
++-        if [ $ngx_found = no ]; then
+++	if [ $ngx_found = no ]; then
++ 
++-            # MacPorts
+++	    # MacPorts
++ 
++-            ngx_feature="OpenSSL library in /opt/local/"
++-            ngx_feature_path="/opt/local/include"
+++	    ngx_feature="OpenSSL library in /opt/local/"
+++	    ngx_feature_path="/opt/local/include"
++ 
++-            if [ $NGX_RPATH = YES ]; then
++-                ngx_feature_libs="-R/opt/local/lib -L/opt/local/lib -lssl -lcrypto"
++-            else
++-                ngx_feature_libs="-L/opt/local/lib -lssl -lcrypto"
++-            fi
+++	    if [ $NGX_RPATH = YES ]; then
+++		ngx_feature_libs="-R/opt/local/lib -L/opt/local/lib -lssl -lcrypto"
+++	    else
+++		ngx_feature_libs="-L/opt/local/lib -lssl -lcrypto"
+++	    fi
++ 
++-            ngx_feature_libs="$ngx_feature_libs $NGX_LIBDL $NGX_LIBPTHREAD"
+++	    ngx_feature_libs="$ngx_feature_libs $NGX_LIBDL $NGX_LIBPTHREAD"
++ 
++-            . auto/feature
++-        fi
+++	    . auto/feature
+++	fi
++ 
++-        if [ $ngx_found = yes ]; then
++-            have=NGX_SSL . auto/have
++-            CORE_INCS="$CORE_INCS $ngx_feature_path"
++-            CORE_LIBS="$CORE_LIBS $ngx_feature_libs"
++-            OPENSSL=YES
++-        fi
+++	if [ $ngx_found = yes ]; then
+++	    have=NGX_SSL . auto/have
+++	    CORE_INCS="$CORE_INCS $ngx_feature_path"
+++	    CORE_LIBS="$CORE_LIBS $ngx_feature_libs"
+++	    OPENSSL=YES
+++	fi
++     fi
++ 
++     if [ $OPENSSL != YES ]; then
++@@ -136,7 +137,7 @@ into the system, or build the OpenSSL library statically from the source
++ with nginx by using --with-openssl=<path> option.
++ 
++ END
++-        exit 1
+++	exit 1
++     fi
+  
++ fi
+ -- 
+-2.8.2
++2.17.1
+ 
+diff --git a/package/nginx/0007-auto-lib-libgd-conf-use-pkg-config.patch b/package/nginx/0007-auto-lib-libgd-conf-use-pkg-config.patch
+index 34e7981c8f..cea68035e1 100644
+--- a/package/nginx/0007-auto-lib-libgd-conf-use-pkg-config.patch
++++ b/package/nginx/0007-auto-lib-libgd-conf-use-pkg-config.patch
+@@ -1,4 +1,4 @@
+-From fd9885fe5fef5826034547ca6be7299863f99769 Mon Sep 17 00:00:00 2001
++From 0551f2e5eb4143be0aacc0185cdc4afc9ca80204 Mon Sep 17 00:00:00 2001
+ From: Martin Bark <martin@barkynet.com>
+ Date: Fri, 6 May 2016 14:48:49 +0100
+ Subject: [PATCH] auto/lib/libgd/conf: use pkg-config
+@@ -7,12 +7,14 @@ Change to using pkg-config to find the path to libgd and its
+ dependencies.
+ 
+ Signed-off-by: Martin Bark <martin@barkynet.com>
++[Peter: updated for 1.15.6]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+ ---
+  auto/lib/libgd/conf | 4 ++--
+  1 file changed, 2 insertions(+), 2 deletions(-)
+ 
+ diff --git a/auto/lib/libgd/conf b/auto/lib/libgd/conf
+-index 6e4e91c..1c536a2 100644
++index 67863976..1a4379a5 100644
+ --- a/auto/lib/libgd/conf
+ +++ b/auto/lib/libgd/conf
+ @@ -7,8 +7,8 @@
+@@ -23,9 +25,9 @@ index 6e4e91c..1c536a2 100644
+ -    ngx_feature_libs="-lgd"
+ +    ngx_feature_path="$(${GDLIB_CONFIG:=gdlib-config} --includedir)"
+ +    ngx_feature_libs="$(${GDLIB_CONFIG:=gdlib-config} --libs)"
+-     ngx_feature_test="gdImagePtr img = gdImageCreateFromGifPtr(1, NULL);"
++     ngx_feature_test="gdImagePtr img = gdImageCreateFromGifPtr(1, NULL);
++                       (void) img"
+      . auto/feature
+- 
+ -- 
+-2.8.2
++2.11.0
+ 
+diff --git a/package/nginx/0009-auto-lib-conf-fix-PCRE-condition-WRT-the-http-and-ht.patch b/package/nginx/0009-auto-lib-conf-fix-PCRE-condition-WRT-the-http-and-ht.patch
+deleted file mode 100644
+index 08456511dc..0000000000
+--- a/package/nginx/0009-auto-lib-conf-fix-PCRE-condition-WRT-the-http-and-ht.patch
++++ /dev/null
+@@ -1,33 +0,0 @@
+-From 9668f0d5ecd2382fd36b7ff6a3a29abd04f6533f Mon Sep 17 00:00:00 2001
+-From: Samuel Martin <s.martin49@gmail.com>
+-Date: Fri, 14 Jul 2017 11:50:08 +0200
+-Subject: [PATCH] auto/lib/conf: fix PCRE condition WRT the http and
+- http_rewrite options
+-
+-http_rewrite module cannot be selected when http server is disabled, so
+-fix the PCRE check condition to avoid irrelevant check failure.
+-
+-Fixes:
+-  http://autobuild.buildroot.net/results/bc7/bc7458b97a88785653845afd30fe9d5f3a69905b/build-end.log
+-
+-Signed-off-by: Samuel Martin <s.martin49@gmail.com>
+----
+- auto/lib/conf | 2 +-
+- 1 file changed, 1 insertion(+), 1 deletion(-)
+-
+-diff --git a/auto/lib/conf b/auto/lib/conf
+-index 0b8545a3..2c7af104 100644
+---- a/auto/lib/conf
+-+++ b/auto/lib/conf
+-@@ -7,7 +7,7 @@ if [ $USE_PCRE = YES -o $PCRE != NONE ]; then
+-     . auto/lib/pcre/conf
+- 
+- else
+--    if [ $USE_PCRE = DISABLED -a $HTTP_REWRITE = YES ]; then
+-+    if [ $USE_PCRE = DISABLED -a $HTTP = YES -a $HTTP_REWRITE = YES ]; then
+- 
+- cat << END
+- 
+--- 
+-2.13.2
+-
+diff --git a/package/nginx/nginx.hash b/package/nginx/nginx.hash
+index 9936ca1dfa..c3e6b6a720 100644
+--- a/package/nginx/nginx.hash
++++ b/package/nginx/nginx.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated after checking pgp signature
+-sha256	305f379da1d5fb5aefa79e45c829852ca6983c7cd2a79328f8e084a324cf0416	nginx-1.12.2.tar.gz
++sha256	a3d8c67c2035808c7c0d475fffe263db8c353b11521aa7ade468b780ed826cc6	nginx-1.15.6.tar.gz
+ # License files, locally calculated
+-sha256	75820469c890db641e54078df018e497fde0542211aa704e15320316a2175780	LICENSE
++sha256	e18f05bcaad47528f8b21861d4a0fb9815ca1bbb4be946c51a51d36623758bcc	LICENSE
+diff --git a/package/nginx/nginx.mk b/package/nginx/nginx.mk
+index e5652af6df..5253174478 100644
+--- a/package/nginx/nginx.mk
++++ b/package/nginx/nginx.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-NGINX_VERSION = 1.12.2
++NGINX_VERSION = 1.15.6
+ NGINX_SITE = http://nginx.org/download
+ NGINX_LICENSE = BSD-2-Clause
+ NGINX_LICENSE_FILES = LICENSE
+diff --git a/package/openocd/openocd.mk b/package/openocd/openocd.mk
+index 548d8b81a0..ca13d99366 100644
+--- a/package/openocd/openocd.mk
++++ b/package/openocd/openocd.mk
+@@ -31,6 +31,7 @@ OPENOCD_CONF_OPTS = \
+ # the dependencies they need.
+ 
+ OPENOCD_DEPENDENCIES = \
++	host-pkgconf \
+ 	$(if $(BR2_PACKAGE_LIBFTDI1),libftdi1) \
+ 	$(if $(BR2_PACKAGE_LIBUSB),libusb) \
+ 	$(if $(BR2_PACKAGE_LIBUSB_COMPAT),libusb-compat) \
+diff --git a/package/openswan/openswan.hash b/package/openswan/openswan.hash
+index 805ab948fb..de0fa05058 100644
+--- a/package/openswan/openswan.hash
++++ b/package/openswan/openswan.hash
+@@ -1,2 +1,4 @@
+ # Locally calculated
+-sha256 9a3eb041084c3ab125dd645c40e8f5563efe73e18a3881cf2ce3582001daafc5  openswan-2.6.50.tar.gz
++sha256 857c0d0b9a7e447d2857bf4d0f7118d7ed1196499e0b640e53e5c6bd0c0185d9  openswan-2.6.51.1.tar.gz
++sha256 1c36ae1e7b0f6cce4b4ffe969b71f83635734804acdd38544443564b00f8783a  COPYING
++sha256 d7d012ef3be47faffba4d97a83d4986c9f4a63ac997ebf5961d33852e5f1801a  LICENSE
+diff --git a/package/openswan/openswan.mk b/package/openswan/openswan.mk
+index 928eb9bb6f..d7f1c46471 100644
+--- a/package/openswan/openswan.mk
++++ b/package/openswan/openswan.mk
+@@ -4,13 +4,13 @@
+ #
+ ################################################################################
+ 
+-OPENSWAN_VERSION = 2.6.50
++OPENSWAN_VERSION = 2.6.51.1
+ OPENSWAN_SITE = https://download.openswan.org/openswan
+ OPENSWAN_LICENSE = GPL-2.0+, BSD-3-Clause
+ OPENSWAN_LICENSE_FILES = COPYING LICENSE
+ 
+ OPENSWAN_DEPENDENCIES = host-bison host-flex gmp iproute2
+-OPENSWAN_MAKE_OPTS = ARCH=$(BR2_ARCH) CC="$(TARGET_CC)" \
++OPENSWAN_MAKE_OPTS = ARCH=$(BR2_ARCH) CC="$(TARGET_CC)" POD2MAN="" XMLTO="" \
+ 	USERCOMPILE="$(TARGET_CFLAGS) $(if $(BR2_TOOLCHAIN_SUPPORTS_PIE),-fPIE)" \
+ 	USERLINK="$(TARGET_LDFLAGS) $(if $(BR2_TOOLCHAIN_SUPPORTS_PIE),-fPIE)" \
+ 	INC_USRLOCAL=/usr USE_KLIPS=false USE_MAST=false USE_NM=false
+diff --git a/package/p11-kit/p11-kit.mk b/package/p11-kit/p11-kit.mk
+index d4cf9bc09c..10b5cc0393 100644
+--- a/package/p11-kit/p11-kit.mk
++++ b/package/p11-kit/p11-kit.mk
+@@ -14,4 +14,10 @@ P11_KIT_CONF_ENV = ac_cv_have_decl_program_invocation_short_name=yes \
+ P11_KIT_LICENSE = BSD-3-Clause
+ P11_KIT_LICENSE_FILES = COPYING
+ 
++ifeq ($(BR2_PACKAGE_CA_CERTIFICATES),y)
++P11_KIT_CONF_OPTS += --with-trust-paths=/etc/ssl/certs/ca-certificates.crt
++else
++P11_KIT_CONF_OPTS += --without-trust-paths
++endif
++
+ $(eval $(autotools-package))
+diff --git a/package/pkg-download.mk b/package/pkg-download.mk
+index 6f15deba28..f398d16871 100644
+--- a/package/pkg-download.mk
++++ b/package/pkg-download.mk
+@@ -31,8 +31,8 @@ else
+ BR2_DL_DIR = $(DL_DIR)
+ endif
+ 
+-# ensure it exists and a absolute path
+-DL_DIR := $(shell mkdir -p $(DL_DIR) && cd $(DL_DIR) >/dev/null && pwd)
++# ensure it exists and a absolute path, derefrecing symlinks
++DL_DIR := $(shell mkdir -p $(DL_DIR) && cd $(DL_DIR) >/dev/null && pwd -P)
+ 
+ #
+ # URI scheme helper functions
+diff --git a/package/pkg-generic.mk b/package/pkg-generic.mk
+index a689dde4d2..d25f0f9afe 100644
+--- a/package/pkg-generic.mk
++++ b/package/pkg-generic.mk
+@@ -736,6 +736,7 @@ $(1)-show-rdepends:
+ 			@echo $$($(2)_RDEPENDENCIES)
+ 
+ $(1)-show-build-order: $$(patsubst %,%-show-build-order,$$($(2)_FINAL_ALL_DEPENDENCIES))
++	@:
+ 	$$(info $(1))
+ 
+ $(1)-graph-depends: graph-depends-requirements
+diff --git a/package/postgresql/postgresql.hash b/package/postgresql/postgresql.hash
+index a9cc93c76c..05f94b4c76 100644
+--- a/package/postgresql/postgresql.hash
++++ b/package/postgresql/postgresql.hash
+@@ -1,5 +1,5 @@
+-# From https://ftp.postgresql.org/pub/source/v10.5/postgresql-10.5.tar.bz2.sha256
+-sha256	6c8e616c91a45142b85c0aeb1f29ebba4a361309e86469e0fb4617b6a73c4011	postgresql-10.5.tar.bz2
++# From https://ftp.postgresql.org/pub/source/v10.6/postgresql-10.6.tar.bz2.sha256
++sha256	68a8276f08bda8fbefe562faaf8831cb20664a7a1d3ffdbbcc5b83e08637624b	postgresql-10.6.tar.bz2
+ 
+ # License file, Locally calculated
+ sha256	24cfc70cf16b3a23242c49ffce39510683bdd48cbedb8a46fe03976ee5f5c21e	COPYRIGHT
+diff --git a/package/postgresql/postgresql.mk b/package/postgresql/postgresql.mk
+index f6dad978e3..66af8fe5a9 100644
+--- a/package/postgresql/postgresql.mk
++++ b/package/postgresql/postgresql.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-POSTGRESQL_VERSION = 10.5
++POSTGRESQL_VERSION = 10.6
+ POSTGRESQL_SOURCE = postgresql-$(POSTGRESQL_VERSION).tar.bz2
+ POSTGRESQL_SITE = http://ftp.postgresql.org/pub/source/v$(POSTGRESQL_VERSION)
+ POSTGRESQL_LICENSE = PostgreSQL
+diff --git a/package/prosody/prosody.hash b/package/prosody/prosody.hash
+index 38942ea7ff..8debfe19eb 100644
+--- a/package/prosody/prosody.hash
++++ b/package/prosody/prosody.hash
+@@ -1,5 +1,2 @@
+-# Hashes from: https://prosody.im/downloads/source/{MD5,SHA1,SHA256,SHA512}SUMS
+-md5    d743adea6cfbaacc3a24cc0c3928bb1b  prosody-0.9.12.tar.gz
+-sha1   1ee224263a5b3d67960e12edbbe6b2f16b95d147  prosody-0.9.12.tar.gz
+-sha256 1a59a322b71928a21985522aa00d0eab3552208d7bf9ecb318542a1b2fee3e8d  prosody-0.9.12.tar.gz
+-sha512 e87b5f3b3e327722cec9d8d0470684e2ec2788a1c5ae623c4f505a00572ef21f65afe84cd5b7de47d6a65fe8872506fe34e5e8886e20979ff84710669857ca76  prosody-0.9.12.tar.gz
++# Locally calculated
++sha256 27d1388acd79eaa453f2b194bd23c25121fe0a704d0dd940457caf1874ea1123  prosody-0.9.14.tar.gz
+diff --git a/package/prosody/prosody.mk b/package/prosody/prosody.mk
+index d19653503d..ab50cc88dc 100644
+--- a/package/prosody/prosody.mk
++++ b/package/prosody/prosody.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-PROSODY_VERSION = 0.9.12
++PROSODY_VERSION = 0.9.14
+ PROSODY_SITE = https://prosody.im/downloads/source
+ PROSODY_LICENSE = MIT
+ PROSODY_LICENSE_FILES = COPYING
+diff --git a/package/qemu/Config.in b/package/qemu/Config.in
+index 13b615bfba..cf25c35194 100644
+--- a/package/qemu/Config.in
++++ b/package/qemu/Config.in
+@@ -97,7 +97,9 @@ comment "Frontends"
+ 
+ config BR2_PACKAGE_QEMU_SDL
+ 	bool "Enable SDL frontend"
++	depends on BR2_PACKAGE_XORG7
+ 	select BR2_PACKAGE_SDL
++	select BR2_PACKAGE_SDL_X11
+ 	help
+ 	  Say 'y' to enable the SDL frontend, that is, a graphical
+ 	  window presenting the VM's display.
+diff --git a/package/qemu/qemu.mk b/package/qemu/qemu.mk
+index 5496a5f025..758c22396c 100644
+--- a/package/qemu/qemu.mk
++++ b/package/qemu/qemu.mk
+@@ -129,6 +129,7 @@ define QEMU_CONFIGURE_CMDS
+ 			--disable-libxml2 \
+ 			--disable-capstone \
+ 			--disable-git-update \
++			--disable-opengl \
+ 			$(QEMU_OPTS) \
+ 	)
+ endef
+diff --git a/package/qt/Config.in b/package/qt/Config.in
+index 0ecfafada5..a1218ecf39 100644
+--- a/package/qt/Config.in
++++ b/package/qt/Config.in
+@@ -309,9 +309,13 @@ choice
+ 
+ config BR2_PACKAGE_QT_QTZLIB
+ 	bool "Qt zlib"
++	depends on !BR2_STATIC_LIBS
+ 	help
+ 	  Use the zlib bundled with Qt.
+ 
++comment "Qt zlib needs a toolchain w/ dynamic library"
++	depends on BR2_STATIC_LIBS
++
+ config BR2_PACKAGE_QT_SYSTEMZLIB
+ 	bool "System zlib"
+ 	select BR2_PACKAGE_ZLIB
+diff --git a/package/rpm/rpm.mk b/package/rpm/rpm.mk
+index 159ae72aa8..87c2059e71 100644
+--- a/package/rpm/rpm.mk
++++ b/package/rpm/rpm.mk
+@@ -8,10 +8,10 @@ RPM_VERSION_MAJOR = 4.13
+ RPM_VERSION = $(RPM_VERSION_MAJOR).0.1
+ RPM_SOURCE = rpm-$(RPM_VERSION).tar.bz2
+ RPM_SITE = http://ftp.rpm.org/releases/rpm-$(RPM_VERSION_MAJOR).x
+-RPM_DEPENDENCIES = host-pkgconf berkeleydb file popt zlib
++RPM_DEPENDENCIES = host-pkgconf berkeleydb file popt zlib \
++	$(TARGET_NLS_DEPENDENCIES)
+ RPM_LICENSE = GPL-2.0 or LGPL-2.0 (library only)
+ RPM_LICENSE_FILES = COPYING
+-RPM_DEPENDENCIES = $(TARGET_NLS_DEPENDENCIES)
+ 
+ # 0001-configure-ac-use-link-instead-of-compile-for-gcc-flags-test.patch
+ # 0002-configure-ac-correct-stack-protector-check.patch
+diff --git a/package/ruby/ruby.hash b/package/ruby/ruby.hash
+index dd4cfc202b..b36d49461c 100644
+--- a/package/ruby/ruby.hash
++++ b/package/ruby/ruby.hash
+@@ -1,6 +1,6 @@
+-# From https://www.ruby-lang.org/en/news/2018/03/28/ruby-2-4-4-released/
+-sha256 1d0034071d675193ca769f64c91827e5f54cb3a7962316a41d5217c7bc6949f0  ruby-2.4.4.tar.xz
++# https://www.ruby-lang.org/en/news/2018/10/17/ruby-2-4-5-released/
++sha256 2f0cdcce9989f63ef7c2939bdb17b1ef244c4f384d85b8531d60e73d8cc31eeb  ruby-2.4.5.tar.xz
+ # License files, Locally calculated
+-sha256 5cda9584acd5e1096276a375085b7e659fa67a072fd69ec2c3931e54f7f563bb  LEGAL
++sha256 609292a6d848ab223073944fc2d844449391a5ba2055a8b5baf1726bc13b39cb  LEGAL
+ sha256 f5eb1b2956d5f7a67b2e5722a3749bc2fe86f9c580f2e3f5a08519cf073b5864  COPYING
+ sha256 a5e3042dacb53eebda91f3b1caefbfec8307711df8c4ed1ed20e4e97c43307a4  BSDL
+diff --git a/package/ruby/ruby.mk b/package/ruby/ruby.mk
+index 93c3170cf6..d6e5fdb43c 100644
+--- a/package/ruby/ruby.mk
++++ b/package/ruby/ruby.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ RUBY_VERSION_MAJOR = 2.4
+-RUBY_VERSION = $(RUBY_VERSION_MAJOR).4
++RUBY_VERSION = $(RUBY_VERSION_MAJOR).5
+ RUBY_VERSION_EXT = 2.4.0
+ RUBY_SITE = http://cache.ruby-lang.org/pub/ruby/$(RUBY_VERSION_MAJOR)
+ RUBY_SOURCE = ruby-$(RUBY_VERSION).tar.xz
+diff --git a/package/samba4/samba4.mk b/package/samba4/samba4.mk
+index 03ef6eeeb0..83a02d54e6 100644
+--- a/package/samba4/samba4.mk
++++ b/package/samba4/samba4.mk
+@@ -150,13 +150,12 @@ define SAMBA4_INSTALL_INIT_SYSV
+ 		$(TARGET_DIR)/etc/init.d/S91smb
+ endef
+ 
++ifeq ($(BR2_INIT_SYSTEMD),y)
++SAMBA4_CONF_OPTS += --systemd-install-services
++SAMBA4_DEPENDENCIES += systemd
++endif
++
+ define SAMBA4_INSTALL_INIT_SYSTEMD
+-	$(INSTALL) -D -m 644 $(@D)/packaging/systemd/nmb.service \
+-		$(TARGET_DIR)/usr/lib/systemd/system/nmb.service
+-	$(INSTALL) -D -m 644 $(@D)/packaging/systemd/smb.service \
+-		$(TARGET_DIR)/usr/lib/systemd/system/smb.service
+-	$(INSTALL) -D -m 644 $(@D)/packaging/systemd/winbind.service \
+-		$(TARGET_DIR)/usr/lib/systemd/system/winbind.service
+ 	mkdir -p $(TARGET_DIR)/etc/systemd/system/multi-user.target.wants
+ 	ln -sf ../../../../usr/lib/systemd/system/nmb.service \
+ 		$(TARGET_DIR)/etc/systemd/system/multi-user.target.wants/nmb.service
+diff --git a/package/squid/0003-ESI-make-sure-endofName-never-exceeds-tagEnd-130.patch b/package/squid/0003-ESI-make-sure-endofName-never-exceeds-tagEnd-130.patch
+deleted file mode 100644
+index 6e71677a19..0000000000
+--- a/package/squid/0003-ESI-make-sure-endofName-never-exceeds-tagEnd-130.patch
++++ /dev/null
+@@ -1,35 +0,0 @@
+-From eb2db98a676321b814fc4a51c4fb7928a8bb45d9 Mon Sep 17 00:00:00 2001
+-From: Amos Jeffries <yadij@users.noreply.github.com>
+-Date: Fri, 19 Jan 2018 13:54:14 +1300
+-Subject: [PATCH] ESI: make sure endofName never exceeds tagEnd (#130)
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- src/esi/CustomParser.cc | 4 ++--
+- 1 file changed, 2 insertions(+), 2 deletions(-)
+-
+-diff --git a/src/esi/CustomParser.cc b/src/esi/CustomParser.cc
+-index d86d2d309..db634d921 100644
+---- a/src/esi/CustomParser.cc
+-+++ b/src/esi/CustomParser.cc
+-@@ -121,7 +121,7 @@ ESICustomParser::parse(char const *dataToParse, size_t const lengthOfData, bool
+- 
+-             char * endofName = strpbrk(const_cast<char *>(tag), w_space);
+- 
+--            if (endofName > tagEnd)
+-+            if (!endofName || endofName > tagEnd)
+-                 endofName = const_cast<char *>(tagEnd);
+- 
+-             *endofName = '\0';
+-@@ -214,7 +214,7 @@ ESICustomParser::parse(char const *dataToParse, size_t const lengthOfData, bool
+- 
+-             char * endofName = strpbrk(const_cast<char *>(tag), w_space);
+- 
+--            if (endofName > tagEnd)
+-+            if (!endofName || endofName > tagEnd)
+-                 endofName = const_cast<char *>(tagEnd);
+- 
+-             *endofName = '\0';
+--- 
+-2.11.0
+-
+diff --git a/package/squid/0004-Fix-indirect-IP-logging-for-transactions-without-a-c.patch b/package/squid/0004-Fix-indirect-IP-logging-for-transactions-without-a-c.patch
+deleted file mode 100644
+index 51fff30034..0000000000
+--- a/package/squid/0004-Fix-indirect-IP-logging-for-transactions-without-a-c.patch
++++ /dev/null
+@@ -1,31 +0,0 @@
+-From 8232b83d3fa47a1399f155cb829db829369fbae9 Mon Sep 17 00:00:00 2001
+-From: squidadm <squidadm@users.noreply.github.com>
+-Date: Sun, 21 Jan 2018 08:07:08 +1300
+-Subject: [PATCH] Fix indirect IP logging for transactions without a client
+- connection (#129) (#136)
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- src/client_side_request.cc | 6 +++---
+- 1 file changed, 3 insertions(+), 3 deletions(-)
+-
+-diff --git a/src/client_side_request.cc b/src/client_side_request.cc
+-index be124f355..203f89d46 100644
+---- a/src/client_side_request.cc
+-+++ b/src/client_side_request.cc
+-@@ -488,9 +488,9 @@ clientFollowXForwardedForCheck(allow_t answer, void *data)
+-         * Ensure that the access log shows the indirect client
+-         * instead of the direct client.
+-         */
+--        ConnStateData *conn = http->getConn();
+--        conn->log_addr = request->indirect_client_addr;
+--        http->al->cache.caddr = conn->log_addr;
+-+        http->al->cache.caddr = request->indirect_client_addr;
+-+        if (ConnStateData *conn = http->getConn())
+-+            conn->log_addr = request->indirect_client_addr;
+-     }
+-     request->x_forwarded_for_iterator.clean();
+-     request->flags.done_follow_x_forwarded_for = true;
+--- 
+-2.11.0
+-
+diff --git a/package/squid/squid.hash b/package/squid/squid.hash
+index 8787cb25ef..74637ca063 100644
+--- a/package/squid/squid.hash
++++ b/package/squid/squid.hash
+@@ -1,5 +1,7 @@
+-# From http://www.squid-cache.org/Versions/v3/3.5/squid-3.5.27.tar.xz.asc
+-md5 39ef8199675d48a314b540f92c00c545 squid-3.5.27.tar.xz
+-sha1 1e69c96d13cd49844da3bcf33a0b428fbe7b6f77 squid-3.5.27.tar.xz
++# From http://www.squid-cache.org/Versions/v3/3.5/squid-3.5.28.tar.xz.asc
++md5 9367e0375ea53ba0e99f77054d4402c5 squid-3.5.28.tar.xz
++sha1 721241a270ec27d629d65ae17a50be56510e8441 squid-3.5.28.tar.xz
+ # Locally calculated
++sha256 de5ea6fa5711aaa6d209de9e9e715c2702ff3597f009562ee1e571cc101670c7 squid-3.5-f1657a9decc820f748fa3aff68168d3145258031.patch
++sha256 8f2518b5e9840e119c493f6ed793e773675e2f768de2bf1bd637fced27e4d527 squid-3.5-bc9786119f058a76ddf0625424bc33d36460b9a2.patch
+ sha256 58f5d05257af1fb964fde20e134d660fac9afa86b6fd8c70d63ead63068378fa COPYING
+diff --git a/package/squid/squid.mk b/package/squid/squid.mk
+index 8ade55ee37..8be4135719 100644
+--- a/package/squid/squid.mk
++++ b/package/squid/squid.mk
+@@ -5,9 +5,12 @@
+ ################################################################################
+ 
+ SQUID_VERSION_MAJOR = 3.5
+-SQUID_VERSION = $(SQUID_VERSION_MAJOR).27
++SQUID_VERSION = $(SQUID_VERSION_MAJOR).28
+ SQUID_SOURCE = squid-$(SQUID_VERSION).tar.xz
+ SQUID_SITE = http://www.squid-cache.org/Versions/v3/$(SQUID_VERSION_MAJOR)
++SQUID_PATCH = \
++	http://www.squid-cache.org/Versions/v3/3.5/changesets/squid-3.5-f1657a9decc820f748fa3aff68168d3145258031.patch \
++	http://www.squid-cache.org/Versions/v3/3.5/changesets/squid-3.5-bc9786119f058a76ddf0625424bc33d36460b9a2.patch
+ SQUID_LICENSE = GPL-2.0+
+ SQUID_LICENSE_FILES = COPYING
+ # For 0001-assume-get-certificate-ok.patch
+diff --git a/package/supertuxkart/0001-Fix-3091.patch b/package/supertuxkart/0001-Fix-3091.patch
+new file mode 100644
+index 0000000000..dae2a37ce1
+--- /dev/null
++++ b/package/supertuxkart/0001-Fix-3091.patch
+@@ -0,0 +1,59 @@
++From 813b08bc73e4e93714b972ee56c64b4771735e01 Mon Sep 17 00:00:00 2001
++From: Benau <Benau@users.noreply.github.com>
++Date: Sun, 14 Jan 2018 10:19:37 +0800
++Subject: [PATCH] Fix #3091
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com
++[Retrieved from:
++https://github.com/supertuxkart/stk-code/commit/813b08bc73e4e93714b972ee56c64b4771735e01]
++---
++ lib/graphics_utils/mipmap/cpusimd.h | 14 +++++++-------
++ 1 file changed, 7 insertions(+), 7 deletions(-)
++
++diff --git a/lib/graphics_utils/mipmap/cpusimd.h b/lib/graphics_utils/mipmap/cpusimd.h
++index 1dc2c730b2..5e2cf30e5f 100644
++--- a/lib/graphics_utils/mipmap/cpusimd.h
+++++ b/lib/graphics_utils/mipmap/cpusimd.h
++@@ -38,11 +38,11 @@
++  #include <mmintrin.h>
++  #define CPU_MMX_SUPPORT (1)
++ #endif
++-#if __SSE__ || _M_X64 || _M_IX86_FP >= 1  || CPU_ENABLE_SSE
+++#if __SSE__ || defined(_M_X64) || ( defined(_M_IX86_FP) && ( _M_IX86_FP >= 1 ) ) || CPU_ENABLE_SSE
++  #include <xmmintrin.h>
++  #define CPU_SSE_SUPPORT (1)
++ #endif
++-#if __SSE2__ || _M_X64 || _M_IX86_FP >= 2  || CPU_ENABLE_SSE2
+++#if __SSE2__ || defined(_M_X64) || ( defined(_M_IX86_FP) && ( _M_IX86_FP >= 2 ) ) || CPU_ENABLE_SSE2
++  #include <emmintrin.h>
++  #define CPU_SSE2_SUPPORT (1)
++ #endif
++@@ -95,23 +95,23 @@
++  #define CPU_POPCNT_SUPPORT (1)
++ #endif
++ #if __LZCNT__ || CPU_ENABLE_LZCNT
++- #include <lzcntintrin.h>
+++ #include <x86intrin.h>
++  #define CPU_LZCNT_SUPPORT (1)
++ #endif
++ #if __F16C__ || CPU_ENABLE_F16C
++- #include <f16cintrin.h>
+++ #include <x86intrin.h>
++  #define CPU_F16C_SUPPORT (1)
++ #endif
++ #if __BMI__ || CPU_ENABLE_BMI
++- #include <bmiintrin.h>
+++ #include <x86intrin.h>
++  #define CPU_BMI_SUPPORT (1)
++ #endif
++ #if __BMI2__ || CPU_ENABLE_BMI2
++- #include <bmi2intrin.h>
+++ #include <x86intrin.h>
++  #define CPU_BMI2_SUPPORT (1)
++ #endif
++ #if __TBM__ || CPU_ENABLE_TBM
++- #include <tbmintrin.h>
+++ #include <x86intrin.h>
++  #define CPU_TBM_SUPPORT (1)
++ #endif
++ 
+diff --git a/package/systemd/0005-dhcp6-make-sure-we-have-enough-space-for-the-DHCP6-o.patch b/package/systemd/0005-dhcp6-make-sure-we-have-enough-space-for-the-DHCP6-o.patch
+new file mode 100644
+index 0000000000..6a72a38988
+--- /dev/null
++++ b/package/systemd/0005-dhcp6-make-sure-we-have-enough-space-for-the-DHCP6-o.patch
+@@ -0,0 +1,30 @@
++From 49653743f69658aeeebdb14faf1ab158f1f2cb20 Mon Sep 17 00:00:00 2001
++From: Lennart Poettering <lennart@poettering.net>
++Date: Fri, 19 Oct 2018 12:12:33 +0200
++Subject: [PATCH] dhcp6: make sure we have enough space for the DHCP6 option
++ header
++
++Fixes CVE-2018-15688:
++https://security-tracker.debian.org/tracker/CVE-2018-15688
++
++Patch downloaded from upstream commit:
++https://github.com/systemd/systemd/commit/49653743f69658aeeebdb14faf1ab158f1f2cb20
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++---
++ src/libsystemd-network/dhcp6-option.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/src/libsystemd-network/dhcp6-option.c b/src/libsystemd-network/dhcp6-option.c
++index cbd4bc7a2a3..2806415100c 100644
++--- a/src/libsystemd-network/dhcp6-option.c
+++++ b/src/libsystemd-network/dhcp6-option.c
++@@ -106,7 +106,7 @@ int dhcp6_option_append_ia(uint8_t **buf, size_t *buflen, const DHCP6IA *ia) {
++                 return -EINVAL;
++         }
++ 
++-        if (*buflen < len)
+++        if (*buflen < offsetof(DHCP6Option, data) + len)
++                 return -ENOBUFS;
++ 
++         ia_hdr = *buf;
+diff --git a/package/tar/Config.in b/package/tar/Config.in
+index b0be7a389f..caf12d6f16 100644
+--- a/package/tar/Config.in
++++ b/package/tar/Config.in
+@@ -12,4 +12,5 @@ config BR2_PACKAGE_TAR
+ 
+ comment "tar needs a toolchain w/ wchar"
+ 	depends on !BR2_USE_WCHAR
++	depends on BR2_USE_MMU
+ 	depends on BR2_PACKAGE_BUSYBOX_SHOW_OTHERS
+diff --git a/package/trace-cmd/trace-cmd.mk b/package/trace-cmd/trace-cmd.mk
+index 0dc145674f..578e9f124f 100644
+--- a/package/trace-cmd/trace-cmd.mk
++++ b/package/trace-cmd/trace-cmd.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ TRACE_CMD_VERSION = trace-cmd-v2.6.1
+-TRACE_CMD_SITE = $(BR2_KERNEL_MIRROR)/scm/linux/kernel/git/rostedt/trace-cmd.git
++TRACE_CMD_SITE = https://git.kernel.org/pub/scm/linux/kernel/git/rostedt/trace-cmd.git
+ TRACE_CMD_SITE_METHOD = git
+ TRACE_CMD_INSTALL_STAGING = YES
+ TRACE_CMD_LICENSE = GPL-2.0, LGPL-2.1
+diff --git a/package/traceroute/traceroute.mk b/package/traceroute/traceroute.mk
+index d01c62d5ea..367e3c7ad2 100644
+--- a/package/traceroute/traceroute.mk
++++ b/package/traceroute/traceroute.mk
+@@ -16,7 +16,7 @@ TRACEROUTE_DEPENDENCIES += busybox
+ endif
+ 
+ define TRACEROUTE_BUILD_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) $(TARGET_CONFIGURE_OPTS) \
++	$(TARGET_MAKE_ENV) VPATH=$(STAGING_DIR)/usr/lib $(MAKE) $(TARGET_CONFIGURE_OPTS) \
+ 		CFLAGS="$(TARGET_CFLAGS) -D_GNU_SOURCE" -C $(@D)
+ endef
+ 
+diff --git a/package/twolame/0001-Fix-static-linking-with-libmagic.patch b/package/twolame/0001-Fix-static-linking-with-libmagic.patch
+new file mode 100644
+index 0000000000..094d7e997e
+--- /dev/null
++++ b/package/twolame/0001-Fix-static-linking-with-libmagic.patch
+@@ -0,0 +1,228 @@
++From 484275de103b2214cb8ff3868a2562e2c61ce0e1 Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Thu, 8 Nov 2018 20:57:08 +0100
++Subject: [PATCH] Fix static linking with libmagic
++
++libmagic (from file package) already provides the buffer_init function
++so to avoid a build failure for applications wanting to statically link
++with twolame and libmagic (for example sox), rename buffer_init into
++bitbuffer_init (also rename buffer_deinit into bitbuffer_deinit and
++buffer_sstell into bitbuffer_sstell for consistency)
++
++Fixes:
++ - http://autobuild.buildroot.org/results/b3fc62e7f372fe595966e84091c11ccdb4cfa77c
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Upstream status: https://github.com/njh/twolame/pull/81]
++---
++ libtwolame/bitbuffer.c |  4 ++--
++ libtwolame/bitbuffer.h |  6 +++---
++ libtwolame/energy.c    |  2 +-
++ libtwolame/twolame.c   | 32 ++++++++++++++++----------------
++ 4 files changed, 22 insertions(+), 22 deletions(-)
++
++diff --git a/libtwolame/bitbuffer.c b/libtwolame/bitbuffer.c
++index 38a632b..5b2fc4b 100644
++--- a/libtwolame/bitbuffer.c
+++++ b/libtwolame/bitbuffer.c
++@@ -33,7 +33,7 @@
++ 
++ 
++ /*create bit buffer*/
++-bit_stream *buffer_init(unsigned char *buffer, int buffer_size)
+++bit_stream *bitbuffer_init(unsigned char *buffer, int buffer_size)
++ {
++     bit_stream *bs = (bit_stream *) TWOLAME_MALLOC(sizeof(bit_stream));
++ 
++@@ -49,7 +49,7 @@ bit_stream *buffer_init(unsigned char *buffer, int buffer_size)
++ }
++ 
++ /* Dellocate bit buffer */
++-void buffer_deinit(bit_stream ** bs)
+++void bitbuffer_deinit(bit_stream ** bs)
++ {
++ 
++     if (bs == NULL || *bs == NULL)
++diff --git a/libtwolame/bitbuffer.h b/libtwolame/bitbuffer.h
++index 0201347..f377c8f 100644
++--- a/libtwolame/bitbuffer.h
+++++ b/libtwolame/bitbuffer.h
++@@ -39,11 +39,11 @@ typedef struct bit_stream_struc {
++ } bit_stream;
++ 
++ 
++-bit_stream *buffer_init(unsigned char *buffer, int buffer_size);
++-void buffer_deinit(bit_stream ** bs);
+++bit_stream *bitbuffer_init(unsigned char *buffer, int buffer_size);
+++void bitbuffer_deinit(bit_stream ** bs);
++ 
++ /*return the current bit stream length (in bits)*/
++-#define buffer_sstell(bs) (bs->totbit)
+++#define bitbuffer_sstell(bs) (bs->totbit)
++ 
++ #endif
++ 
++diff --git a/libtwolame/energy.c b/libtwolame/energy.c
++index 219bd2c..312d8ae 100644
++--- a/libtwolame/energy.c
+++++ b/libtwolame/energy.c
++@@ -73,7 +73,7 @@ void do_energy_levels(twolame_options * glopts, bit_stream * bs)
++     unsigned char rhibyte, rlobyte, lhibyte, llobyte;
++ 
++     // Get the position (in butes) of the end of the mpeg audio frame
++-    int frameEnd = buffer_sstell(bs) / 8;
+++    int frameEnd = bitbuffer_sstell(bs) / 8;
++ 
++ 
++     // find the maximum in the left and right channels
++diff --git a/libtwolame/twolame.c b/libtwolame/twolame.c
++index fa4bcc0..d3b8450 100644
++--- a/libtwolame/twolame.c
+++++ b/libtwolame/twolame.c
++@@ -442,7 +442,7 @@ static int encode_frame(twolame_options * glopts, bit_stream * bs)
++     glopts->num_crc_bits = 0;
++ 
++     // Store the number of bits initially in the bit buffer
++-    initial_bits = buffer_sstell(bs);
+++    initial_bits = bitbuffer_sstell(bs);
++ 
++     adb = available_bits(glopts);
++ 
++@@ -580,7 +580,7 @@ static int encode_frame(twolame_options * glopts, bit_stream * bs)
++ 
++ 
++     // Calulate the number of bits in this frame
++-    frameBits = buffer_sstell(bs) - initial_bits;
+++    frameBits = bitbuffer_sstell(bs) - initial_bits;
++     if (frameBits % 8) {        /* a program failure */
++         fprintf(stderr, "Sent %ld bits = %ld slots plus %ld\n", frameBits, frameBits / 8,
++                 frameBits % 8);
++@@ -630,7 +630,7 @@ int twolame_encode_buffer(twolame_options * glopts,
++ 
++     // now would be a great time to validate the size of the buffer.
++     // samples/1152 * sizeof(frame) < mp2buffer_size 
++-    mybs = buffer_init(mp2buffer, mp2buffer_size);
+++    mybs = bitbuffer_init(mp2buffer, mp2buffer_size);
++ 
++ 
++     // Use up all the samples in in_buffer
++@@ -658,7 +658,7 @@ int twolame_encode_buffer(twolame_options * glopts,
++         if (glopts->samples_in_buffer >= TWOLAME_SAMPLES_PER_FRAME) {
++             int bytes = encode_frame(glopts, mybs);
++             if (bytes <= 0) {
++-                buffer_deinit(&mybs);
+++                bitbuffer_deinit(&mybs);
++                 return bytes;
++             }
++             mp2_size += bytes;
++@@ -667,7 +667,7 @@ int twolame_encode_buffer(twolame_options * glopts,
++     }
++ 
++     // free up the bit stream buffer structure
++-    buffer_deinit(&mybs);
+++    bitbuffer_deinit(&mybs);
++ 
++     return (mp2_size);
++ }
++@@ -687,7 +687,7 @@ int twolame_encode_buffer_interleaved(twolame_options * glopts,
++ 
++     // now would be a great time to validate the size of the buffer.
++     // samples/1152 * sizeof(frame) < mp2buffer_size 
++-    mybs = buffer_init(mp2buffer, mp2buffer_size);
+++    mybs = bitbuffer_init(mp2buffer, mp2buffer_size);
++ 
++     // Use up all the samples in in_buffer
++     while (num_samples) {
++@@ -714,7 +714,7 @@ int twolame_encode_buffer_interleaved(twolame_options * glopts,
++         if (glopts->samples_in_buffer >= TWOLAME_SAMPLES_PER_FRAME) {
++             int bytes = encode_frame(glopts, mybs);
++             if (bytes <= 0) {
++-                buffer_deinit(&mybs);
+++                bitbuffer_deinit(&mybs);
++                 return bytes;
++             }
++             mp2_size += bytes;
++@@ -723,7 +723,7 @@ int twolame_encode_buffer_interleaved(twolame_options * glopts,
++     }
++ 
++     // free up the bit stream buffer structure
++-    buffer_deinit(&mybs);
+++    bitbuffer_deinit(&mybs);
++ 
++ 
++     return (mp2_size);
++@@ -771,7 +771,7 @@ int twolame_encode_buffer_float32(twolame_options * glopts,
++ 
++     // now would be a great time to validate the size of the buffer.
++     // samples/1152 * sizeof(frame) < mp2buffer_size 
++-    mybs = buffer_init(mp2buffer, mp2buffer_size);
+++    mybs = bitbuffer_init(mp2buffer, mp2buffer_size);
++ 
++ 
++     // Use up all the samples in in_buffer
++@@ -800,7 +800,7 @@ int twolame_encode_buffer_float32(twolame_options * glopts,
++         if (glopts->samples_in_buffer >= TWOLAME_SAMPLES_PER_FRAME) {
++             int bytes = encode_frame(glopts, mybs);
++             if (bytes <= 0) {
++-                buffer_deinit(&mybs);
+++                bitbuffer_deinit(&mybs);
++                 return bytes;
++             }
++             mp2_size += bytes;
++@@ -809,7 +809,7 @@ int twolame_encode_buffer_float32(twolame_options * glopts,
++     }
++ 
++     // free up the bit stream buffer structure
++-    buffer_deinit(&mybs);
+++    bitbuffer_deinit(&mybs);
++ 
++     return (mp2_size);
++ }
++@@ -829,7 +829,7 @@ int twolame_encode_buffer_float32_interleaved(twolame_options * glopts,
++ 
++     // now would be a great time to validate the size of the buffer.
++     // samples/1152 * sizeof(frame) < mp2buffer_size 
++-    mybs = buffer_init(mp2buffer, mp2buffer_size);
+++    mybs = bitbuffer_init(mp2buffer, mp2buffer_size);
++ 
++     // Use up all the samples in in_buffer
++     while (num_samples) {
++@@ -857,7 +857,7 @@ int twolame_encode_buffer_float32_interleaved(twolame_options * glopts,
++         if (glopts->samples_in_buffer >= TWOLAME_SAMPLES_PER_FRAME) {
++             int bytes = encode_frame(glopts, mybs);
++             if (bytes <= 0) {
++-                buffer_deinit(&mybs);
+++                bitbuffer_deinit(&mybs);
++                 return bytes;
++             }
++             mp2_size += bytes;
++@@ -866,7 +866,7 @@ int twolame_encode_buffer_float32_interleaved(twolame_options * glopts,
++     }
++ 
++     // free up the bit stream buffer structure
++-    buffer_deinit(&mybs);
+++    bitbuffer_deinit(&mybs);
++ 
++ 
++     return (mp2_size);
++@@ -885,7 +885,7 @@ int twolame_encode_flush(twolame_options * glopts, unsigned char *mp2buffer, int
++         return 0;
++     }
++     // Create bit stream structure
++-    mybs = buffer_init(mp2buffer, mp2buffer_size);
+++    mybs = bitbuffer_init(mp2buffer, mp2buffer_size);
++ 
++     // Pad out the PCM buffers with 0 and encode the frame
++     for (i = glopts->samples_in_buffer; i < TWOLAME_SAMPLES_PER_FRAME; i++) {
++@@ -897,7 +897,7 @@ int twolame_encode_flush(twolame_options * glopts, unsigned char *mp2buffer, int
++     glopts->samples_in_buffer = 0;
++ 
++     // free up the bit stream buffer structure
++-    buffer_deinit(&mybs);
+++    bitbuffer_deinit(&mybs);
++ 
++     return mp2_size;
++ }
++-- 
++2.17.1
++
+diff --git a/package/uclibc/0004-mkostemp64-clear-flags-as-mkostemp-does.patch b/package/uclibc/0004-mkostemp64-clear-flags-as-mkostemp-does.patch
+new file mode 100644
+index 0000000000..f87abd8849
+--- /dev/null
++++ b/package/uclibc/0004-mkostemp64-clear-flags-as-mkostemp-does.patch
+@@ -0,0 +1,38 @@
++From 09a776103e4aa75f95c9ad44554a9c2b56de3535 Mon Sep 17 00:00:00 2001
++From: Carlos Santos <casantos@datacom.com.br>
++Date: Mon, 29 Oct 2018 01:17:38 -0300
++Subject: [PATCH] mkostemp64: clear flags, as mkostemp does
++
++This should have been made in commit 9649721950 but was forgotten.
++
++Signed-off-by: Carlos Santos <casantos@datacom.com.br>
++---
++ libc/stdlib/mkostemp64.c | 3 ++-
++ 1 file changed, 2 insertions(+), 1 deletion(-)
++
++diff --git a/libc/stdlib/mkostemp64.c b/libc/stdlib/mkostemp64.c
++index aa9736cd6..f4674bb0c 100644
++--- a/libc/stdlib/mkostemp64.c
+++++ b/libc/stdlib/mkostemp64.c
++@@ -15,9 +15,9 @@
++    License along with the GNU C Library; if not, see
++    <http://www.gnu.org/licenses/>.  */
++ 
++-#include <fcntl.h>
++ #include <stdio.h>
++ #include <stdlib.h>
+++#include <fcntl.h>
++ #include "../misc/internals/tempname.h"
++ 
++ /* Generate a unique temporary file name from TEMPLATE.
++@@ -27,6 +27,7 @@
++ int
++ mkostemp64 (char *template, int flags)
++ {
+++  flags -= flags & O_ACCMODE; /* Remove O_RDONLY, O_WRONLY, and O_RDWR. */
++   return __gen_tempname (template, __GT_BIGFILE, flags | O_LARGEFILE, 0,
++                          S_IRUSR | S_IWUSR);
++ }
++-- 
++2.14.5
++
+diff --git a/package/uclibc/Config.in b/package/uclibc/Config.in
+index 0e24b25441..ce56f277ad 100644
+--- a/package/uclibc/Config.in
++++ b/package/uclibc/Config.in
+@@ -70,6 +70,7 @@ config BR2_PTHREAD_DEBUG
+ 
+ config BR2_TOOLCHAIN_BUILDROOT_USE_SSP
+ 	bool "Enable stack protection support"
++	depends on BR2_PACKAGE_HOST_BINUTILS_SUPPORTS_CFI
+ 	select BR2_TOOLCHAIN_HAS_SSP
+ 	help
+ 	  Enable stack smashing protection support using GCCs
+diff --git a/package/usb_modeswitch/usb_modeswitch.mk b/package/usb_modeswitch/usb_modeswitch.mk
+index 8dd712f264..719e4fe33b 100644
+--- a/package/usb_modeswitch/usb_modeswitch.mk
++++ b/package/usb_modeswitch/usb_modeswitch.mk
+@@ -10,6 +10,8 @@ USB_MODESWITCH_SITE = http://www.draisberghof.de/usb_modeswitch
+ USB_MODESWITCH_DEPENDENCIES = libusb
+ USB_MODESWITCH_LICENSE = GPL-2.0+
+ USB_MODESWITCH_LICENSE_FILES = COPYING
++# Package does not build in parallel due to improper make rules
++USB_MODESWITCH_MAKE = $(MAKE1)
+ 
+ USB_MODESWITCH_BUILD_TARGETS = static
+ USB_MODESWITCH_INSTALL_TARGETS = install-static
+diff --git a/package/vtun/Config.in b/package/vtun/Config.in
+index bb8919c3d0..d63e7c76ef 100644
+--- a/package/vtun/Config.in
++++ b/package/vtun/Config.in
+@@ -10,7 +10,4 @@ config BR2_PACKAGE_VTUN
+ 
+ 	  It supports IP, PPP, SLIP, Ethernet and other tunnel types.
+ 
+-	  NOTE: It uses start-stop-daemon in init script, so be sure
+-	  to enable that within busybox
+-
+ 	  http://vtun.sourceforge.net/
+diff --git a/package/webkitgtk/0001-ARM-Building-FELightingNEON.cpp-fails-due-to-missing.patch b/package/webkitgtk/0001-ARM-Building-FELightingNEON.cpp-fails-due-to-missing.patch
+deleted file mode 100644
+index 6fb309d9fb..0000000000
+--- a/package/webkitgtk/0001-ARM-Building-FELightingNEON.cpp-fails-due-to-missing.patch
++++ /dev/null
+@@ -1,41 +0,0 @@
+-From b252c7aed3fa6f22db8a26c3ab0bfe66e3490eef Mon Sep 17 00:00:00 2001
+-From: Adrian Perez de Castro <aperez@igalia.com>
+-Date: Sun, 23 Sep 2018 02:34:26 +0300
+-Subject: [PATCH xserver] [ARM] Building FELightingNEON.cpp fails due to
+- missing lightVector member https://bugs.webkit.org/show_bug.cgi?id=189890
+-
+-Reviewed by NOBODY (OOPS!).
+-
+-No new tests needed.
+-
+-* platform/graphics/cpu/arm/filters/FELightingNEON.h:
+-(WebCore::FELighting::platformApplyNeon): Adapt to new layout of "struct PaintingData" after r225122.
+----
+- Source/WebCore/ChangeLog                             | 12 ++++++++++++
+- .../graphics/cpu/arm/filters/FELightingNEON.h        |  6 +++---
+- 2 files changed, 15 insertions(+), 3 deletions(-)
+-
+-Fetch from: https://bugs.webkit.org/show_bug.cgi?id=189890
+-Upstream-Status: Pending
+-Signed-off-by: Adrian Perez de Castro <aperez@igalia.com>
+-
+-diff --git a/Source/WebCore/platform/graphics/cpu/arm/filters/FELightingNEON.h b/Source/WebCore/platform/graphics/cpu/arm/filters/FELightingNEON.h
+-index 42af922374b..b542a4c81aa 100644
+---- a/Source/WebCore/platform/graphics/cpu/arm/filters/FELightingNEON.h
+-+++ b/Source/WebCore/platform/graphics/cpu/arm/filters/FELightingNEON.h
+-@@ -144,9 +144,9 @@ inline void FELighting::platformApplyNeon(const LightingData& data, const LightS
+-             neonData.flags |= FLAG_CONE_EXPONENT_IS_1;
+-     } else {
+-         ASSERT(m_lightSource->type() == LS_DISTANT);
+--        floatArguments.lightX = paintingData.lightVector.x();
+--        floatArguments.lightY = paintingData.lightVector.y();
+--        floatArguments.lightZ = paintingData.lightVector.z();
+-+        floatArguments.lightX = paintingData.initialLightingData.lightVector.x();
+-+        floatArguments.lightY = paintingData.initialLightingData.lightVector.y();
+-+        floatArguments.lightZ = paintingData.initialLightingData.lightVector.z();
+-         floatArguments.padding2 = 1;
+-     }
+- 
+--- 
+-2.19.0
+-
+diff --git a/package/webkitgtk/Config.in b/package/webkitgtk/Config.in
+index 96a7ab0c94..260fa15bad 100644
+--- a/package/webkitgtk/Config.in
++++ b/package/webkitgtk/Config.in
+@@ -88,6 +88,21 @@ config BR2_PACKAGE_WEBKITGTK_MULTIMEDIA
+ 	  This option pulls in all of the required dependencies
+ 	  to enable multimedia (video/audio) support.
+ 
++if BR2_PACKAGE_WEBKITGTK_MULTIMEDIA
++
++config BR2_PACKAGE_WEBKITGTK_USE_GSTREAMER_GL
++	bool "use gstreamer-gl"
++	default y
++	depends on BR2_PACKAGE_GST1_PLUGINS_BASE_HAS_LIB_OPENGL
++	select BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_GL
++	help
++	  Use the GStreamer GL elements for handling video content.
++	  This is recommended as it improves performance of video
++	  playback. In some target configurations incorrect rendering
++	  might be produced, and disabling this option may help.
++
++endif
++
+ config BR2_PACKAGE_WEBKITGTK_WEBDRIVER
+ 	bool "WebDriver support"
+ 	help
+diff --git a/package/webkitgtk/webkitgtk.hash b/package/webkitgtk/webkitgtk.hash
+index 0b9b94ca49..15b1b56681 100644
+--- a/package/webkitgtk/webkitgtk.hash
++++ b/package/webkitgtk/webkitgtk.hash
+@@ -1,7 +1,7 @@
+-# From https://webkitgtk.org/releases/webkitgtk-2.22.2.tar.xz.sums
+-md5 207d50d313c07b03726f3a7f22643934 webkitgtk-2.22.2.tar.xz
+-sha1 ff0c40e81e240aa0743f7e6483f175defebd1417 webkitgtk-2.22.2.tar.xz
+-sha256 345487d4d1896e711683f951d1e09387d3b90d7cf59295c0e634af7f515e99ba webkitgtk-2.22.2.tar.xz
++# From https://webkitgtk.org/releases/webkitgtk-2.22.4.tar.xz.sums
++md5 9f08d09cfc21c761a431a545549f301a webkitgtk-2.22.4.tar.xz
++sha1 adf857c8a8b8fb79ba9b01bbe4b454956e633952 webkitgtk-2.22.4.tar.xz
++sha256 fab5be2883802352ae0e735dd1eff4bc18abaff7ac78689cec72eb2f611943b8 webkitgtk-2.22.4.tar.xz
+ 
+ # Hashes for license files:
+ sha256 0b5d3a7cc325942567373b0ecd757d07c132e0ebd7c97bfc63f7e1a76094edb4 Source/WebCore/LICENSE-APPLE
+diff --git a/package/webkitgtk/webkitgtk.mk b/package/webkitgtk/webkitgtk.mk
+index f28417ac73..cade28f99b 100644
+--- a/package/webkitgtk/webkitgtk.mk
++++ b/package/webkitgtk/webkitgtk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WEBKITGTK_VERSION = 2.22.2
++WEBKITGTK_VERSION = 2.22.4
+ WEBKITGTK_SITE = http://www.webkitgtk.org/releases
+ WEBKITGTK_SOURCE = webkitgtk-$(WEBKITGTK_VERSION).tar.xz
+ WEBKITGTK_INSTALL_STAGING = YES
+@@ -22,10 +22,10 @@ WEBKITGTK_CONF_OPTS = \
+ 	-DENABLE_INTROSPECTION=OFF \
+ 	-DENABLE_MINIBROWSER=ON \
+ 	-DENABLE_SPELLCHECK=ON \
+-	-DENABLE_WOFF2=ON \
+ 	-DPORT=GTK \
+ 	-DUSE_LIBNOTIFY=OFF \
+-	-DUSE_LIBHYPHEN=OFF
++	-DUSE_LIBHYPHEN=OFF \
++	-DUSE_WOFF2=ON
+ 
+ # ARM needs NEON for JIT
+ # i386 & x86_64 don't seem to have any special requirements
+@@ -97,4 +97,11 @@ WEBKITGTK_CONF_OPTS += -DENABLE_WAYLAND_TARGET=ON
+ endif
+ endif
+ 
++ifeq ($(BR2_PACKAGE_WEBKITGTK_USE_GSTREAMER_GL),y)
++WEBKITGTK_CONF_OPTS += -DUSE_GSTREAMER_GL=ON
++WEBKITGTK_DEPENDENCIES += gst1-plugins-bad
++else
++WEBKITGTK_CONF_OPTS += -DUSE_GSTREAMER_GL=OFF
++endif
++
+ $(eval $(cmake-package))
+diff --git a/package/x11r7/xdriver_xf86-video-geode/0001-Remove-call-to-LoaderGetOS.patch b/package/x11r7/xdriver_xf86-video-geode/0001-Remove-call-to-LoaderGetOS.patch
+new file mode 100644
+index 0000000000..18e4a60da0
+--- /dev/null
++++ b/package/x11r7/xdriver_xf86-video-geode/0001-Remove-call-to-LoaderGetOS.patch
+@@ -0,0 +1,53 @@
++From 09aaa3d1fae4aeb099b16e7a046151761bcdea95 Mon Sep 17 00:00:00 2001
++From: Adam Jackson <ajax@redhat.com>
++Date: Tue, 24 Jan 2017 09:53:06 -0500
++Subject: Remove call to LoaderGetOS
++
++On OSes that don't have a /dev/videox we'll just fail the open() and not
++initialize the Xv adaptor.
++
++Signed-off-by: Adam Jackson <ajax@redhat.com>
++
++Downloaded from upstream commit
++https://cgit.freedesktop.org/xorg/driver/xf86-video-geode/commit/?id=09aaa3d1fae4aeb099b16e7a046151761bcdea95
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++---
++ src/z4l.c | 13 -------------
++ 1 file changed, 13 deletions(-)
++
++diff --git a/src/z4l.c b/src/z4l.c
++index eccefe8..be0d345 100644
++--- a/src/z4l.c
+++++ b/src/z4l.c
++@@ -1709,7 +1709,6 @@ _X_EXPORT XF86ModuleData ztvModuleData = { &z4lVersionRec, z4lSetup, NULL };
++ static pointer
++ z4lSetup(pointer module, pointer opts, int *errmaj, int *errmin)
++ {
++-    const char *osname;
++     static Bool setupDone = FALSE;
++ 
++     if (setupDone != FALSE) {
++@@ -1719,19 +1718,7 @@ z4lSetup(pointer module, pointer opts, int *errmaj, int *errmin)
++     }
++ 
++     setupDone = TRUE;
++-    LoaderGetOS(&osname, NULL, NULL, NULL);
++-
++-    if (osname == NULL || strcmp(osname, "linux") != 0) {
++-        if (errmaj)
++-            *errmaj = LDR_BADOS;
++-        if (errmin)
++-            *errmin = 0;
++-
++-        return NULL;
++-    }
++-
++     xf86AddDriver(&Z4l, module, 0);
++-
++     return (pointer) 1;
++ }
++ 
++-- 
++cgit v1.1
++
+diff --git a/package/x11r7/xdriver_xf86-video-geode/0002-gx-Fix-RANDR-initialization-for-xserver-1.20.patch b/package/x11r7/xdriver_xf86-video-geode/0002-gx-Fix-RANDR-initialization-for-xserver-1.20.patch
+new file mode 100644
+index 0000000000..37e4a25e76
+--- /dev/null
++++ b/package/x11r7/xdriver_xf86-video-geode/0002-gx-Fix-RANDR-initialization-for-xserver-1.20.patch
+@@ -0,0 +1,35 @@
++From 8382e6bb0c76a8029493eae3f2d7a3dbfd0cfc12 Mon Sep 17 00:00:00 2001
++From: Adam Jackson <ajax@redhat.com>
++Date: Mon, 5 Mar 2018 10:28:15 -0500
++Subject: gx: Fix RANDR initialization for xserver 1.20
++
++xf86DisableRandR() doesn't exist anymore, and we don't need it anyway,
++the core code will notice that we set up RANDR ourselves.
++
++Signed-off-by: Adam Jackson <ajax@redhat.com>
++
++Downloaded from upstream commit
++https://cgit.freedesktop.org/xorg/driver/xf86-video-geode/commit/?id=8382e6bb0c76a8029493eae3f2d7a3dbfd0cfc12
++
++Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
++---
++ src/gx_driver.c | 2 ++
++ 1 file changed, 2 insertions(+)
++
++diff --git a/src/gx_driver.c b/src/gx_driver.c
++index ab57df1..4de336e 100644
++--- a/src/gx_driver.c
+++++ b/src/gx_driver.c
++@@ -1426,7 +1426,9 @@ GXScreenInit(SCREEN_INIT_ARGS_DECL)
++ 
++     /* Set up RandR */
++ 
+++#if GET_ABI_MAJOR(ABI_VIDEODRV_VERSION) < 24
++     xf86DisableRandR();         /* We provide our own RandR goodness */
+++#endif
++ 
++     /* Try to set up the shadow FB for rotation */
++ 
++-- 
++cgit v1.1
++
+diff --git a/package/x11r7/xlib_libfontenc/xlib_libfontenc.mk b/package/x11r7/xlib_libfontenc/xlib_libfontenc.mk
+index e2c4c6e8d9..63e3216818 100644
+--- a/package/x11r7/xlib_libfontenc/xlib_libfontenc.mk
++++ b/package/x11r7/xlib_libfontenc/xlib_libfontenc.mk
+@@ -10,8 +10,8 @@ XLIB_LIBFONTENC_SITE = http://xorg.freedesktop.org/releases/individual/lib
+ XLIB_LIBFONTENC_LICENSE = MIT
+ XLIB_LIBFONTENC_LICENSE_FILES = COPYING
+ XLIB_LIBFONTENC_INSTALL_STAGING = YES
+-XLIB_LIBFONTENC_DEPENDENCIES = zlib xproto_xproto
+-HOST_XLIB_LIBFONTENC_DEPENDENCIES = host-zlib host-xproto_xproto
++XLIB_LIBFONTENC_DEPENDENCIES = zlib xproto_xproto host-pkgconf
++HOST_XLIB_LIBFONTENC_DEPENDENCIES = host-zlib host-xproto_xproto host-pkgconf
+ 
+ $(eval $(autotools-package))
+ $(eval $(host-autotools-package))
+diff --git a/package/x11r7/xproto_inputproto/xproto_inputproto.mk b/package/x11r7/xproto_inputproto/xproto_inputproto.mk
+index 20169b5c46..9e45e2d30a 100644
+--- a/package/x11r7/xproto_inputproto/xproto_inputproto.mk
++++ b/package/x11r7/xproto_inputproto/xproto_inputproto.mk
+@@ -11,6 +11,8 @@ XPROTO_INPUTPROTO_LICENSE = MIT
+ XPROTO_INPUTPROTO_LICENSE_FILES = COPYING
+ XPROTO_INPUTPROTO_INSTALL_STAGING = YES
+ XPROTO_INPUTPROTO_INSTALL_TARGET = NO
++XPROTO_INPUTPROTO_CONF_ENV = ac_cv_path_ASCIIDOC=""
++HOST_XPROTO_INPUTPROTO_CONF_ENV = ac_cv_path_ASCIIDOC=""
+ 
+ $(eval $(autotools-package))
+ $(eval $(host-autotools-package))
+diff --git a/package/x11r7/xserver_xorg-server/1.19.6/0005-Disable-logfile-and-modulepath-when-running-with-ele.patch b/package/x11r7/xserver_xorg-server/1.19.6/0005-Disable-logfile-and-modulepath-when-running-with-ele.patch
+new file mode 100644
+index 0000000000..ba0f09cdda
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.19.6/0005-Disable-logfile-and-modulepath-when-running-with-ele.patch
+@@ -0,0 +1,52 @@
++From 0ff8977a348c316cd9909b890c48d7f5175a5eba Mon Sep 17 00:00:00 2001
++From: Matthieu Herrb <matthieu@herrb.eu>
++Date: Tue, 23 Oct 2018 21:29:08 +0200
++Subject: [PATCH] Disable -logfile and -modulepath when running with elevated
++ privileges
++
++Could cause privilege elevation and/or arbitrary files overwrite, when
++the X server is running with elevated privileges (ie when Xorg is
++installed with the setuid bit set and started by a non-root user).
++
++CVE-2018-14665
++
++Issue reported by Narendra Shinde and Red Hat.
++
++Signed-off-by: Matthieu Herrb <matthieu@herrb.eu>
++Reviewed-by: Alan Coopersmith <alan.coopersmith@oracle.com>
++Reviewed-by: Peter Hutterer <peter.hutterer@who-t.net>
++Reviewed-by: Adam Jackson <ajax@redhat.com>
++(cherry picked from commit 50c0cf885a6e91c0ea71fb49fa8f1b7c86fe330e)
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ hw/xfree86/common/xf86Init.c | 8 ++++++--
++ 1 file changed, 6 insertions(+), 2 deletions(-)
++
++diff --git a/hw/xfree86/common/xf86Init.c b/hw/xfree86/common/xf86Init.c
++index d59c224d5..183158c21 100644
++--- a/hw/xfree86/common/xf86Init.c
+++++ b/hw/xfree86/common/xf86Init.c
++@@ -1135,14 +1135,18 @@ ddxProcessArgument(int argc, char **argv, int i)
++     /* First the options that are not allowed with elevated privileges */
++     if (!strcmp(argv[i], "-modulepath")) {
++         CHECK_FOR_REQUIRED_ARGUMENT();
++-        xf86CheckPrivs(argv[i], argv[i + 1]);
+++        if (xf86PrivsElevated())
+++              FatalError("\nInvalid argument -modulepath "
+++                "with elevated privileges\n");
++         xf86ModulePath = argv[i + 1];
++         xf86ModPathFrom = X_CMDLINE;
++         return 2;
++     }
++     if (!strcmp(argv[i], "-logfile")) {
++         CHECK_FOR_REQUIRED_ARGUMENT();
++-        xf86CheckPrivs(argv[i], argv[i + 1]);
+++        if (xf86PrivsElevated())
+++              FatalError("\nInvalid argument -logfile "
+++                "with elevated privileges\n");
++         xf86LogFile = argv[i + 1];
++         xf86LogFileFrom = X_CMDLINE;
++         return 2;
++-- 
++2.11.0
++
+diff --git a/support/scripts/graph-depends b/support/scripts/graph-depends
+index 85c9bf0a4f..51b69c44c0 100755
+--- a/support/scripts/graph-depends
++++ b/support/scripts/graph-depends
+@@ -183,9 +183,10 @@ def get_all_depends(pkgs):
+ 
+ 
+ # The Graphviz "dot" utility doesn't like dashes in node names. So for
+-# node names, we strip all dashes.
++# node names, we strip all dashes. Also, nodes can't start with a number,
++# so we prepend an underscore.
+ def pkg_node_name(pkg):
+-    return pkg.replace("-", "")
++    return "_" + pkg.replace("-", "")
+ 
+ 
+ TARGET_EXCEPTIONS = [
+diff --git a/support/scripts/mkmakefile b/support/scripts/mkmakefile
+index 37162a3173..c7569f2ca5 100755
+--- a/support/scripts/mkmakefile
++++ b/support/scripts/mkmakefile
+@@ -20,6 +20,13 @@ echo "  GEN     $2/Makefile"
+ cat << EOF > $2/Makefile
+ # Automatically generated by $0: don't edit
+ 
++ifeq ("\$(origin V)", "command line")
++VERBOSE := \$(V)
++endif
++ifneq (\$(VERBOSE),1)
++Q := @
++endif
++
+ lastword = \$(word \$(words \$(1)),\$(1))
+ makedir := \$(dir \$(call lastword,\$(MAKEFILE_LIST)))
+ 
+@@ -33,7 +40,7 @@ MAKEFLAGS += --no-print-directory
+ all	:= \$(filter-out Makefile,\$(MAKECMDGOALS))
+ 
+ _all:
+-	umask 0022 && \$(MAKE) \$(MAKEARGS) \$(all)
++	\$(Q)umask 0022 && \$(MAKE) \$(MAKEARGS) \$(all)
+ 
+ Makefile:;
+ 
+diff --git a/utils/genrandconfig b/utils/genrandconfig
+index 8a6bdb6a0c..fa2c0f7f21 100755
+--- a/utils/genrandconfig
++++ b/utils/genrandconfig
+@@ -348,7 +348,7 @@ def gen_config(args):
+         configlines += minimalf.readlines()
+ 
+     # Allow hosts with old certificates to download over https
+-    configlines.append("BR2_WGET=\"wget --passive-ftp -nd -t 3 --no-check-certificate\"")
++    configlines.append("BR2_WGET=\"wget --passive-ftp -nd -t 3 --no-check-certificate\"\n")
+ 
+     # Amend the configuration with a few things.
+     if randint(0, 20) == 0:
+diff --git a/utils/scanpypi b/utils/scanpypi
+index 56b9f420ff..cb4b5e76a3 100755
+--- a/utils/scanpypi
++++ b/utils/scanpypi
+@@ -227,13 +227,14 @@ class BuildrootPackage():
+                     os.makedirs(tmp_pkg)
+                 except OSError as exception:
+                     if exception.errno != errno.EEXIST:
+-                        print("ERROR: ", exception.message, file=sys.stderr)
+-                        return None, None
+-                    print('WARNING:', exception.message, file=sys.stderr)
++                        print("ERROR: ", exception.strerror, file=sys.stderr)
++                        return
++                    print('WARNING:', exception.strerror, file=sys.stderr)
+                     print('Removing {pkg}...'.format(pkg=tmp_pkg))
+                     shutil.rmtree(tmp_pkg)
+                     os.makedirs(tmp_pkg)
+                 as_zipfile.extractall(tmp_pkg)
++                pkg_filename = self.filename.split(".zip")[0]
+         else:
+             with tarfile.open(fileobj=as_file) as as_tarfile:
+                 tmp_pkg = os.path.join(tmp_path, self.buildroot_name)
+@@ -241,19 +242,19 @@ class BuildrootPackage():
+                     os.makedirs(tmp_pkg)
+                 except OSError as exception:
+                     if exception.errno != errno.EEXIST:
+-                        print("ERROR: ", exception.message, file=sys.stderr)
+-                        return None, None
+-                    print('WARNING:', exception.message, file=sys.stderr)
++                        print("ERROR: ", exception.strerror, file=sys.stderr)
++                        return
++                    print('WARNING:', exception.strerror, file=sys.stderr)
+                     print('Removing {pkg}...'.format(pkg=tmp_pkg))
+                     shutil.rmtree(tmp_pkg)
+                     os.makedirs(tmp_pkg)
+                 as_tarfile.extractall(tmp_pkg)
++                pkg_filename = self.filename.split(".tar")[0]
+ 
+-        tmp_extract = '{folder}/{name}-{version}'
++        tmp_extract = '{folder}/{name}'
+         self.tmp_extract = tmp_extract.format(
+             folder=tmp_pkg,
+-            name=self.metadata_name,
+-            version=self.version)
++            name=pkg_filename)
+ 
+     def load_setup(self):
+         """
