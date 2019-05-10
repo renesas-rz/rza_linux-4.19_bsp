@@ -28,6 +28,8 @@ if [ -e $OUTDIR/br_version.txt ] ; then
 fi
 export BUILDROOT_DIR=$OUTDIR/buildroot-$BR_VERSION
 
+# If Buildroot is not installed yet, there is no toolchain
+if [ -e $OUTDIR/buildroot-$BR_VERSION ] ; then
 
 # Define the base path of the toolchain
 if [ -e $BUILDROOT_DIR/output/host/bin ] ; then
@@ -79,4 +81,7 @@ PS1="\[\e[33m\]dir: \w\n\[\e[1;31m\](rza_bsp)$\[\e[00m\] "
 echo "Build Environment set"
 export ENV_SET=1
 
+else
+echo -n "" # No Buildroot installed yet
+fi
 
