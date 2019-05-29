@@ -14,7 +14,7 @@ function usage {
   echo -e ""
   echo -e "    ./build.sh env                     : Set up the Build environment so you can run 'make' directly"
   echo -e ""
-  echo -e "    ./build.sh jlink                   : Downlaod a binary image to RAM so you can program it into QSPI"
+  echo -e "    ./build.sh jlink                   : Download a binary image to RAM so you can program it into QSPI"
   echo -e ""
   echo -e "  You may also do things like:"
   echo -e "    ./build.sh kernel menuconfig       : Open the kernel config GUI to enable options/drivers"
