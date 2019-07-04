@@ -8,7 +8,7 @@ the instructions below.
 
 Please note, when using SDRAM:
  * "UART" (on board USB-to-Serial) cannot be used
- * You must connect a TTL USB-to-Serial to the CN17 "CMOS" header.
+ * You must connect a 3.3V TTL USB-to-Serial to the CN17 "CMOS" header.
      RxD2 (CN17-9)
      TxD2 (CN17-10)
      GND  (CN17-2 or CN17-17)
