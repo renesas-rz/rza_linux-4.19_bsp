@@ -47,7 +47,11 @@ On the RZ/A2M Evaluation Board:
   P6_0 = RED LED
   PC_1 = GREEN LED
 
-NOTE 1: P6_0 is defined as a GPIO LED in the RZA2MEVB's Device Tree. So you need to either remove that from the Device Tree and reprogram the board, or disconnect that device/driver first so we can manualy use it as a GPIO. Below is the command line to simply disconenct (unbind) the LED device from the device driver.
+NOTE 1: P6_0 is defined as a GPIO LED in the RZA2MEVB's Device Tree. So you
+need to either remove that from the Device Tree and reprogram the board, or
+disconnect that device/driver first so we can manually use it as a GPIO.
+Below is the command line to simply disconnect (unbind) the LED device from the
+device driver.
 	$ echo leds > /sys/bus/platform/drivers/leds-gpio/unbind
 
 NOTE 2: PC_1 is being used as a system heart beat LED on the RZA2MEVB. To disable the heartbeat kernel thread from starting, add "no-heartbeat;" to the Device Tree and reprogram the board. See below for example:

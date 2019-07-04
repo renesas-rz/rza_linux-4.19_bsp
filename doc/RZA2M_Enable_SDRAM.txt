@@ -14,7 +14,8 @@ Please note, when using SDRAM:
      GND  (CN17-2 or CN17-17)
 
  * "Ether 1" cannot be used
- * The USB 'overcurrent' signal on the sub board (only) is not conencted (pin conflict)
+ * The USB 'overcurrent' signal on the sub board (only) is not connected
+   (pin conflict)
 
 -----------------------------------------------------------
 Configure u-boot to enable SDRAM
