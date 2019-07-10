@@ -379,6 +379,9 @@ usage: ./build.sh jlink {FILE} {ADDRESS} {SPI}
   ADDRESS: (Optional) RAM or SPI Flash address. Default is $DLRAM_ADDR (beginning of your RAM)
       SPI: (Optional) 'single' or 'dual' SPI Flash. Default is 'single' SPI flash programming
 
+Examples: (prepare - Erase beginning of QSPI flash because existing code is interfearing with programming)
+  ./build.sh jlink prepare
+
 Examples: (full path)
   ./build.sh jlink output/u-boot-2017.05/u-boot.bin $UBOOT_ADDR
 
@@ -510,6 +513,19 @@ Examples: (Download directory to QSPI Flash)
     set -- $1 $FILE8 $3 $4
   fi
 
+  # prepare
+  if [ "$2" == "prepare" ] ; then
+    FF_FILE=/tmp/ff.dat
+    if [ -e $FF_FILE ] ; then rm $FF_FILE ; fi
+    for i in `seq 1 16` ; do
+      echo -n -e '\xFF' >> $FF_FILE
+    done
+    set -- $1 $FF_FILE $UBOOT_ADDR
+
+    banner_yellow "Erasing boot vector of QSPI flash"
+    sleep 3
+  fi
+
   # File check
   if [ ! -e "$2" ] ; then
     echo "ERROR: File does not exist. $2"
@@ -544,9 +560,16 @@ Examples: (Download directory to QSPI Flash)
   fi
 
   # Create a jlink script and execute it
-  echo "loadbin $dlfile,$ramaddr" > /tmp/jlink_load.txt
-  echo "g" >> /tmp/jlink_load.txt
-  echo "exit" >> /tmp/jlink_load.txt
+  if [ "$2" == "$FF_FILE" ] ; then
+    echo "rx 0" > /tmp/jlink_load.txt
+    echo "loadbin $dlfile,$ramaddr" >> /tmp/jlink_load.txt
+    echo "rx 1" >> /tmp/jlink_load.txt
+    echo "exit" >> /tmp/jlink_load.txt
+  else
+    echo "loadbin $dlfile,$ramaddr" > /tmp/jlink_load.txt
+    echo "g" >> /tmp/jlink_load.txt
+    echo "exit" >> /tmp/jlink_load.txt
+  fi
 
   # After version 5.10, a new command line option is needed
   CHECK=`which JLinkExe`
