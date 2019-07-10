@@ -1,0 +1,14 @@
+
+
+In order to use the switches conneted to IRQ pins, you must first enable the GPIO Keyboard driver in the kernel.
+
+Using menuconfig, enable:
+  INPUT_KEYBOARD=y
+  KEYBOARD_GPIO=y
+
+
+  -> Device Drivers
+    -> Input device support
+      -> Generic input layer (needed for keyboard, mouse, ...) (INPUT [=y])
+        -> Keyboards (INPUT_KEYBOARD [=y])
+          -> GPIO Buttons (KEYBOARD_GPIO [=y])
