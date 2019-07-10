@@ -1,4 +1,4 @@
-Below are the configuraiton symbols and  menuconfig locations for each kernel driver.
+Below are the configuration symbols and menuconfig locations for each kernel driver.
 
 ---------------------------------------------------
 Searching
@@ -20,10 +20,7 @@ particular driver.
 
 USB Host
 ---------------------------------------------------
-CONFIG_USB_R8A66597_HCD
-	> Device Drivers
-		> USB support
-			[*] R8A66597 HCD support
+CONFIG_USB_R8A66597_HCD=y
 
 NOTE: If you want to read a USB flash drive, you will also need:
 	CONFIG_SCSI
@@ -39,112 +36,63 @@ CONFIG_USB_RENESAS_USBHS_UDC=y
 
 DMA
 ---------------------------------------------------
-CONFIG_RZA1_DMA
-> Device Drivers
-	> DMA Engine support
-		[*] Renesas RZA1 DMAC support
-
-
-UIO (for userspace driver apps)
----------------------------------------------------
-CONFIG_UIO_PDRV_GENIRQ
-> Device Drivers
-	> Userspace I/O drivers
-		[*] Userspace I/O platform driver with generic IRQ handling
+CONFIG_RZA_DMA=y
 
 
 RTC
 ---------------------------------------------------
-CONFIG_RTC_DRV_SH
-> Device Drivers
-	> Real Time Clock
-		[*] SuperH On-Chip RTC
-
-
-ADC
----------------------------------------------------
-CONFIG_SH_ADC
-> Device Drivers
-	> Industrial I/O support
-		> Analog to digital converters
-			[*] RZA1 ADC support
+CONFIG_RTC_DRV_SH=y
 
 
 MMC
 ---------------------------------------------------
-CONFIG_MMC_SH_MMCIF
-> Device Drivers
-	> MMC/SD/SDIO card support
-		[*] SuperH Internal MMCIF support
+CONFIG_MMC_SH_MMCIF=y
 
 
 SDHI SD/SDIO
 ---------------------------------------------------
-CONFIG_MMC_SDHI
-> Device Drivers
-	> MMC/SD/SDIO card support
-		[*] SH-Mobile SDHI SD/SDIO controller support
-
+CONFIG_MMC_SDHI=y
 
 
 Ethernet
 ---------------------------------------------------
-CONFIG_SH_ETH
-> Device Drivers
-	> Network device support
-		> Ethernet driver support
-			[*] Renesas SuperH Ethernet support
-
+CONFIG_SH_ETH=y
 
 
 Serial UARTS
 ---------------------------------------------------
-SERIAL_SH_SCI
-> Device Drivers
-	> Character devices
-		> Serial drivers
-			[*] SuperH SCI(F) serial port support
+CONFIG_SERIAL_SH_SCI=y
 
 
 RENESAS_OSTM
 ---------------------------------------------------
+CONFIG_RENESAS_OSTM=y
 High resolution tick timers. Selected automatically.
 
 
 MTU2 (System Clock) (Selected automatically)
 ---------------------------------------------------
-SH_TIMER_MTU2
-
+CONFIG_SH_TIMER_MTU2=y
+Low resolution tick timer. Selected automatically.
 
 SPIBSC (QSPI)
 ---------------------------------------------------
-SPI_SH_SPIBSC
-> Device Drivers
-	> SPI support
-		[*] Renesas SPIBSC controller for RZA1
+SPI_SH_SPIBSC=y
+
 
 RSPI
 ---------------------------------------------------
-SPI_SH_SPIBSC
-> Device Drivers
-	> SPI support
-		[*] Renesas RSPI/QSPI controller
+CONFIG_SPI_RSPI=y
 
 
 I2C (RIIC)
 ---------------------------------------------------
-I2C_RIIC
-> Device Drivers
-	> I2C support
-		> I2C Hardware Bus support
-			[*] Renesas RIIC adapter
+CONFIG_I2C_RIIC=y
 
-Pin muxing/GPIO (pfc driver)
+
+Pin muxing/GPIO
 ---------------------------------------------------
-CONFIG_PINCTRL_RZA1
-> Device Drivers
-	> Pin controllers
-		[*] Renesas RZ/A1 gpio and pinctrl driver
+CONFIG_PINCTRL_RZA1=y
 
   NOTE: To control GPIO pins from userspace, you will need
 	CONFIG_GPIOLIB=y
@@ -152,11 +100,8 @@ CONFIG_PINCTRL_RZA1
 
 Display
 ---------------------------------------------------
-FB_VDC5
-> Device Drivers
-	> Graphics support
-		> Support for frame buffer devices
-			> RZ/A1H frame-buffer driver for VDC5
+CONFIG_FB_VDC5=y
+
   NOTE:
    You may need to set the display mode to durn the LCD on.
    $ cat /sys/devices/platform/vdc5fb.0/graphics/fb0/modes > /sys/devices/platform/vdc5fb.0/graphics/fb0/mode
@@ -170,16 +115,10 @@ FB_VDC5
 	>> Add 'console=tty0' to boot arguments
 
 
-Touch screen driver
+Touch screen driver (RSKRZA1 board)
 ---------------------------------------------------
-CONFIG_TOUCHSCREEN_FT5X06
-CONFIG_TOUCHSCREEN_FT5X06_SINGLE_TOUCH
-> Device Drivers
-	> Input device support
-		> Generic input layer (needed for keyboard, mouse, ...)
-		> Touchscreens
-			[*] Focaltech FT5X06 5 point touchscreen
-			[*]     FT5X06 touchscreen as single-touch
+CONFIG_TOUCHSCREEN_FT5X06=y
+CONFIG_TOUCHSCREEN_FT5X06_SINGLE_TOUCH=y
 
   NOTE: For your touchscreen to show up as /dev/input/event for applications to use,
         you will need to also enable the event interface (CONFIG_INPUT_EVDEV) in the kernel.
@@ -207,16 +146,4 @@ CONFIG_CAN_RZA1=y
 		CONFIG_CAN_RAW=y
 
 
-AUDIO
----------------------------------------------------
-CONFIG_SOUND=y
-CONFIG_SND=y
-CONFIG_SND_SOC=y
-CONFIG_SND_SCUX_RSKRZA1=y
-
-NOTE: You also need to enable:
-	CONFIG_RZA_DMA=y
-      You do not need:
-	CONFIG_SND_SUPPORT_OLD_API
-	CONFIG_SND_DRIVERS
 

@@ -1,0 +1,126 @@
+Below are the configuration symbols and menuconfig locations for each kernel driver.
+
+---------------------------------------------------
+Searching
+---------------------------------------------------
+You can search for any driver location from within menuconfig by pressing
+the '/' key and then entering the configuration symbol name (but leave off
+the 'CONFIG_' at the begining).
+In the seach results, there will be a number in parenthesis under the
+"Location:" section (Example: (1) ), and if you press that number on the
+keyboard it will bring you to that level in the full location.
+If you are wondering why it won't bring you all the way to the actual
+specific driver location, it is becase you don't have all the other levels
+in the path enabled yet. You can see that by the "[=n]" in each level of
+the path before it gets to your driver name. Meaning, you are going to
+have to first enable each level in the patch before you can turn on that
+particular driver.
+---------------------------------------------------
+
+
+USB Host
+---------------------------------------------------
+CONFIG_USB_EHCI_HCD=y
+CONFIG_USB_EHCI_HCD_PLATFORM=y
+CONFIG_PHY_RCAR_GEN3_USB2=y
+
+
+NOTE: If you want to read a USB flash drive, you will also need:
+	CONFIG_SCSI
+	CONFIG_BLK_DEV_SD
+	CONFIG_USB_STORAGE
+
+
+USB Function
+---------------------------------------------------
+CONFIG_USB_RENESAS_USBHS=y
+CONFIG_USB_RENESAS_USBHS_UDC=y
+CONFIG_PHY_RCAR_GEN3_USB2=y
+
+
+DMA
+---------------------------------------------------
+CONFIG_RZA_DMA=y
+
+
+MMC/SD/SDIO
+---------------------------------------------------
+CONFIG_MMC_SDHI=y
+
+
+Ethernet
+---------------------------------------------------
+CONFIG_SH_ETH=y
+
+
+Serial UARTS
+---------------------------------------------------
+CONFIG_SERIAL_SH_SCI=y
+
+
+RENESAS_OSTM
+---------------------------------------------------
+CONFIG_RENESAS_OSTM=y
+High resolution tick timers. Selected automatically.
+
+
+RSPI
+---------------------------------------------------
+CONFIG_SPI_RSPI=y
+
+
+I2C (RIIC)
+---------------------------------------------------
+CONFIG_I2C_RIIC=y
+
+
+Pin muxing/GPIO
+---------------------------------------------------
+CONFIG_PINCTRL_RZA2=y
+
+  NOTE: To control GPIO pins from userspace, you will need
+	CONFIG_GPIOLIB=y
+	CONFIG_GPIO_SYSFS=y
+
+Display
+---------------------------------------------------
+CONFIG_FB_VDC5=y
+
+  NOTE:
+   You may need to set the display mode to durn the LCD on.
+   $ cat /sys/devices/platform/vdc5fb.0/graphics/fb0/modes > /sys/devices/platform/vdc5fb.0/graphics/fb0/mode
+
+
+  NOTE: To show boot text on LCD
+	CONFIG_FRAMEBUFFER_CONSOLE=y
+	CONFIG_VT=y   (needed to make a /dev/tty0)
+	CONFIG_VT_HW_CONSOLE_BINDING (to disconnect console from LCD after boot is done)
+	CONFIG_LOGO=y (penguin logo at top)
+	>> Add 'console=tty0' to boot arguments
+
+
+Touch screen driver (RZA2MEVB board)
+---------------------------------------------------
+CONFIG_TOUCHSCREEN_FT5X06=y
+CONFIG_TOUCHSCREEN_FT5X06_SINGLE_TOUCH=y
+
+  NOTE: For your touchscreen to show up as /dev/input/event for applications to use,
+        you will need to also enable the event interface (CONFIG_INPUT_EVDEV) in the kernel.
+	> Device Drivers
+		> Input device support
+			<*>   Event interface
+
+
+CAN
+---------------------------------------------------
+CONFIG_CAN_RZA1=y
+	NOTE 1: The following must also be enabled to use the CAN driver:
+		CONFIG_NET=y
+		CONFIG_PACKET=y
+		CONFIG_UNIX=y
+		CONFIG_INET=y
+		CONFIG_CAN=y
+		CONFIG_CAN_RAW=y
+
+
+
