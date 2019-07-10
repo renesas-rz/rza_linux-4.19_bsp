@@ -1,0 +1,2851 @@
+diff --git a/CHANGES b/CHANGES
+index e3d7ad3bf8..7c8cad7e57 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,34 @@
++2019.02.4, Released July 10th, 2019
++
++	Important / security related fixes.
++
++	arch: x86: Fix typo breaking 'core-avx2' variant, add Westmere
++	variant.
++
++	linux: Workaround -Werror related build failure on powerpc,
++	by forcing CONFIG_PPC_DISABLE_WERROR on.
++
++	support/testing: Emulate a machine with 256MB RAM to fix
++	issues with certain tests running out of memory.
++
++	test-pkg: Correct long option handling and clean output dir
++	after a successful build to save disk space.
++
++	Ensure custom <pkg>_OVERRIDE_SRCDIR_RSYNC_EXCLUSIONS are
++	passed before the standard exclusions so they are not ignored
++	by rsync when using override-srcdir.
++
++	Defconfigs: QEMU: use 'rootwait' kernel option to ensure root
++	partition is available before mounting.
++
++	Updated/fixed packages: barebox, bzip2, davfs2, dbus, dialog,
++	docker-cli, docker-engine, expat, faad2, ffmpeg, freeswitch,
++	gerbera, haveged, irssi, libcdadio, libgit2, libglib2,
++	libsecret, libvncserver, lmbench, logrotate, mariadb, meson,
++	mongoose, monit, mpd, openblas, php, postgresql, psplash,
++	python, python-django, python3, qt5base, samba4, taglib,
++	tvheadend, vlc, webkitgtk, xserver_xorg-server, znc
++
+ 2019.02.3, Released June 7th, 2019
+ 
+ 	Important / security related fixes.
+diff --git a/DEVELOPERS b/DEVELOPERS
+index 0d185ee97a..440ca0db6d 100644
+--- a/DEVELOPERS
++++ b/DEVELOPERS
+@@ -1363,10 +1363,6 @@ F:	boot/riscv-pk/
+ F:	configs/qemu_riscv32_virt_defconfig
+ F:	configs/qemu_riscv64_virt_defconfig
+ 
+-N:	Markos Chandras <markos.chandras@imgtec.com>
+-F:	package/harfbuzz/
+-F:	package/libsecret/
+-
+ N:	Martin Bark <martin@barkynet.com>
+ F:	board/raspberrypi/
+ F:	configs/raspberrypi3_defconfig
+diff --git a/Makefile b/Makefile
+index 2c8146e87a..e0cf1ecc65 100644
+--- a/Makefile
++++ b/Makefile
+@@ -92,9 +92,9 @@ all:
+ .PHONY: all
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2019.02.3
++export BR2_VERSION := 2019.02.4
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1559893000
++BR2_VERSION_EPOCH = 1562745000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+diff --git a/arch/Config.in.x86 b/arch/Config.in.x86
+index f7c53a0fae..331ee06bf0 100644
+--- a/arch/Config.in.x86
++++ b/arch/Config.in.x86
+@@ -101,6 +101,15 @@ config BR2_x86_corei7
+ 	select BR2_X86_CPU_HAS_SSSE3
+ 	select BR2_X86_CPU_HAS_SSE4
+ 	select BR2_X86_CPU_HAS_SSE42
++config BR2_x86_westmere
++	bool "westmere"
++	select BR2_X86_CPU_HAS_MMX
++	select BR2_X86_CPU_HAS_SSE
++	select BR2_X86_CPU_HAS_SSE2
++	select BR2_X86_CPU_HAS_SSE3
++	select BR2_X86_CPU_HAS_SSSE3
++	select BR2_X86_CPU_HAS_SSE4
++	select BR2_X86_CPU_HAS_SSE42
+ config BR2_x86_corei7_avx
+ 	bool "corei7-avx"
+ 	select BR2_X86_CPU_HAS_MMX
+@@ -235,8 +244,9 @@ config BR2_ARCH
+ 	default "i686"		if BR2_x86_nocona && BR2_i386
+ 	default "i686"		if BR2_x86_core2 && BR2_i386
+ 	default "i686"		if BR2_x86_corei7 && BR2_i386
++	default "i686"		if BR2_x86_westmere && BR2_i386
+ 	default "i686"		if BR2_x86_corei7_avx && BR2_i386
+-	default "i686"		if BR2_x86_corei7_avx2 && BR2_i386
++	default "i686"		if BR2_x86_core_avx2 && BR2_i386
+ 	default "i686"		if BR2_x86_atom && BR2_i386
+ 	default "i686"		if BR2_x86_silvermont && BR2_i386
+ 	default "i686"		if BR2_x86_opteron && BR2_i386
+@@ -271,6 +281,7 @@ config BR2_GCC_TARGET_ARCH
+ 	default "corei7-avx"	if BR2_x86_corei7_avx
+ 	default "core-avx2"	if BR2_x86_core_avx2
+ 	default "atom"		if BR2_x86_atom
++	default "westmere"	if BR2_x86_westmere
+ 	default "silvermont"	if BR2_x86_silvermont
+ 	default "k8"		if BR2_x86_opteron
+ 	default "k8-sse3"	if BR2_x86_opteron_sse3
+diff --git a/board/qemu/aarch64-virt/readme.txt b/board/qemu/aarch64-virt/readme.txt
+index 1ff2fba47d..f868905d91 100644
+--- a/board/qemu/aarch64-virt/readme.txt
++++ b/board/qemu/aarch64-virt/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-  qemu-system-aarch64 -M virt -cpu cortex-a53 -nographic -smp 1 -kernel output/images/Image -append "root=/dev/vda console=ttyAMA0" -netdev user,id=eth0 -device virtio-net-device,netdev=eth0 -drive file=output/images/rootfs.ext4,if=none,format=raw,id=hd0 -device virtio-blk-device,drive=hd0
++  qemu-system-aarch64 -M virt -cpu cortex-a53 -nographic -smp 1 -kernel output/images/Image -append "rootwait root=/dev/vda console=ttyAMA0" -netdev user,id=eth0 -device virtio-net-device,netdev=eth0 -drive file=output/images/rootfs.ext4,if=none,format=raw,id=hd0 -device virtio-blk-device,drive=hd0
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ 
+diff --git a/board/qemu/arm-versatile/readme.txt b/board/qemu/arm-versatile/readme.txt
+index 33cdb7b81e..f3a9e1ab47 100644
+--- a/board/qemu/arm-versatile/readme.txt
++++ b/board/qemu/arm-versatile/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-  qemu-system-arm -M versatilepb -kernel output/images/zImage -dtb output/images/versatile-pb.dtb -drive file=output/images/rootfs.ext2,if=scsi,format=raw -append "root=/dev/sda console=ttyAMA0,115200" -serial stdio -net nic,model=rtl8139 -net user
++  qemu-system-arm -M versatilepb -kernel output/images/zImage -dtb output/images/versatile-pb.dtb -drive file=output/images/rootfs.ext2,if=scsi,format=raw -append "rootwait root=/dev/sda console=ttyAMA0,115200" -serial stdio -net nic,model=rtl8139 -net user
+ 
+ Or for the noMMU emulation:
+ 
+diff --git a/board/qemu/arm-vexpress/readme.txt b/board/qemu/arm-vexpress/readme.txt
+index 35137e050c..7f7b43a3b3 100644
+--- a/board/qemu/arm-vexpress/readme.txt
++++ b/board/qemu/arm-vexpress/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-  qemu-system-arm -M vexpress-a9 -smp 1 -m 256 -kernel output/images/zImage -dtb output/images/vexpress-v2p-ca9.dtb -drive file=output/images/rootfs.ext2,if=sd,format=raw -append "console=ttyAMA0,115200 root=/dev/mmcblk0" -serial stdio -net nic,model=lan9118 -net user
++  qemu-system-arm -M vexpress-a9 -smp 1 -m 256 -kernel output/images/zImage -dtb output/images/vexpress-v2p-ca9.dtb -drive file=output/images/rootfs.ext2,if=sd,format=raw -append "console=ttyAMA0,115200 rootwait root=/dev/mmcblk0" -serial stdio -net nic,model=lan9118 -net user
+ 
+ The login prompt will appear in the terminal that started Qemu. The
+ graphical window is the framebuffer.
+diff --git a/board/qemu/m68k-q800/readme.txt b/board/qemu/m68k-q800/readme.txt
+index bead8cdde2..b516bacdff 100644
+--- a/board/qemu/m68k-q800/readme.txt
++++ b/board/qemu/m68k-q800/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+- qemu-system-m68k -M q800 -kernel output/images/vmlinux -nographic -drive file=output/images/rootfs.ext2,format=raw -append "root=/dev/sda console=ttyS0"
++ qemu-system-m68k -M q800 -kernel output/images/vmlinux -nographic -drive file=output/images/rootfs.ext2,format=raw -append "rootwait root=/dev/sda console=ttyS0"
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ 
+diff --git a/board/qemu/mips32r2-malta/readme.txt b/board/qemu/mips32r2-malta/readme.txt
+index d1bbcc4749..9ff3c4b810 100644
+--- a/board/qemu/mips32r2-malta/readme.txt
++++ b/board/qemu/mips32r2-malta/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+- qemu-system-mips -M malta -kernel output/images/vmlinux -serial stdio -drive file=output/images/rootfs.ext2,format=raw -append "root=/dev/hda" -net nic,model=pcnet -net user
++ qemu-system-mips -M malta -kernel output/images/vmlinux -serial stdio -drive file=output/images/rootfs.ext2,format=raw -append "rootwait root=/dev/hda" -net nic,model=pcnet -net user
+ 
+ The login prompt will appear in the terminal that started Qemu. The
+ graphical window is the framebuffer. No keyboard support has been
+diff --git a/board/qemu/mips32r2el-malta/readme.txt b/board/qemu/mips32r2el-malta/readme.txt
+index 4f59d34308..745bfea608 100644
+--- a/board/qemu/mips32r2el-malta/readme.txt
++++ b/board/qemu/mips32r2el-malta/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+- qemu-system-mipsel -M malta -kernel output/images/vmlinux -serial stdio -drive file=output/images/rootfs.ext2,format=raw -append "root=/dev/hda" -net nic,model=pcnet -net user
++ qemu-system-mipsel -M malta -kernel output/images/vmlinux -serial stdio -drive file=output/images/rootfs.ext2,format=raw -append "rootwait root=/dev/hda" -net nic,model=pcnet -net user
+ 
+ The login prompt will appear in the terminal that started Qemu. The
+ graphical window is the framebuffer. No keyboard support has been
+diff --git a/board/qemu/mips32r6-malta/readme.txt b/board/qemu/mips32r6-malta/readme.txt
+index 04de7e5c3e..6a026b2165 100644
+--- a/board/qemu/mips32r6-malta/readme.txt
++++ b/board/qemu/mips32r6-malta/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-qemu-system-mips -M malta -cpu mips32r6-generic -kernel output/images/vmlinux -drive file=output/images/rootfs.ext2,format=raw -append "root=/dev/hda" -nographic
++qemu-system-mips -M malta -cpu mips32r6-generic -kernel output/images/vmlinux -drive file=output/images/rootfs.ext2,format=raw -append "rootwait root=/dev/hda" -nographic
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ 
+diff --git a/board/qemu/mips32r6el-malta/readme.txt b/board/qemu/mips32r6el-malta/readme.txt
+index 88602de0bb..f69fd21af1 100644
+--- a/board/qemu/mips32r6el-malta/readme.txt
++++ b/board/qemu/mips32r6el-malta/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-qemu-system-mipsel -M malta -cpu mips32r6-generic -kernel output/images/vmlinux -drive file=output/images/rootfs.ext2,format=raw -append "root=/dev/hda" -net nic,model=pcnet -net user -nographic
++qemu-system-mipsel -M malta -cpu mips32r6-generic -kernel output/images/vmlinux -drive file=output/images/rootfs.ext2,format=raw -append "rootwait root=/dev/hda" -net nic,model=pcnet -net user -nographic
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ 
+diff --git a/board/qemu/mips64-malta/readme.txt b/board/qemu/mips64-malta/readme.txt
+index f0e7fef795..ea3a92541e 100644
+--- a/board/qemu/mips64-malta/readme.txt
++++ b/board/qemu/mips64-malta/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+- qemu-system-mips64 -M malta -kernel output/images/vmlinux -serial stdio -drive file=output/images/rootfs.ext2,format=raw -append "root=/dev/hda"
++ qemu-system-mips64 -M malta -kernel output/images/vmlinux -serial stdio -drive file=output/images/rootfs.ext2,format=raw -append "rootwait root=/dev/hda"
+ 
+ The login prompt will appear in the terminal that started Qemu. The
+ graphical window is the framebuffer.
+diff --git a/board/qemu/mips64el-malta/readme.txt b/board/qemu/mips64el-malta/readme.txt
+index 03b149bc8f..144da93839 100644
+--- a/board/qemu/mips64el-malta/readme.txt
++++ b/board/qemu/mips64el-malta/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+- qemu-system-mips64el -M malta -kernel output/images/vmlinux -serial stdio -drive file=output/images/rootfs.ext2,format=raw -append "root=/dev/hda"
++ qemu-system-mips64el -M malta -kernel output/images/vmlinux -serial stdio -drive file=output/images/rootfs.ext2,format=raw -append "rootwait root=/dev/hda"
+ 
+ The login prompt will appear in the terminal that started Qemu. The
+ graphical window is the framebuffer.
+diff --git a/board/qemu/mips64r6-malta/readme.txt b/board/qemu/mips64r6-malta/readme.txt
+index bf5b517a32..cfa16fd863 100644
+--- a/board/qemu/mips64r6-malta/readme.txt
++++ b/board/qemu/mips64r6-malta/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+- qemu-system-mips64 -M malta -cpu I6400 -kernel output/images/vmlinux -drive file=output/images/rootfs.ext2,format=raw -append "root=/dev/hda" -nographic
++ qemu-system-mips64 -M malta -cpu I6400 -kernel output/images/vmlinux -drive file=output/images/rootfs.ext2,format=raw -append "rootwait root=/dev/hda" -nographic
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ 
+diff --git a/board/qemu/mips64r6el-malta/readme.txt b/board/qemu/mips64r6el-malta/readme.txt
+index d51bffd08a..61a6ceb5f4 100644
+--- a/board/qemu/mips64r6el-malta/readme.txt
++++ b/board/qemu/mips64r6el-malta/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+- qemu-system-mips64el -M malta -cpu I6400 -kernel output/images/vmlinux -drive file=output/images/rootfs.ext2,format=raw -append "root=/dev/hda" -nographic
++ qemu-system-mips64el -M malta -cpu I6400 -kernel output/images/vmlinux -drive file=output/images/rootfs.ext2,format=raw -append "rootwait root=/dev/hda" -nographic
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ 
+diff --git a/board/qemu/ppc-g3beige/readme.txt b/board/qemu/ppc-g3beige/readme.txt
+index 1c3b515396..608814ee3b 100644
+--- a/board/qemu/ppc-g3beige/readme.txt
++++ b/board/qemu/ppc-g3beige/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-  qemu-system-ppc -M g3beige -kernel output/images/vmlinux -drive file=output/images/rootfs.ext2,format=raw -append "console=ttyS0 root=/dev/hda" -serial stdio -net nic,model=rtl8139 -net user
++  qemu-system-ppc -M g3beige -kernel output/images/vmlinux -drive file=output/images/rootfs.ext2,format=raw -append "console=ttyS0 rootwait root=/dev/hda" -serial stdio -net nic,model=rtl8139 -net user
+ 
+ The login prompt will appear in the terminal that started Qemu. The
+ graphical window is the framebuffer.
+diff --git a/board/qemu/ppc64-e5500/readme.txt b/board/qemu/ppc64-e5500/readme.txt
+index cfc563974d..8080766984 100644
+--- a/board/qemu/ppc64-e5500/readme.txt
++++ b/board/qemu/ppc64-e5500/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+- qemu-system-ppc64 -M ppce500 -cpu e5500 -m 256 -kernel output/images/uImage -drive file=output/images/rootfs.ext2,if=virtio,format=raw -append "console=ttyS0 root=/dev/vda" -serial mon:stdio -nographic
++ qemu-system-ppc64 -M ppce500 -cpu e5500 -m 256 -kernel output/images/uImage -drive file=output/images/rootfs.ext2,if=virtio,format=raw -append "console=ttyS0 rootwait root=/dev/vda" -serial mon:stdio -nographic
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ 
+diff --git a/board/qemu/ppc64-pseries/readme.txt b/board/qemu/ppc64-pseries/readme.txt
+index 5069df9e5b..6a3e96a2e5 100644
+--- a/board/qemu/ppc64-pseries/readme.txt
++++ b/board/qemu/ppc64-pseries/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+- qemu-system-ppc64 -M pseries -cpu POWER7 -m 256 -kernel output/images/vmlinux -append "console=hvc0 root=/dev/sda" -drive file=output/images/rootfs.ext2,if=scsi,index=0,format=raw -serial stdio -display curses
++ qemu-system-ppc64 -M pseries -cpu POWER7 -m 256 -kernel output/images/vmlinux -append "console=hvc0 rootwait root=/dev/sda" -drive file=output/images/rootfs.ext2,if=scsi,index=0,format=raw -serial stdio -display curses
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ 
+diff --git a/board/qemu/ppc64le-pseries/readme.txt b/board/qemu/ppc64le-pseries/readme.txt
+index c23da70df0..2728675df2 100644
+--- a/board/qemu/ppc64le-pseries/readme.txt
++++ b/board/qemu/ppc64le-pseries/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-qemu-system-ppc64 -M pseries -cpu POWER8 -m 256 -kernel output/images/vmlinux -append "console=hvc0 root=/dev/sda" -drive file=output/images/rootfs.ext2,if=scsi,index=0,format=raw -serial stdio -display curses
++qemu-system-ppc64 -M pseries -cpu POWER8 -m 256 -kernel output/images/vmlinux -append "console=hvc0 rootwait root=/dev/sda" -drive file=output/images/rootfs.ext2,if=scsi,index=0,format=raw -serial stdio -display curses
+ 
+ The login prompt will appear in the terminal window.
+ 
+diff --git a/board/qemu/riscv32-virt/readme.txt b/board/qemu/riscv32-virt/readme.txt
+index 2da99580e5..24d44f0a99 100644
+--- a/board/qemu/riscv32-virt/readme.txt
++++ b/board/qemu/riscv32-virt/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-  qemu-system-riscv32 -M virt -kernel output/images/bbl -append "root=/dev/vda ro console=ttyS0" -drive file=output/images/rootfs.ext2,format=raw,id=hd0 -device virtio-blk-device,drive=hd0 -netdev user,id=net0 -device virtio-net-device,netdev=net0 -nographic
++  qemu-system-riscv32 -M virt -kernel output/images/bbl -append "rootwait root=/dev/vda ro console=ttyS0" -drive file=output/images/rootfs.ext2,format=raw,id=hd0 -device virtio-blk-device,drive=hd0 -netdev user,id=net0 -device virtio-net-device,netdev=net0 -nographic
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ 
+diff --git a/board/qemu/riscv64-virt/readme.txt b/board/qemu/riscv64-virt/readme.txt
+index 9f6e35c867..e878330dee 100644
+--- a/board/qemu/riscv64-virt/readme.txt
++++ b/board/qemu/riscv64-virt/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-  qemu-system-riscv64 -M virt -kernel output/images/bbl -append "root=/dev/vda ro console=ttyS0" -drive file=output/images/rootfs.ext2,format=raw,id=hd0 -device virtio-blk-device,drive=hd0 -netdev user,id=net0 -device virtio-net-device,netdev=net0 -nographic
++  qemu-system-riscv64 -M virt -kernel output/images/bbl -append "rootwait root=/dev/vda ro console=ttyS0" -drive file=output/images/rootfs.ext2,format=raw,id=hd0 -device virtio-blk-device,drive=hd0 -netdev user,id=net0 -device virtio-net-device,netdev=net0 -nographic
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ 
+diff --git a/board/qemu/sh4-r2d/readme.txt b/board/qemu/sh4-r2d/readme.txt
+index d22af73ae3..dd80953b97 100644
+--- a/board/qemu/sh4-r2d/readme.txt
++++ b/board/qemu/sh4-r2d/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-  qemu-system-sh4 -M r2d -kernel output/images/zImage -drive file=output/images/rootfs.ext2,if=ide,format=raw -append "root=/dev/sda console=ttySC1,115200 noiotrap" -serial null -serial stdio -net nic,model=rtl8139 -net user
++  qemu-system-sh4 -M r2d -kernel output/images/zImage -drive file=output/images/rootfs.ext2,if=ide,format=raw -append "rootwait root=/dev/sda console=ttySC1,115200 noiotrap" -serial null -serial stdio -net nic,model=rtl8139 -net user
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ The graphical window is the framebuffer.
+diff --git a/board/qemu/sh4eb-r2d/readme.txt b/board/qemu/sh4eb-r2d/readme.txt
+index daf515ab2b..e71a9bce90 100644
+--- a/board/qemu/sh4eb-r2d/readme.txt
++++ b/board/qemu/sh4eb-r2d/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-  qemu-system-sh4eb -M r2d -kernel output/images/zImage -drive file=output/images/rootfs.ext2,if=ide,format=raw -append "root=/dev/sda console=ttySC1,115200 noiotrap" -serial null -serial stdio -net nic,model=rtl8139 -net user
++  qemu-system-sh4eb -M r2d -kernel output/images/zImage -drive file=output/images/rootfs.ext2,if=ide,format=raw -append "rootwait root=/dev/sda console=ttySC1,115200 noiotrap" -serial null -serial stdio -net nic,model=rtl8139 -net user
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ The graphical window is the framebuffer.
+diff --git a/board/qemu/sparc-ss10/readme.txt b/board/qemu/sparc-ss10/readme.txt
+index df6a75a3fb..33833c2d33 100644
+--- a/board/qemu/sparc-ss10/readme.txt
++++ b/board/qemu/sparc-ss10/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-  qemu-system-sparc -M SS-10 -kernel output/images/zImage -drive file=output/images/rootfs.ext2,format=raw -append "root=/dev/sda console=ttyS0,115200" -serial stdio -net nic,model=lance -net user
++  qemu-system-sparc -M SS-10 -kernel output/images/zImage -drive file=output/images/rootfs.ext2,format=raw -append "rootwait root=/dev/sda console=ttyS0,115200" -serial stdio -net nic,model=lance -net user
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ 
+diff --git a/board/qemu/sparc64-sun4u/readme.txt b/board/qemu/sparc64-sun4u/readme.txt
+index 24d5bbaffe..f2e6e81a86 100644
+--- a/board/qemu/sparc64-sun4u/readme.txt
++++ b/board/qemu/sparc64-sun4u/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-  qemu-system-sparc64 -M sun4u -kernel output/images/vmlinux -append "root=/dev/sda console=ttyS0,115200" -serial stdio -drive file=output/images/rootfs.ext2,format=raw -net nic,model=e1000 -net user
++  qemu-system-sparc64 -M sun4u -kernel output/images/vmlinux -append "rootwait root=/dev/sda console=ttyS0,115200" -serial stdio -drive file=output/images/rootfs.ext2,format=raw -net nic,model=e1000 -net user
+ 
+ The login prompt will appear in the terminal that started Qemu.
+ 
+diff --git a/board/qemu/x86/readme.txt b/board/qemu/x86/readme.txt
+index c5e687734c..42fc2439da 100644
+--- a/board/qemu/x86/readme.txt
++++ b/board/qemu/x86/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-  qemu-system-i386 -M pc -kernel output/images/bzImage -drive file=output/images/rootfs.ext2,if=virtio,format=raw -append "root=/dev/vda" -net nic,model=virtio -net user
++  qemu-system-i386 -M pc -kernel output/images/bzImage -drive file=output/images/rootfs.ext2,if=virtio,format=raw -append "rootwait root=/dev/vda" -net nic,model=virtio -net user
+ 
+ Optionally add -smp N to emulate a SMP system with N CPUs.
+ 
+diff --git a/board/qemu/x86_64/readme.txt b/board/qemu/x86_64/readme.txt
+index 425e34b12c..4a1c0c0ff5 100644
+--- a/board/qemu/x86_64/readme.txt
++++ b/board/qemu/x86_64/readme.txt
+@@ -1,6 +1,6 @@
+ Run the emulation with:
+ 
+-  qemu-system-x86_64 -M pc -kernel output/images/bzImage -drive file=output/images/rootfs.ext2,if=virtio,format=raw -append "root=/dev/vda" -net nic,model=virtio -net user
++  qemu-system-x86_64 -M pc -kernel output/images/bzImage -drive file=output/images/rootfs.ext2,if=virtio,format=raw -append "rootwait root=/dev/vda" -net nic,model=virtio -net user
+ 
+ Optionally add -smp N to emulate a SMP system with N CPUs.
+ 
+diff --git a/boot/barebox/barebox.mk b/boot/barebox/barebox.mk
+index 9e8a9f67b5..52178d89c8 100644
+--- a/boot/barebox/barebox.mk
++++ b/boot/barebox/barebox.mk
+@@ -76,6 +76,10 @@ $(1)_KCONFIG_FRAGMENT_FILES = $$(call qstrip,$$(BR2_TARGET_$(1)_CONFIG_FRAGMENT_
+ $(1)_KCONFIG_EDITORS = menuconfig xconfig gconfig nconfig
+ $(1)_KCONFIG_OPTS = $$($(1)_MAKE_FLAGS)
+ 
++$(1)_KCONFIG_DEPENDENCIES = \
++	$(BR2_BISON_HOST_DEPENDENCY) \
++	$(BR2_FLEX_HOST_DEPENDENCY)
++
+ ifeq ($$(BR2_TARGET_$(1)_BAREBOXENV),y)
+ define $(1)_BUILD_BAREBOXENV_CMDS
+ 	$$(TARGET_CC) $$(TARGET_CFLAGS) $$(TARGET_LDFLAGS) -o $$(@D)/bareboxenv \
+diff --git a/docs/manual/contribute.txt b/docs/manual/contribute.txt
+index 5530ce1546..868600d5d0 100644
+--- a/docs/manual/contribute.txt
++++ b/docs/manual/contribute.txt
+@@ -402,7 +402,7 @@ the problem is complex, it is OK to add more paragraphs. All paragraphs
+ should be wrapped at 72 characters.
+ 
+ A paragraph that explains the root cause of the problem. Again, more
+-than on paragraph is OK.
++than one paragraph is OK.
+ 
+ Finally, one or more paragraphs that explain how the problem is solved.
+ Don't hesitate to explain complex solutions in detail.
+diff --git a/docs/manual/using-buildroot-development.txt b/docs/manual/using-buildroot-development.txt
+index 65a9f1a3f7..da6dd822fb 100644
+--- a/docs/manual/using-buildroot-development.txt
++++ b/docs/manual/using-buildroot-development.txt
+@@ -109,3 +109,13 @@ WEBKITGTK_OVERRIDE_SRCDIR_RSYNC_EXCLUSIONS = \
+ 	--exclude WebDriverTests --exclude WebKitBuild --exclude WebKitLibraries \
+ 	--exclude WebKit.xcworkspace --exclude Websites --exclude Examples
+ ------------------
++
++By default, Buildroot skips syncing of VCS artifacts (e.g., the *.git* and
++*.svn* directories). Some packages prefer to have these VCS directories
++available during build, for example for automatically determining a precise
++commit reference for version information. To undo this built-in filtering at a
++cost of a slower speed, add these directories back:
++
++------------------
++LINUX_OVERRIDE_SRCDIR_RSYNC_EXCLUSIONS = --include .git
++------------------
+diff --git a/linux/Config.in b/linux/Config.in
+index 6f93c2122c..e522921e2d 100644
+--- a/linux/Config.in
++++ b/linux/Config.in
+@@ -122,7 +122,7 @@ endif
+ 
+ config BR2_LINUX_KERNEL_VERSION
+ 	string
+-	default "4.19.47" if BR2_LINUX_KERNEL_LATEST_VERSION
++	default "4.19.57" if BR2_LINUX_KERNEL_LATEST_VERSION
+ 	default "v4.4.176-cip31" if BR2_LINUX_KERNEL_LATEST_CIP_VERSION
+ 	default BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE \
+ 		if BR2_LINUX_KERNEL_CUSTOM_VERSION
+diff --git a/linux/linux.hash b/linux/linux.hash
+index 1f580c86cd..b61b736061 100644
+--- a/linux/linux.hash
++++ b/linux/linux.hash
+@@ -1,6 +1,6 @@
+ # From https://www.kernel.org/pub/linux/kernel/v4.x/sha256sums.asc
+ sha256 d011245629b980d4c15febf080b54804aaf215167b514a3577feddb2495f8a3e  linux-4.20.17.tar.xz
+-sha256 5d08f3890e7ca2b94529675120f170c5b764f795e6dd184a1190c23a40ef5365  linux-4.19.47.tar.xz
+-sha256 25f58cb56bde388ac9bcee984f5f2d0ca094b0a8af6b92ad1f5b2fd0e6725b85  linux-4.14.123.tar.xz
+-sha256 d25a490d62a3e96a587333e163862585eac4086fc8d4893b4ec1711e7d387c5f  linux-4.9.180.tar.xz
+-sha256 1a450217d381bb7fd259d026d3b7a57c717e8d1f66754cd6fcc9df3c4a8a6a7a  linux-4.4.180.tar.xz
++sha256 327c5759d5888361d6c9d6adb0c8ad7e3c624eb05bb9e5869d9f3078dd0d3f87  linux-4.19.57.tar.xz
++sha256 da86f39a722da656fce4e2685223093b5d5f4db94046fcd79e492428a82ff330  linux-4.14.132.tar.xz
++sha256 6543232fc082485c1088830b9456e1a6e511239e4bf98817b0166ee62cafc3ca  linux-4.4.184.tar.xz
++sha256 033114d5350525dede995d31b596c31b0e26db8d77a0a1c53d36cdc36ead9faf  linux-4.9.184.tar.xz
+diff --git a/linux/linux.mk b/linux/linux.mk
+index dd182d06b2..a1378345c3 100644
+--- a/linux/linux.mk
++++ b/linux/linux.mk
+@@ -316,6 +316,8 @@ define LINUX_KCONFIG_FIXUP_CMDS
+ 	$(LINUX_FIXUP_CONFIG_ENDIANNESS)
+ 	$(if $(BR2_arm)$(BR2_armeb),
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_AEABI,$(@D)/.config))
++	$(if $(BR2_powerpc)$(BR2_powerpc64)$(BR2_powerpc64le),
++		$(call KCONFIG_ENABLE_OPT,CONFIG_PPC_DISABLE_WERROR,$(@D)/.config))
+ 	$(if $(BR2_TARGET_ROOTFS_CPIO),
+ 		$(call KCONFIG_ENABLE_OPT,CONFIG_BLK_DEV_INITRD,$(@D)/.config))
+ 	# As the kernel gets compiled before root filesystems are
+diff --git a/package/bzip2/0003-Make-sure-nSelectors-is-not-out-of-range.patch b/package/bzip2/0003-Make-sure-nSelectors-is-not-out-of-range.patch
+new file mode 100644
+index 0000000000..77a500d46d
+--- /dev/null
++++ b/package/bzip2/0003-Make-sure-nSelectors-is-not-out-of-range.patch
+@@ -0,0 +1,33 @@
++From 74de1e2e6ffc9d51ef9824db71a8ffee5962cdbc Mon Sep 17 00:00:00 2001
++From: Albert Astals Cid <aacid@kde.org>
++Date: Tue, 28 May 2019 19:35:18 +0200
++Subject: [PATCH] Make sure nSelectors is not out of range
++
++nSelectors is used in a loop from 0 to nSelectors to access selectorMtf
++which is
++	UChar    selectorMtf[BZ_MAX_SELECTORS];
++so if nSelectors is bigger than BZ_MAX_SELECTORS it'll do an invalid memory
++access
++
++Fixes out of bounds access discovered while fuzzying karchive
++
++Signed-off-by: Albert Astals Cid <aacid@kde.org>
++---
++ decompress.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/decompress.c b/decompress.c
++index ab6a624..f3db91d 100644
++--- a/decompress.c
+++++ b/decompress.c
++@@ -287,7 +287,7 @@ Int32 BZ2_decompress ( DState* s )
++       GET_BITS(BZ_X_SELECTOR_1, nGroups, 3);
++       if (nGroups < 2 || nGroups > 6) RETURN(BZ_DATA_ERROR);
++       GET_BITS(BZ_X_SELECTOR_2, nSelectors, 15);
++-      if (nSelectors < 1) RETURN(BZ_DATA_ERROR);
+++      if (nSelectors < 1 || nSelectors > BZ_MAX_SELECTORS) RETURN(BZ_DATA_ERROR);
++       for (i = 0; i < nSelectors; i++) {
++          j = 0;
++          while (True) {
++-- 
++2.21.0
+diff --git a/package/bzip2/bzip2.hash b/package/bzip2/bzip2.hash
+index 60b0a191ef..ffe94aa454 100644
+--- a/package/bzip2/bzip2.hash
++++ b/package/bzip2/bzip2.hash
+@@ -1,2 +1,6 @@
+ # From http://www.bzip.org/downloads.html
+ md5	00b516f4704d4a7cb50a1d97e6e8e15b	bzip2-1.0.6.tar.gz
++
++# Locally calculated
++sha256	a2848f34fcd5d6cf47def00461fcb528a0484d8edef8208d6d2e2909dc61d9cd	bzip2-1.0.6.tar.gz
++sha256	4919cfb14a73cd64fcef67b107613970cf1659a09aa675dba31314f373bc7204	LICENSE
+diff --git a/package/davfs2/davfs2.hash b/package/davfs2/davfs2.hash
+index 102659a38d..7e2078bec5 100644
+--- a/package/davfs2/davfs2.hash
++++ b/package/davfs2/davfs2.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated
+-sha256 c9c4e0f0912a782386216b2147eb9c36c47f193b8fcf3d637719e0b9fe7c96e0  davfs2-1.5.4.tar.gz
++sha256 587c6a25ad78109995a7ccb8e60aa1c491b149f2c99d47033f3d5e648430ad2f  davfs2-1.5.5.tar.gz
+ # License file, locally calculated
+ sha256 0ae0485a5bd37a63e63603596417e4eb0e653334fa6c7f932ca3a0e85d4af227  COPYING
+diff --git a/package/davfs2/davfs2.mk b/package/davfs2/davfs2.mk
+index f2b2fdbe41..90f73f4df0 100644
+--- a/package/davfs2/davfs2.mk
++++ b/package/davfs2/davfs2.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-DAVFS2_VERSION = 1.5.4
++DAVFS2_VERSION = 1.5.5
+ DAVFS2_SITE = http://download.savannah.nongnu.org/releases/davfs2
+ DAVFS2_LICENSE = GPL-3.0+
+ DAVFS2_LICENSE_FILES = COPYING
+diff --git a/package/dbus/dbus.hash b/package/dbus/dbus.hash
+index 92c0c94210..9529d2e04f 100644
+--- a/package/dbus/dbus.hash
++++ b/package/dbus/dbus.hash
+@@ -1,6 +1,6 @@
+ # Locally calculated after checking pgp signature
+-# https://dbus.freedesktop.org/releases/dbus/dbus-1.12.10.tar.gz.asc
++# https://dbus.freedesktop.org/releases/dbus/dbus-1.12.16.tar.gz.asc
+ # using key 36EC5A6448A4F5EF79BEFE98E05AE1478F814C4F
+-sha256	4b693d24976258c3f2fa9cc33ad9288c5fbfa7a16481dbd9a8a429f7aa8cdcf7  dbus-1.12.10.tar.gz
++sha256	54a22d2fa42f2eb2a871f32811c6005b531b9613b1b93a0d269b05e7549fec80  dbus-1.12.16.tar.gz
+ # Locally calculated
+ sha256	0e46f54efb12d04ab5c33713bacd0e140c9a35b57ae29e03c853203266e8f3a1  COPYING
+diff --git a/package/dbus/dbus.mk b/package/dbus/dbus.mk
+index 0a56de5a4e..a4043864d1 100644
+--- a/package/dbus/dbus.mk
++++ b/package/dbus/dbus.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-DBUS_VERSION = 1.12.10
++DBUS_VERSION = 1.12.16
+ DBUS_SITE = https://dbus.freedesktop.org/releases/dbus
+ DBUS_LICENSE = AFL-2.1 or GPL-2.0+ (library, tools), GPL-2.0+ (tools)
+ DBUS_LICENSE_FILES = COPYING
+diff --git a/package/dialog/dialog.mk b/package/dialog/dialog.mk
+index 73fabe07cf..b1933b8836 100644
+--- a/package/dialog/dialog.mk
++++ b/package/dialog/dialog.mk
+@@ -9,7 +9,7 @@ DIALOG_SOURCE = dialog-$(DIALOG_VERSION).tgz
+ DIALOG_SITE = ftp://ftp.invisible-island.net/dialog
+ DIALOG_CONF_OPTS = --with-ncurses --with-curses-dir=$(STAGING_DIR)/usr \
+ 	--disable-rpath-hack
+-DIALOG_DEPENDENCIES = host-pkgconf ncurses
++DIALOG_DEPENDENCIES = host-pkgconf ncurses $(TARGET_NLS_DEPENDENCIES)
+ DIALOG_LICENSE = LGPL-2.1
+ DIALOG_LICENSE_FILES = COPYING
+ 
+diff --git a/package/docker-cli/docker-cli.hash b/package/docker-cli/docker-cli.hash
+index e8af45ccea..27bf3322c4 100644
+--- a/package/docker-cli/docker-cli.hash
++++ b/package/docker-cli/docker-cli.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256	02bcb73dde1c9542fa65c8b87078aaa1b01b0dbdd62346637bcf0999a2a0909f  docker-cli-v18.09.6.tar.gz
++sha256  62e25a0935bee75f999fb95b224ad982054fc1adc4351ce98d704ec00114ce57  docker-cli-18.09.7.tar.gz
+ sha256	2d81ea060825006fc8f3fe28aa5dc0ffeb80faf325b612c955229157b8c10dc0  LICENSE
+diff --git a/package/docker-cli/docker-cli.mk b/package/docker-cli/docker-cli.mk
+index b71bd7097d..0cff46abbd 100644
+--- a/package/docker-cli/docker-cli.mk
++++ b/package/docker-cli/docker-cli.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-DOCKER_CLI_VERSION = v18.09.6
+-DOCKER_CLI_SITE = $(call github,docker,cli,$(DOCKER_CLI_VERSION))
++DOCKER_CLI_VERSION = 18.09.7
++DOCKER_CLI_SITE = $(call github,docker,cli,v$(DOCKER_CLI_VERSION))
+ DOCKER_CLI_WORKSPACE = gopath
+ 
+ DOCKER_CLI_LICENSE = Apache-2.0
+diff --git a/package/docker-engine/docker-engine.hash b/package/docker-engine/docker-engine.hash
+index 4e673f2856..4ef6905b5d 100644
+--- a/package/docker-engine/docker-engine.hash
++++ b/package/docker-engine/docker-engine.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256	7cb45266fff79245c81ec86c455d4b0513ca5d4ec1b9be8c8330df30a9467481  docker-engine-v18.09.6.tar.gz
++sha256	b4f55831f5e7c5a92cd91f77aad1541ccd572eb18df2f44a01c372bceb3f9b6b  docker-engine-18.09.7.tar.gz
+ sha256	2d81ea060825006fc8f3fe28aa5dc0ffeb80faf325b612c955229157b8c10dc0  LICENSE
+diff --git a/package/docker-engine/docker-engine.mk b/package/docker-engine/docker-engine.mk
+index 50d4129256..99e3088f65 100644
+--- a/package/docker-engine/docker-engine.mk
++++ b/package/docker-engine/docker-engine.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-DOCKER_ENGINE_VERSION = v18.09.6
+-DOCKER_ENGINE_SITE = $(call github,docker,engine,$(DOCKER_ENGINE_VERSION))
++DOCKER_ENGINE_VERSION = 18.09.7
++DOCKER_ENGINE_SITE = $(call github,docker,engine,v$(DOCKER_ENGINE_VERSION))
+ 
+ DOCKER_ENGINE_LICENSE = Apache-2.0
+ DOCKER_ENGINE_LICENSE_FILES = LICENSE
+diff --git a/package/expat/expat.hash b/package/expat/expat.hash
+index 6c55972f69..91f70f36ed 100644
+--- a/package/expat/expat.hash
++++ b/package/expat/expat.hash
+@@ -1,7 +1,7 @@
+-# From https://sourceforge.net/projects/expat/files/expat/2.2.6/
+-md5	ca047ae951b40020ac831c28859161b2		expat-2.2.6.tar.bz2
+-sha1	c8947fc3119a797b55485f2f7bdaaeb49cc9df01	expat-2.2.6.tar.bz2
++# From https://sourceforge.net/projects/expat/files/expat/2.2.7/
++md5	72f36b87cdb478aba1e78473393766aa		expat-2.2.7.tar.bz2
++sha1	9c8a268211e3f1ae31c4d550e5be7708973ec6a6	expat-2.2.7.tar.bz2
+ 
+ # Locally calculated
+-sha256	17b43c2716d521369f82fc2dc70f359860e90fa440bea65b3b85f0b246ea81f2	expat-2.2.6.tar.bz2
++sha256	cbc9102f4a31a8dafd42d642e9a3aa31e79a0aedaa1f6efd2795ebc83174ec18	expat-2.2.7.tar.bz2
+ sha256	46336ab2fec900803e2f1a4253e325ac01d998efb09bc6906651f7259e636f76	COPYING
+diff --git a/package/expat/expat.mk b/package/expat/expat.mk
+index 548ec826a0..1b49a12c49 100644
+--- a/package/expat/expat.mk
++++ b/package/expat/expat.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-EXPAT_VERSION = 2.2.6
++EXPAT_VERSION = 2.2.7
+ EXPAT_SITE = http://downloads.sourceforge.net/project/expat/expat/$(EXPAT_VERSION)
+ EXPAT_SOURCE = expat-$(EXPAT_VERSION).tar.bz2
+ EXPAT_INSTALL_STAGING = YES
+diff --git a/package/faad2/0001-syntax.c-check-for-syntax-element-inconsistencies.patch b/package/faad2/0001-syntax.c-check-for-syntax-element-inconsistencies.patch
+new file mode 100644
+index 0000000000..de97dbbaf0
+--- /dev/null
++++ b/package/faad2/0001-syntax.c-check-for-syntax-element-inconsistencies.patch
+@@ -0,0 +1,64 @@
++From 466b01d504d7e45f1e9169ac90b3e34ab94aed14 Mon Sep 17 00:00:00 2001
++From: Hugo Lefeuvre <hle@debian.org>
++Date: Mon, 25 Feb 2019 10:49:03 +0100
++Subject: [PATCH] syntax.c: check for syntax element inconsistencies
++
++Implicit channel mapping reconfiguration is explicitely forbidden by
++ISO/IEC 13818-7:2006 (8.5.3.3). Decoders should be able to detect such
++files and reject them. FAAD2 does not perform any kind of checks
++regarding this.
++
++This leads to security vulnerabilities when processing crafted AAC
++files performing such reconfigurations.
++
++Add checks to decode_sce_lfe and decode_cpe to make sure such
++inconsistencies are detected as early as possible.
++
++These checks first read hDecoder->frame: if this is not the first
++frame then we make sure that the syntax element at the same position
++in the previous frame also had element_id id_syn_ele. If not, return
++21 as this is a fatal file structure issue.
++
++This patch addresses CVE-2018-20362 (fixes #26) and possibly other
++related issues.
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit 466b01d504d7
++
++ libfaad/syntax.c | 12 ++++++++++++
++ 1 file changed, 12 insertions(+)
++
++diff --git a/libfaad/syntax.c b/libfaad/syntax.c
++index f8e808c269c0..e7fb11381e46 100644
++--- a/libfaad/syntax.c
+++++ b/libfaad/syntax.c
++@@ -344,6 +344,12 @@ static void decode_sce_lfe(NeAACDecStruct *hDecoder,
++        can become 2 when some form of Parametric Stereo coding is used
++     */
++ 
+++    if (hDecoder->frame && hDecoder->element_id[hDecoder->fr_ch_ele] != id_syn_ele) {
+++        /* element inconsistency */
+++        hInfo->error = 21;
+++        return;
+++    }
+++
++     /* save the syntax element id */
++     hDecoder->element_id[hDecoder->fr_ch_ele] = id_syn_ele;
++ 
++@@ -395,6 +401,12 @@ static void decode_cpe(NeAACDecStruct *hDecoder, NeAACDecFrameInfo *hInfo, bitfi
++         return;
++     }
++ 
+++    if (hDecoder->frame && hDecoder->element_id[hDecoder->fr_ch_ele] != id_syn_ele) {
+++        /* element inconsistency */
+++        hInfo->error = 21;
+++        return;
+++    }
+++
++     /* save the syntax element id */
++     hDecoder->element_id[hDecoder->fr_ch_ele] = id_syn_ele;
++ 
++-- 
++2.20.1
++
+diff --git a/package/faad2/0002-sbr_hfadj-sanitize-frequency-band-borders.patch b/package/faad2/0002-sbr_hfadj-sanitize-frequency-band-borders.patch
+new file mode 100644
+index 0000000000..9c580f9339
+--- /dev/null
++++ b/package/faad2/0002-sbr_hfadj-sanitize-frequency-band-borders.patch
+@@ -0,0 +1,71 @@
++From 6b4a7cde30f2e2cb03e78ef476cc73179cfffda3 Mon Sep 17 00:00:00 2001
++From: Hugo Lefeuvre <hle@debian.org>
++Date: Thu, 11 Apr 2019 09:34:07 +0200
++Subject: [PATCH] sbr_hfadj: sanitize frequency band borders
++
++user passed f_table_lim contains frequency band borders. Frequency
++bands are groups of consecutive QMF channels. This means that their
++bounds, as provided by f_table_lim, should never exceed MAX_M (maximum
++number of QMF channels). c.f. ISO/IEC 14496-3:2001
++
++FAAD2 does not verify this, leading to security issues when
++processing files defining f_table_lim with values > MAX_M.
++
++This patch sanitizes the values of f_table_lim so that they can be safely
++used as index for Q_M_lim and G_lim arrays.
++
++Fixes #21 (CVE-2018-20194).
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit 6b4a7cde30f2e
++
++ libfaad/sbr_hfadj.c | 18 ++++++++++++++++++
++ 1 file changed, 18 insertions(+)
++
++diff --git a/libfaad/sbr_hfadj.c b/libfaad/sbr_hfadj.c
++index 3f310b8190d7..dda1ce8e249b 100644
++--- a/libfaad/sbr_hfadj.c
+++++ b/libfaad/sbr_hfadj.c
++@@ -485,6 +485,12 @@ static void calculate_gain(sbr_info *sbr, sbr_hfadj_info *adj, uint8_t ch)
++             ml1 = sbr->f_table_lim[sbr->bs_limiter_bands][k];
++             ml2 = sbr->f_table_lim[sbr->bs_limiter_bands][k+1];
++ 
+++            if (ml1 > MAX_M)
+++                ml1 = MAX_M;
+++
+++            if (ml2 > MAX_M)
+++                ml2 = MAX_M;
+++
++ 
++             /* calculate the accumulated E_orig and E_curr over the limiter band */
++             for (m = ml1; m < ml2; m++)
++@@ -949,6 +955,12 @@ static void calculate_gain(sbr_info *sbr, sbr_hfadj_info *adj, uint8_t ch)
++             ml1 = sbr->f_table_lim[sbr->bs_limiter_bands][k];
++             ml2 = sbr->f_table_lim[sbr->bs_limiter_bands][k+1];
++ 
+++            if (ml1 > MAX_M)
+++                ml1 = MAX_M;
+++
+++            if (ml2 > MAX_M)
+++                ml2 = MAX_M;
+++
++ 
++             /* calculate the accumulated E_orig and E_curr over the limiter band */
++             for (m = ml1; m < ml2; m++)
++@@ -1193,6 +1205,12 @@ static void calculate_gain(sbr_info *sbr, sbr_hfadj_info *adj, uint8_t ch)
++             ml1 = sbr->f_table_lim[sbr->bs_limiter_bands][k];
++             ml2 = sbr->f_table_lim[sbr->bs_limiter_bands][k+1];
++ 
+++            if (ml1 > MAX_M)
+++                ml1 = MAX_M;
+++
+++            if (ml2 > MAX_M)
+++                ml2 = MAX_M;
+++
++ 
++             /* calculate the accumulated E_orig and E_curr over the limiter band */
++             for (m = ml1; m < ml2; m++)
++-- 
++2.20.1
++
+diff --git a/package/faad2/0003-Fix-a-couple-buffer-overflows.patch b/package/faad2/0003-Fix-a-couple-buffer-overflows.patch
+new file mode 100644
+index 0000000000..6ae7608771
+--- /dev/null
++++ b/package/faad2/0003-Fix-a-couple-buffer-overflows.patch
+@@ -0,0 +1,50 @@
++From 942c3e0aee748ea6fe97cb2c1aa5893225316174 Mon Sep 17 00:00:00 2001
++From: Fabian Greffrath <fabian@greffrath.com>
++Date: Mon, 10 Jun 2019 13:58:40 +0200
++Subject: [PATCH] Fix a couple buffer overflows
++
++https://hackerone.com/reports/502816
++https://hackerone.com/reports/507858
++
++https://github.com/videolan/vlc/blob/master/contrib/src/faad2/faad2-fix-overflows.patch
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit 942c3e0aee748ea6
++
++ libfaad/bits.c   | 5 ++++-
++ libfaad/syntax.c | 2 ++
++ 2 files changed, 6 insertions(+), 1 deletion(-)
++
++diff --git a/libfaad/bits.c b/libfaad/bits.c
++index dc14d7a03952..4c0de24a5d9c 100644
++--- a/libfaad/bits.c
+++++ b/libfaad/bits.c
++@@ -167,7 +167,10 @@ void faad_resetbits(bitfile *ld, int bits)
++     int words = bits >> 5;
++     int remainder = bits & 0x1F;
++ 
++-    ld->bytes_left = ld->buffer_size - words*4;
+++    if (ld->buffer_size < words * 4)
+++        ld->bytes_left = 0;
+++    else
+++        ld->bytes_left = ld->buffer_size - words*4;
++ 
++     if (ld->bytes_left >= 4)
++     {
++diff --git a/libfaad/syntax.c b/libfaad/syntax.c
++index e7fb11381e46..c9925435dbd0 100644
++--- a/libfaad/syntax.c
+++++ b/libfaad/syntax.c
++@@ -2304,6 +2304,8 @@ static uint8_t excluded_channels(bitfile *ld, drc_info *drc)
++     while ((drc->additional_excluded_chns[n-1] = faad_get1bit(ld
++         DEBUGVAR(1,104,"excluded_channels(): additional_excluded_chns"))) == 1)
++     {
+++        if (i >= MAX_CHANNELS - num_excl_chan - 7)
+++            return n;
++         for (i = num_excl_chan; i < num_excl_chan+7; i++)
++         {
++             drc->exclude_mask[i] = faad_get1bit(ld
++-- 
++2.20.1
++
+diff --git a/package/faad2/0004-add-patch-to-prevent-crash-on-SCE-followed-by-CPE.patch b/package/faad2/0004-add-patch-to-prevent-crash-on-SCE-followed-by-CPE.patch
+new file mode 100644
+index 0000000000..b759b037e0
+--- /dev/null
++++ b/package/faad2/0004-add-patch-to-prevent-crash-on-SCE-followed-by-CPE.patch
+@@ -0,0 +1,54 @@
++From f1f8e002622196de3aa650163e5dc2888ebc7a63 Mon Sep 17 00:00:00 2001
++From: Fabian Greffrath <fabian@greffrath.com>
++Date: Mon, 10 Jun 2019 13:59:49 +0200
++Subject: [PATCH] add patch to prevent crash on SCE followed by CPE
++
++hDecoder->element_alloced denotes whether or not we have allocated memory for
++usage in terms of the specified channel element. Given that it previously only
++had two states (1 meaning allocated, and 0 meaning not allocated), it would not
++allocate enough memory for parsing a CPE it if is preceeded by a SCE (and
++therefor crash).
++
++These changes fixes the issue by making sure that we allocate additional memory
++if so is necessary, and the set of values for hDecoder->element_alloced[n] is
++now:
++
++ 0 = nothing allocated
++ 1 = allocated enough for SCE
++ 2 = allocated enough for CPE
++
++All branches that depend on hDecoder->element_alloced[n] prior to this patch
++only checks if the value is, or is not, zero. The added state, 2, is therefor
++correctly handled automatically.
++
++https://github.com/videolan/vlc/blob/master/contrib/src/faad2/faad2-fix-cpe-reconstruction.patch
++
++Signed-off-by: Baruch Siach <baruch@tkos.co.il>
++---
++Upstream status: commit f1f8e002622196d
++ libfaad/specrec.c | 4 ++--
++ 1 file changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/libfaad/specrec.c b/libfaad/specrec.c
++index 9797d6e79468..0e72207fc9c0 100644
++--- a/libfaad/specrec.c
+++++ b/libfaad/specrec.c
++@@ -1109,13 +1109,13 @@ uint8_t reconstruct_channel_pair(NeAACDecStruct *hDecoder, ic_stream *ics1, ic_s
++ #ifdef PROFILE
++     int64_t count = faad_get_ts();
++ #endif
++-    if (hDecoder->element_alloced[hDecoder->fr_ch_ele] == 0)
+++    if (hDecoder->element_alloced[hDecoder->fr_ch_ele] != 2)
++     {
++         retval = allocate_channel_pair(hDecoder, cpe->channel, (uint8_t)cpe->paired_channel);
++         if (retval > 0)
++             return retval;
++ 
++-        hDecoder->element_alloced[hDecoder->fr_ch_ele] = 1;
+++        hDecoder->element_alloced[hDecoder->fr_ch_ele] = 2;
++     }
++ 
++     /* dequantisation and scaling */
++-- 
++2.20.1
++
+diff --git a/package/ffmpeg/ffmpeg.hash b/package/ffmpeg/ffmpeg.hash
+index e00c4ec56c..e945130d88 100644
+--- a/package/ffmpeg/ffmpeg.hash
++++ b/package/ffmpeg/ffmpeg.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated
+-sha256 741cbd6394eaed370774ca4cc089eaafbc54d0824b9aa360d4b3b0cbcbc4a92c  ffmpeg-3.4.5.tar.xz
++sha256 3572279cb139d9e39dcfbc23edf438ff5311ec3fc5d0dcb3558e49591e5cb83e  ffmpeg-3.4.6.tar.xz
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  COPYING.GPLv2
+ sha256 b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe  COPYING.LGPLv2.1
+ sha256 73d99bc83313fff665b426d6672b4e0479102bc402fe22314ac9ce94a38aa5ff  LICENSE.md
+diff --git a/package/ffmpeg/ffmpeg.mk b/package/ffmpeg/ffmpeg.mk
+index 1e1004c378..d26555a506 100644
+--- a/package/ffmpeg/ffmpeg.mk
++++ b/package/ffmpeg/ffmpeg.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-FFMPEG_VERSION = 3.4.5
++FFMPEG_VERSION = 3.4.6
+ FFMPEG_SOURCE = ffmpeg-$(FFMPEG_VERSION).tar.xz
+ FFMPEG_SITE = http://ffmpeg.org/releases
+ FFMPEG_INSTALL_STAGING = YES
+diff --git a/package/freeswitch/freeswitch.hash b/package/freeswitch/freeswitch.hash
+index 6f90c21564..1c5de7bcc5 100644
+--- a/package/freeswitch/freeswitch.hash
++++ b/package/freeswitch/freeswitch.hash
+@@ -1,11 +1,11 @@
+-# From http://files.freeswitch.org/freeswitch-releases/freeswitch-1.8.5.tar.xz.md5
+-md5 e3d750ed0bbf13ce6fe228af9af07bcd freeswitch-1.8.5.tar.xz
+-# From http://files.freeswitch.org/freeswitch-releases/freeswitch-1.8.5.tar.xz.sha1
+-sha1 e9f95b42ed9dd41437a65bddbb5c1f647436e426 freeswitch-1.8.5.tar.xz
+-# From http://files.freeswitch.org/freeswitch-releases/freeswitch-1.8.5.tar.xz.sha256
+-sha256 503a551be5d6df06162ea9d98a952b6fb524852ce2352fe3ca3a36a76995b046 freeswitch-1.8.5.tar.xz
++# From http://files.freeswitch.org/freeswitch-releases/freeswitch-1.8.6.tar.xz.md5
++md5 cadec07057786cfb0bb805edc279d752 freeswitch-1.8.6.tar.xz
++# From http://files.freeswitch.org/freeswitch-releases/freeswitch-1.8.6.tar.xz.sha1
++sha1 c6eb7de942a61604774ca08ac8070244b7c3167a freeswitch-1.8.6.tar.xz
++# From http://files.freeswitch.org/freeswitch-releases/freeswitch-1.8.6.tar.xz.sha256
++sha256 b87f47e57d13de2b901bd1e4eb85491178e59a159a2831d7430abe7947f0d3a4 freeswitch-1.8.6.tar.xz
+ # Locally computed
+-sha256 10299420c1e8602c0daf5a59d022621cd72a9148d1f0f33501edb3db3445c7fe  COPYING
++sha256 75c933202f40939cdc3827fce20a1efdaa38291e2b5a65d234eb16e2cffda66a  COPYING
+ sha256 e8e26b16da14aa3e6ed5c22c705fdc1f45d6225fca461ea9f7314bcdfdc414c4  libs/apr/LICENSE
+ sha256 1eefb2ea1db0af7729a9d8a27d7c65d8a37ab185393f935b029aac6828ce315a  libs/apr-util/LICENSE
+ sha256 8267348d5af1262c11d1a08de2f5afc77457755f1ac658627dd9acf71011d615  libs/libvpx/LICENSE
+diff --git a/package/freeswitch/freeswitch.mk b/package/freeswitch/freeswitch.mk
+index 0b7544d097..8c0c7fb118 100644
+--- a/package/freeswitch/freeswitch.mk
++++ b/package/freeswitch/freeswitch.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-FREESWITCH_VERSION = 1.8.5
++FREESWITCH_VERSION = 1.8.6
+ FREESWITCH_SOURCE = freeswitch-$(FREESWITCH_VERSION).tar.xz
+ FREESWITCH_SITE = http://files.freeswitch.org/freeswitch-releases
+ # External modules need headers/libs from staging
+diff --git a/package/gerbera/0002-Fix-find_program-taglib-config-when-cross-compiling.patch b/package/gerbera/0002-Fix-find_program-taglib-config-when-cross-compiling.patch
+new file mode 100644
+index 0000000000..d5cc908e22
+--- /dev/null
++++ b/package/gerbera/0002-Fix-find_program-taglib-config-when-cross-compiling.patch
+@@ -0,0 +1,46 @@
++From 0f78b883f02651bd15a96a7294e01f94b28c20f8 Mon Sep 17 00:00:00 2001
++From: =?UTF-8?q?J=C3=B6rg=20Krause?= <joerg.krause@embedded.rocks>
++Date: Mon, 13 May 2019 13:42:14 +0200
++Subject: [PATCH] Fix find_program taglib-config when cross-compiling
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++When cross-compiling Gerbera CMakes `find_program()` will search for
++binaries on the host. This is typically correct, e.g. when search for
++compilers or shells.
++
++When cross-compiling searching for `taglib-config` should not find the
++binary on the host, instead it should find the binary in the sysroot
++directory, as the host `taglib-config` will output the wrong host paths
++and libs, whereas the sysroot `taglib-config` will output the correct sysroot
++paths and libs.
++
++Therefore, use the `CMAKE_FIND_ROOT_PATH_MODE_PROGRAM` variable when
++cross-compiling. This variable controls whether the `CMAKE_FIND_ROOT_PATH`
++and `CMAKE_SYSROOT` are used by find_program().
++
++Backported from: 0f78b883f02651bd15a96a7294e01f94b28c20f8
++
++Signed-off-by: Jörg Krause <joerg.krause@embedded.rocks>
++---
++ cmake/FindTaglib.cmake | 3 +++
++ 1 file changed, 3 insertions(+)
++
++diff --git a/cmake/FindTaglib.cmake b/cmake/FindTaglib.cmake
++index 46a20ff2..7135d766 100644
++--- a/cmake/FindTaglib.cmake
+++++ b/cmake/FindTaglib.cmake
++@@ -19,6 +19,9 @@ ELSE()
++ 	endif(NOT TAGLIB_MIN_VERSION)
++ 
++ 	if(NOT WIN32)
+++            if (CMAKE_CROSSCOMPILING)
+++              set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM ONLY)
+++            endif(CMAKE_CROSSCOMPILING)
++             find_program(TAGLIBCONFIG_EXECUTABLE NAMES taglib-config PATHS
++ 		   ${BIN_INSTALL_DIR}
++             )
++-- 
++2.22.0
++
+diff --git a/package/haveged/haveged.hash b/package/haveged/haveged.hash
+index d1133b6931..44be222a1e 100644
+--- a/package/haveged/haveged.hash
++++ b/package/haveged/haveged.hash
+@@ -1,2 +1,4 @@
+ # From http://www.issihosts.com/haveged/verify/haveged-1.9.1.sha1
+ sha1	ab7234b7f57dbb7d500a5ab3cbf0494715ce6499	haveged-1.9.1.tar.gz
++# Locally calculated
++sha256  8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903	COPYING
+diff --git a/package/irssi/irssi.hash b/package/irssi/irssi.hash
+index 0f298137ba..6a91e16487 100644
+--- a/package/irssi/irssi.hash
++++ b/package/irssi/irssi.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated after checking pgp signature
+-sha256	1b386ca026aa1875c380fd00ef1d24b71fb87cdae39ef5349ecca16c4567feac  irssi-1.0.7.tar.xz
++sha256	414fdee2ffaeb90a55f141b7fb3899608631dc891e2bc1f5e91ca31f1a621101  irssi-1.0.8.tar.xz
+ # Locally calculated
+ sha256	a1a27cb2ecee8d5378fbb3562f577104a445d6d66fee89286e16758305e63e2b  COPYING
+diff --git a/package/irssi/irssi.mk b/package/irssi/irssi.mk
+index 611365f88e..4d7268d291 100644
+--- a/package/irssi/irssi.mk
++++ b/package/irssi/irssi.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-IRSSI_VERSION = 1.0.7
++IRSSI_VERSION = 1.0.8
+ IRSSI_SOURCE = irssi-$(IRSSI_VERSION).tar.xz
+ # Do not use the github helper here. The generated tarball is *NOT* the
+ # same as the one uploaded by upstream for the release.
+diff --git a/package/libcdaudio/0001-libcdaudio-enable-autoreconf.patch b/package/libcdaudio/0001-libcdaudio-enable-autoreconf.patch
+new file mode 100644
+index 0000000000..ab2296c042
+--- /dev/null
++++ b/package/libcdaudio/0001-libcdaudio-enable-autoreconf.patch
+@@ -0,0 +1,43 @@
++From 9c2873b1d9292bcf43c862b6777d41c40521424c Mon Sep 17 00:00:00 2001
++From: Peter Seiderer <ps.report@gmx.net>
++Date: Sun, 13 Jan 2019 22:27:42 +0100
++Subject: [PATCH] libcdaudio: enable autoreconf
++
++Fixes the following two autoreconf errors (by simple removing of the
++two offending lines):
++
++  configure.ac:20: error: automatic de-ANSI-fication support has been removed
++
++  Makefile.am:2: error: automatic de-ANSI-fication support has been removed
++
++Signed-off-by: Peter Seiderer <ps.report@gmx.net>
++---
++ Makefile.am  | 1 -
++ configure.ac | 1 -
++ 2 files changed, 2 deletions(-)
++
++diff --git a/Makefile.am b/Makefile.am
++index f639dd8..a32cfe6 100644
++--- a/Makefile.am
+++++ b/Makefile.am
++@@ -1,5 +1,4 @@
++ ## Process this file with automake to produce Makefile.in
++-AUTOMAKE_OPTIONS = ansi2knr
++ SUBDIRS = src
++ 
++ bin_SCRIPTS = libcdaudio-config
++diff --git a/configure.ac b/configure.ac
++index bbdd42d..6699ceb 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -17,7 +17,6 @@ AM_CONFIG_HEADER(config.h)
++ AC_PROG_AWK
++ AC_PROG_CC
++ AC_PROG_CPP
++-AM_C_PROTOTYPES
++ AM_PROG_CC_STDC
++ AC_PROG_INSTALL
++ AC_PROG_LN_S
++-- 
++2.20.1
++
+diff --git a/package/libcdaudio/libcdaudio.mk b/package/libcdaudio/libcdaudio.mk
+index 5d421eba7a..651289d7e4 100644
+--- a/package/libcdaudio/libcdaudio.mk
++++ b/package/libcdaudio/libcdaudio.mk
+@@ -11,4 +11,7 @@ LIBCDAUDIO_CONFIG_SCRIPTS = libcdaudio-config
+ LIBCDAUDIO_LICENSE = GPL-2.0+
+ LIBCDAUDIO_LICENSE_FILES = COPYING
+ 
++# fix configure failure when the toolchain doesn't have C++ support
++LIBCDAUDIO_AUTORECONF = YES
++
+ $(eval $(autotools-package))
+diff --git a/package/libgit2/libgit2.hash b/package/libgit2/libgit2.hash
+index 41ab87bf4d..29b829291c 100644
+--- a/package/libgit2/libgit2.hash
++++ b/package/libgit2/libgit2.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256	0b7ca31cb959ff1b22afa0da8621782afe61f99242bf716c403802ffbdb21d51  libgit2-v0.27.4.tar.gz
++sha256	8313873d49dc01e8b880ec334d7430ae67496a89aaa8c6e7bbd3affb47a00c76  libgit2-v0.27.8.tar.gz
+ sha256	d9a8038088df84fde493fa33a0f1e537252eeb9642122aa4b862690197152813  COPYING
+diff --git a/package/libgit2/libgit2.mk b/package/libgit2/libgit2.mk
+index 551e3dea62..6c64aa67c8 100644
+--- a/package/libgit2/libgit2.mk
++++ b/package/libgit2/libgit2.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBGIT2_VERSION = v0.27.4
++LIBGIT2_VERSION = v0.27.8
+ LIBGIT2_SITE = $(call github,libgit2,libgit2,$(LIBGIT2_VERSION))
+ LIBGIT2_LICENSE = GPL-2.0 with linking exception
+ LIBGIT2_LICENSE_FILES = COPYING
+diff --git a/package/libglib2/0005-gfile-Limit-access-to-files-when-copying.patch b/package/libglib2/0005-gfile-Limit-access-to-files-when-copying.patch
+new file mode 100644
+index 0000000000..750767dfbb
+--- /dev/null
++++ b/package/libglib2/0005-gfile-Limit-access-to-files-when-copying.patch
+@@ -0,0 +1,56 @@
++From cf09035d361287dfadc93f09272ce68b4a9457ad Mon Sep 17 00:00:00 2001
++From: Ondrej Holy <oholy@redhat.com>
++Date: Thu, 23 May 2019 10:41:53 +0200
++Subject: [PATCH] gfile: Limit access to files when copying
++
++file_copy_fallback creates new files with default permissions and
++set the correct permissions after the operation is finished. This
++might cause that the files can be accessible by more users during
++the operation than expected. Use G_FILE_CREATE_PRIVATE for the new
++files to limit access to those files.
++
++(cherry picked from commit d8f8f4d637ce43f8699ba94c9b7648beda0ca174)
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ gio/gfile.c | 11 ++++++-----
++ 1 file changed, 6 insertions(+), 5 deletions(-)
++
++diff --git a/gio/gfile.c b/gio/gfile.c
++index a67aad383..ff313ebf8 100644
++--- a/gio/gfile.c
+++++ b/gio/gfile.c
++@@ -3279,12 +3279,12 @@ file_copy_fallback (GFile                  *source,
++         out = (GOutputStream*)_g_local_file_output_stream_replace (_g_local_file_get_filename (G_LOCAL_FILE (destination)),
++                                                                    FALSE, NULL,
++                                                                    flags & G_FILE_COPY_BACKUP,
++-                                                                   G_FILE_CREATE_REPLACE_DESTINATION,
++-                                                                   info,
+++                                                                   G_FILE_CREATE_REPLACE_DESTINATION |
+++                                                                   G_FILE_CREATE_PRIVATE, info,
++                                                                    cancellable, error);
++       else
++         out = (GOutputStream*)_g_local_file_output_stream_create (_g_local_file_get_filename (G_LOCAL_FILE (destination)),
++-                                                                  FALSE, 0, info,
+++                                                                  FALSE, G_FILE_CREATE_PRIVATE, info,
++                                                                   cancellable, error);
++     }
++   else if (flags & G_FILE_COPY_OVERWRITE)
++@@ -3292,12 +3292,13 @@ file_copy_fallback (GFile                  *source,
++       out = (GOutputStream *)g_file_replace (destination,
++                                              NULL,
++                                              flags & G_FILE_COPY_BACKUP,
++-                                             G_FILE_CREATE_REPLACE_DESTINATION,
+++                                             G_FILE_CREATE_REPLACE_DESTINATION |
+++                                             G_FILE_CREATE_PRIVATE,
++                                              cancellable, error);
++     }
++   else
++     {
++-      out = (GOutputStream *)g_file_create (destination, 0, cancellable, error);
+++      out = (GOutputStream *)g_file_create (destination, G_FILE_CREATE_PRIVATE, cancellable, error);
++     }
++ 
++   if (!out)
++-- 
++2.11.0
++
+diff --git a/package/libsecret/libsecret.mk b/package/libsecret/libsecret.mk
+index adc7c508df..f5879fbf4e 100644
+--- a/package/libsecret/libsecret.mk
++++ b/package/libsecret/libsecret.mk
+@@ -9,7 +9,8 @@ LIBSECRET_VERSION = $(LIBSECRET_VERSION_MAJOR).6
+ LIBSECRET_SITE = http://ftp.gnome.org/pub/GNOME/sources/libsecret/$(LIBSECRET_VERSION_MAJOR)
+ LIBSECRET_SOURCE = libsecret-$(LIBSECRET_VERSION).tar.xz
+ LIBSECRET_INSTALL_STAGING = YES
+-LIBSECRET_DEPENDENCIES = libglib2 host-intltool
++LIBSECRET_DEPENDENCIES = libglib2 host-intltool $(TARGET_NLS_DEPENDENCIES)
++LIBSECRET_CONF_ENV = LIBS=$(TARGET_NLS_LIBS)
+ LIBSECRET_CONF_OPTS = \
+ 	--disable-manpages \
+ 	--disable-strict \
+diff --git a/package/libvncserver/Config.in b/package/libvncserver/Config.in
+index 460aa784e9..d5fac82e87 100644
+--- a/package/libvncserver/Config.in
++++ b/package/libvncserver/Config.in
+@@ -6,7 +6,7 @@ config BR2_PACKAGE_LIBVNCSERVER
+ 	help
+ 	  libvncserver is a VNC server/client library.
+ 
+-	  http://libvncserver.sourceforge.net/
++	  https://libvnc.github.io/
+ 
+ if BR2_PACKAGE_LIBVNCSERVER
+ 
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index d092da2fbd..ff5959ac47 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -287,10 +287,10 @@ endchoice
+ 
+ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+-	default "4.4.180"	if BR2_KERNEL_HEADERS_4_4
+-	default "4.9.180"	if BR2_KERNEL_HEADERS_4_9
+-	default "4.14.123"	if BR2_KERNEL_HEADERS_4_14
+-	default "4.19.47"	if BR2_KERNEL_HEADERS_4_19
++	default "4.4.184"	if BR2_KERNEL_HEADERS_4_4
++	default "4.9.184"	if BR2_KERNEL_HEADERS_4_9
++	default "4.14.132"	if BR2_KERNEL_HEADERS_4_14
++	default "4.19.57"	if BR2_KERNEL_HEADERS_4_19
+ 	default "4.20.17"	if BR2_KERNEL_HEADERS_4_20
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+ 	default "custom"	if BR2_KERNEL_HEADERS_CUSTOM_TARBALL
+diff --git a/package/lmbench/0001-scripts-build-use-bin-bash-as-shell.patch b/package/lmbench/0001-scripts-build-use-bin-bash-as-shell.patch
+new file mode 100644
+index 0000000000..b7e1dc64d0
+--- /dev/null
++++ b/package/lmbench/0001-scripts-build-use-bin-bash-as-shell.patch
+@@ -0,0 +1,28 @@
++From 02a538c2b4b54b41d23dbd7668714ea4d2016131 Mon Sep 17 00:00:00 2001
++From: Markus Mayer <mmayer@broadcom.com>
++Date: Thu, 13 Jun 2019 12:27:04 -0700
++Subject: [PATCH] scripts/build: use /bin/bash as shell
++
++scripts/build makes use of the "+=" operator which is not supported by
++/bin/sh. We switch to /bin/bash in order to avoid errors of the form
++
++    ../scripts/build: 21: ../scripts/build: LDLIBS+= -lm: not found
++
++Signed-off-by: Markus Mayer <mmayer@broadcom.com>
++---
++ scripts/build | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/scripts/build b/scripts/build
++index 34a1371d0056..60b755cd2320 100755
++--- a/scripts/build
+++++ b/scripts/build
++@@ -1,4 +1,4 @@
++-#!/bin/sh
+++#!/bin/bash
++ 
++ CC=${CC-`../scripts/compiler`}
++ MAKE=${MAKE-`../scripts/make`}
++-- 
++2.17.1
++
+diff --git a/package/lmbench/0002-src-Makefile-add-lmbench-to-list-of-executables.patch b/package/lmbench/0002-src-Makefile-add-lmbench-to-list-of-executables.patch
+new file mode 100644
+index 0000000000..f5067a6b08
+--- /dev/null
++++ b/package/lmbench/0002-src-Makefile-add-lmbench-to-list-of-executables.patch
+@@ -0,0 +1,29 @@
++From c158a02561c64d0cd236f86db24cc20d0378eb72 Mon Sep 17 00:00:00 2001
++From: Markus Mayer <mmayer@broadcom.com>
++Date: Thu, 13 Jun 2019 12:28:54 -0700
++Subject: [PATCH] src/Makefile: add lmbench to list of executables
++
++We want to install the lmbench script along with the other executables,
++so we add it to the appropriate list.
++
++Signed-off-by: Markus Mayer <mmayer@broadcom.com>
++---
++ src/Makefile | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/src/Makefile b/src/Makefile
++index 4962815b5fe7..70dbc6794898 100644
++--- a/src/Makefile
+++++ b/src/Makefile
++@@ -98,7 +98,7 @@ EXES =	$O/bw_file_rd $O/bw_mem $O/bw_mmap_rd $O/bw_pipe $O/bw_tcp 	\
++ 	$O/lat_select $O/lat_pipe $O/lat_rpc $O/lat_syscall $O/lat_tcp	\
++ 	$O/lat_udp $O/lat_mmap $O/mhz $O/lat_proc $O/lat_pagefault	\
++ 	$O/lat_connect $O/lat_fs $O/lat_sig $O/lat_mem_rd $O/lat_ctx	\
++-	$O/lat_sem 							\
+++	$O/lat_sem $O/lmbench						\
++ 	$O/memsize $O/lat_unix $O/lmdd $O/timing_o $O/enough		\
++ 	$O/msleep $O/loop_o $O/lat_fifo $O/lmhttp $O/lat_http		\
++ 	$O/lat_fcntl $O/disk $O/lat_unix_connect $O/flushdisk		\
++-- 
++2.17.1
++
+diff --git a/package/lmbench/lmbench.mk b/package/lmbench/lmbench.mk
+index c52d6a5a39..2f3b19b5f8 100644
+--- a/package/lmbench/lmbench.mk
++++ b/package/lmbench/lmbench.mk
+@@ -18,8 +18,9 @@ LMBENCH_CFLAGS += `$(PKG_CONFIG_HOST_BINARY) --cflags libtirpc`
+ LMBENCH_LDLIBS = `$(PKG_CONFIG_HOST_BINARY) --libs libtirpc`
+ endif
+ 
++LMBENCH_POST_PATCH_HOOKS += UPDATE_CONFIG_HOOK
++
+ define LMBENCH_CONFIGURE_CMDS
+-	$(call CONFIG_UPDATE,$(@D))
+ 	sed -i 's/CFLAGS=/CFLAGS+=/g' $(@D)/src/Makefile
+ 	sed -i 's/LDLIBS=/LDLIBS+=/g' $(@D)/scripts/build
+ 	sed -i '/cd .*doc/d' $(@D)/src/Makefile
+diff --git a/package/logrotate/logrotate.hash b/package/logrotate/logrotate.hash
+index 70b068c67f..bebbd74657 100644
+--- a/package/logrotate/logrotate.hash
++++ b/package/logrotate/logrotate.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+ sha256 fb1ff8502e7ae4aedaa3d0da8d3740a6a0f44b72e34666af724e9094b166c942  logrotate-3.13.0.tar.gz
++sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  COPYING
+diff --git a/package/mariadb/mariadb.hash b/package/mariadb/mariadb.hash
+index db24f7bb9b..1f478013c8 100644
+--- a/package/mariadb/mariadb.hash
++++ b/package/mariadb/mariadb.hash
+@@ -1,9 +1,9 @@
+-# From https://downloads.mariadb.org/mariadb/10.3.13
+-md5 603ce42e35b9a688f2cca05275acb5cb  mariadb-10.3.13.tar.gz
+-sha1 08467885412184e99b835732913d445fd2c4b1b3  mariadb-10.3.13.tar.gz
+-sha256 b2aa857ef5b84f85a7ea60a1eac7b34c0ca5151c71a0d44ce2d7fb028d71459a  mariadb-10.3.13.tar.gz
+-sha512 3cbd93291aa43b235e5b81d953ea69fb32df54fb518f922f69b5485952f01fae693c77b0efac37f414ed7ff132d3b58f899812bdb7be8a5b344c3640e2c3a0dd  mariadb-10.3.13.tar.gz
++# From https://downloads.mariadb.org/mariadb/10.3.15
++md5 08edd8b5060a181e6dd3c6aac23218cd  mariadb-10.3.15.tar.gz
++sha1 134f6a1ee6bf3048580eca945a51cb3c9bda7cbe  mariadb-10.3.15.tar.gz
++sha256 27f391a54d544f93850d4edfb3ef1b4cf24f8e27e61e51727b0e7d31bb4d6968  mariadb-10.3.15.tar.gz
++sha512 35332ac32cba27fef1b4ddd2209236853f4309756fd121fbdbd2b6be0651e817cedc80e276b89ccfa4bc76760811434fab45a4d380d0ebd500c7d9bd7377fe93  mariadb-10.3.15.tar.gz
+ 
+ # Hash for license files
+-sha256 43f4b5b13cecbbdb04a180cbf6c2bd64237819d1a32165b7d475c1b392e6a8d1  README.md
++sha256 a4665c1189fe31e0bbc27e9b55439df7dad6e99805407fe58d78da7aabe678f8  README.md
+ sha256 ab15fd526bd8dd18a9e77ebc139656bf4d33e97fc7238cd11bf60e2b9b8666c6  COPYING
+diff --git a/package/mariadb/mariadb.mk b/package/mariadb/mariadb.mk
+index 356dd29af3..cfb08eb664 100644
+--- a/package/mariadb/mariadb.mk
++++ b/package/mariadb/mariadb.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MARIADB_VERSION = 10.3.13
++MARIADB_VERSION = 10.3.15
+ MARIADB_SITE = https://downloads.mariadb.org/interstitial/mariadb-$(MARIADB_VERSION)/source
+ MARIADB_LICENSE = GPL-2.0 (server), GPL-2.0 with FLOSS exception (GPL client library), LGPL-2.0 (LGPL client library)
+ # Tarball no longer contains LGPL license text
+diff --git a/package/meson/meson.mk b/package/meson/meson.mk
+index d76541cc93..71bdadf825 100644
+--- a/package/meson/meson.mk
++++ b/package/meson/meson.mk
+@@ -45,9 +45,9 @@ else
+ HOST_MESON_TARGET_CPU_FAMILY = $(ARCH)
+ endif
+ 
+-HOST_MESON_SED_CFLAGS = $(if $(TARGET_CFLAGS),`printf '"%s"$(comma) ' $(TARGET_CFLAGS)`)
+-HOST_MESON_SED_LDFLAGS = $(if $(TARGET_LDFLAGS),`printf '"%s"$(comma) ' $(TARGET_LDFLAGS)`)
+-HOST_MESON_SED_CXXFLAGS = $(if $(TARGET_CXXFLAGS),`printf '"%s"$(comma) ' $(TARGET_CXXFLAGS)`)
++HOST_MESON_SED_CFLAGS = $(if $(strip $(TARGET_CFLAGS)),`printf '"%s"$(comma) ' $(TARGET_CFLAGS)`)
++HOST_MESON_SED_LDFLAGS = $(if $(strip $(TARGET_LDFLAGS)),`printf '"%s"$(comma) ' $(TARGET_LDFLAGS)`)
++HOST_MESON_SED_CXXFLAGS = $(if $(strip $(TARGET_CXXFLAGS)),`printf '"%s"$(comma) ' $(TARGET_CXXFLAGS)`)
+ 
+ # Generate a Meson cross-compilation.conf suitable for use with the
+ # SDK
+diff --git a/package/mongoose/mongoose.hash b/package/mongoose/mongoose.hash
+index 86ebe8efbf..92f35a7113 100644
+--- a/package/mongoose/mongoose.hash
++++ b/package/mongoose/mongoose.hash
+@@ -1,3 +1,3 @@
+ # Locally computed:
+-sha256	ec7956b8f2845f6c22e19ab38a0c32c9b379087f0038c7db661b34812f225911  mongoose-6.13.tar.gz
++sha256	ed9b44690f9660d25562e45472d486c086bcc916bf49f39f22e0a90444d44454  mongoose-6.15.tar.gz
+ sha256	fdc34eeea97327d75c83492abd34f1a3200c53dec04422ecda8071dc60a36d10  LICENSE
+diff --git a/package/mongoose/mongoose.mk b/package/mongoose/mongoose.mk
+index 653c83c7d4..c4a703d3cf 100644
+--- a/package/mongoose/mongoose.mk
++++ b/package/mongoose/mongoose.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MONGOOSE_VERSION = 6.13
++MONGOOSE_VERSION = 6.15
+ MONGOOSE_SITE = $(call github,cesanta,mongoose,$(MONGOOSE_VERSION))
+ MONGOOSE_LICENSE = GPL-2.0
+ MONGOOSE_LICENSE_FILES = LICENSE
+diff --git a/package/monit/monit.hash b/package/monit/monit.hash
+index d1c09f137c..3f528590d6 100644
+--- a/package/monit/monit.hash
++++ b/package/monit/monit.hash
+@@ -1,4 +1,4 @@
+-# From https://mmonit.com/monit/dist/monit-5.25.2.tar.gz.sha256:
+-sha256  aa0ce6361d1155e43e30a86dcff00b2003d434f221c360981ced830275abc64a  monit-5.25.2.tar.gz
++# From https://mmonit.com/monit/dist/monit-5.25.3.tar.gz.sha256:
++sha256  c10258c8839d20864d30390e7cbf2ff5e0480a67a6fb80c02aa457d6e3390569  monit-5.25.3.tar.gz
+ # Locally computed
+ sha256  d5a4f52b1a5e1e7fe14e01a76aac8b08dc6bbea15466058f271456c97aac1ada  COPYING
+diff --git a/package/monit/monit.mk b/package/monit/monit.mk
+index 906ed842d6..980da13cb6 100644
+--- a/package/monit/monit.mk
++++ b/package/monit/monit.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MONIT_VERSION = 5.25.2
++MONIT_VERSION = 5.25.3
+ MONIT_SITE = http://mmonit.com/monit/dist
+ MONIT_LICENSE = AGPL-3.0 with OpenSSL exception
+ MONIT_LICENSE_FILES = COPYING
+diff --git a/package/mpd/Config.in b/package/mpd/Config.in
+index d3844391a2..923f0c2201 100644
+--- a/package/mpd/Config.in
++++ b/package/mpd/Config.in
+@@ -9,7 +9,6 @@ menuconfig BR2_PACKAGE_MPD
+ 	depends on !BR2_TOOLCHAIN_HAS_GCC_BUG_64735 # exception_ptr
+ 	select BR2_PACKAGE_BOOST
+ 	select BR2_PACKAGE_LIBICONV if !BR2_ENABLE_LOCALE
+-	select BR2_PACKAGE_MPD_TREMOR if !(BR2_PACKAGE_MPD_MAD || BR2_PACKAGE_MPD_MPG123 || BR2_PACKAGE_MPD_VORBIS || BR2_PACKAGE_MPD_WAVPACK || BR2_PACKAGE_MPD_FLAC || BR2_PACKAGE_MPD_MUSEPACK || BR2_PACKAGE_MPD_FFMPEG)
+ 	help
+ 	  MPD is a flexible, powerful, server-side application
+ 	  for playing music. Through plugins and libraries
+@@ -133,6 +132,7 @@ config BR2_PACKAGE_MPD_OPUS
+ 
+ config BR2_PACKAGE_MPD_TREMOR
+ 	bool "tremor"
++	depends on !BR2_PACKAGE_MPD_VORBIS
+ 	select BR2_PACKAGE_LIBOGG
+ 	select BR2_PACKAGE_TREMOR
+ 	help
+diff --git a/package/openblas/Config.in b/package/openblas/Config.in
+index 8e71a43f98..04538c2d7a 100644
+--- a/package/openblas/Config.in
++++ b/package/openblas/Config.in
+@@ -6,7 +6,7 @@ config BR2_PACKAGE_OPENBLAS_DEFAULT_TARGET
+ 	default "PRESCOTT"     if BR2_x86_prescott || BR2_x86_nocona
+ 	default "BANIAS"       if BR2_x86_pentium_m
+ 	default "CORE2"        if BR2_x86_core2
+-	default "NEHALEM"      if BR2_x86_corei7 || BR2_x86_silvermont
++	default "NEHALEM"      if BR2_x86_corei7 || BR2_x86_silvermont || BR2_x86_westmere
+ 	default "SANDYBRIDGE"  if BR2_x86_corei7_avx
+ 	default "HASWELL"      if BR2_x86_core_avx2
+ 	default "ATOM"         if BR2_x86_atom
+diff --git a/package/php/php.hash b/package/php/php.hash
+index d88433e8c0..30aa8bfcf6 100644
+--- a/package/php/php.hash
++++ b/package/php/php.hash
+@@ -1,5 +1,5 @@
+ # From http://php.net/downloads.php
+-sha256 fefc8967daa30ebc375b2ab2857f97da94ca81921b722ddac86b29e15c54a164  php-7.3.6.tar.xz
++sha256 ba067200ba649956b3a92ec8b71a6ed8ce8a099921212443c1bcf3260a29274c  php-7.3.7.tar.xz
+ 
+ # License file
+ sha256 f689b8fa63bea7950ce6a21bf52ed88ea0d77673ee76e6de12f51191174d91b8  LICENSE
+diff --git a/package/php/php.mk b/package/php/php.mk
+index 7132f95917..e0c1c4445d 100644
+--- a/package/php/php.mk
++++ b/package/php/php.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-PHP_VERSION = 7.3.6
++PHP_VERSION = 7.3.7
+ PHP_SITE = http://www.php.net/distributions
+ PHP_SOURCE = php-$(PHP_VERSION).tar.xz
+ PHP_INSTALL_STAGING = YES
+diff --git a/package/pkg-generic.mk b/package/pkg-generic.mk
+index cbe885aaaa..21778f448f 100644
+--- a/package/pkg-generic.mk
++++ b/package/pkg-generic.mk
+@@ -184,7 +184,7 @@ $(BUILD_DIR)/%/.stamp_rsynced:
+ 	@mkdir -p $(@D)
+ 	$(foreach hook,$($(PKG)_PRE_RSYNC_HOOKS),$(call $(hook))$(sep))
+ 	@test -d $(SRCDIR) || (echo "ERROR: $(SRCDIR) does not exist" ; exit 1)
+-	rsync -au --chmod=u=rwX,go=rX $(RSYNC_VCS_EXCLUSIONS) $($(PKG)_OVERRIDE_SRCDIR_RSYNC_EXCLUSIONS) $(call qstrip,$(SRCDIR))/ $(@D)
++	rsync -au --chmod=u=rwX,go=rX $($(PKG)_OVERRIDE_SRCDIR_RSYNC_EXCLUSIONS) $(RSYNC_VCS_EXCLUSIONS) $(call qstrip,$(SRCDIR))/ $(@D)
+ 	$(foreach hook,$($(PKG)_POST_RSYNC_HOOKS),$(call $(hook))$(sep))
+ 	@$(call step_end,rsync)
+ 	$(Q)touch $@
+diff --git a/package/postgresql/postgresql.hash b/package/postgresql/postgresql.hash
+index ba6e02d4d8..d70ed7428d 100644
+--- a/package/postgresql/postgresql.hash
++++ b/package/postgresql/postgresql.hash
+@@ -1,7 +1,7 @@
+-# From https://ftp.postgresql.org/pub/source/v11.3/postgresql-11.3.tar.bz2.md5
+-md5 c2a729b754b8de86a969c86ec25db076  postgresql-11.3.tar.bz2
+-# From https://ftp.postgresql.org/pub/source/v11.3/postgresql-11.3.tar.bz2.sha256
+-sha256 2a85e082fc225944821dfd23990e32dfcd2284c19060864b0ad4ca537d30522d  postgresql-11.3.tar.bz2
++# From https://ftp.postgresql.org/pub/source/v11.4/postgresql-11.4.tar.bz2.md5
++md5 dab5eed8a5f9204bf2f03a209eead4c3  postgresql-11.4.tar.bz2
++# From https://ftp.postgresql.org/pub/source/v11.4/postgresql-11.4.tar.bz2.sha256
++sha256 02802ddffd1590805beddd1e464dd28a46a41a5f1e1df04bab4f46663195cc8b  postgresql-11.4.tar.bz2
+ 
+ # License file, Locally calculated
+ sha256	c4c86d683970b22b9fab53320ee1b3a30ef4e8223122b4fb6be53ea62ecee8b3  COPYRIGHT
+diff --git a/package/postgresql/postgresql.mk b/package/postgresql/postgresql.mk
+index e6e34f5c72..ae2fa9d999 100644
+--- a/package/postgresql/postgresql.mk
++++ b/package/postgresql/postgresql.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-POSTGRESQL_VERSION = 11.3
++POSTGRESQL_VERSION = 11.4
+ POSTGRESQL_SOURCE = postgresql-$(POSTGRESQL_VERSION).tar.bz2
+ POSTGRESQL_SITE = http://ftp.postgresql.org/pub/source/v$(POSTGRESQL_VERSION)
+ POSTGRESQL_LICENSE = PostgreSQL
+diff --git a/package/psplash/psplash.hash b/package/psplash/psplash.hash
+index 68c6ffa8a9..c8865697c4 100644
+--- a/package/psplash/psplash.hash
++++ b/package/psplash/psplash.hash
+@@ -1,2 +1,3 @@
+ # Locally computed
+ sha256 aaddb20ef892dfb03d4e046cc634159bbcdfe555f7291652dde2b7d4cf491289  psplash-5b3c1cc28f5abdc2c33830150b48b278cc4f7bca.tar.gz
++sha256 f9c375a1be4a41f7b70301dd83c91cb89e41567478859b77eef375a52d782505  COPYING
+diff --git a/package/psplash/psplash.mk b/package/psplash/psplash.mk
+index fe009785b9..4a2e0de5ce 100644
+--- a/package/psplash/psplash.mk
++++ b/package/psplash/psplash.mk
+@@ -7,6 +7,7 @@
+ PSPLASH_VERSION = 5b3c1cc28f5abdc2c33830150b48b278cc4f7bca
+ PSPLASH_SITE = git://git.yoctoproject.org/psplash
+ PSPLASH_LICENSE = GPL-2.0+
++PSPLASH_LICENSE_FILES = COPYING
+ PSPLASH_AUTORECONF = YES
+ 
+ define PSPLASH_INSTALL_INIT_SYSTEMD
+diff --git a/package/python-django/python-django.hash b/package/python-django/python-django.hash
+index c325116779..8cb60adf0c 100644
+--- a/package/python-django/python-django.hash
++++ b/package/python-django/python-django.hash
+@@ -1,5 +1,5 @@
+ # md5, sha256 from https://pypi.org/pypi/django/json
+-md5	909c2e7761893a922dcf721521d9239e  Django-2.1.9.tar.gz
+-sha256	5052def4ff0a84bdf669827fdbd7b7cc1ac058f10232be6b21f37c6824f578da  Django-2.1.9.tar.gz
++md5	2162aed4111da837433f41a9eed5c8bd  Django-2.1.10.tar.gz
++sha256	65e2a548a52fca560cdd4e35f4fa1a79140f405af48950e59702a37e4227e958  Django-2.1.10.tar.gz
+ # Locally computed sha256 checksums
+ sha256	b846415d1b514e9c1dff14a22deb906d794bc546ca6129f950a18cd091e2a669  LICENSE
+diff --git a/package/python-django/python-django.mk b/package/python-django/python-django.mk
+index 041822ea13..09c178288c 100644
+--- a/package/python-django/python-django.mk
++++ b/package/python-django/python-django.mk
+@@ -4,10 +4,10 @@
+ #
+ ################################################################################
+ 
+-PYTHON_DJANGO_VERSION = 2.1.9
++PYTHON_DJANGO_VERSION = 2.1.10
+ PYTHON_DJANGO_SOURCE = Django-$(PYTHON_DJANGO_VERSION).tar.gz
+ # The official Django site has an unpractical URL
+-PYTHON_DJANGO_SITE = https://files.pythonhosted.org/packages/c1/b3/3cdc60dc2e3c11236539f9470e42c5075a2e9c9f4885f5b4b912e9f19992
++PYTHON_DJANGO_SITE = https://files.pythonhosted.org/packages/be/1b/009ec818adf51c7641f3bd9dae778e8b28291b3ceedb352317b0eeafd7ff
+ PYTHON_DJANGO_LICENSE = BSD-3-Clause
+ PYTHON_DJANGO_LICENSE_FILES = LICENSE
+ PYTHON_DJANGO_SETUP_TYPE = setuptools
+diff --git a/package/python/0035-bpo-35907-CVE-2019-9948-urllib-rejects-local_file-sc.patch b/package/python/0035-bpo-35907-CVE-2019-9948-urllib-rejects-local_file-sc.patch
+new file mode 100644
+index 0000000000..5ca1433465
+--- /dev/null
++++ b/package/python/0035-bpo-35907-CVE-2019-9948-urllib-rejects-local_file-sc.patch
+@@ -0,0 +1,59 @@
++From b15bde8058e821b383d81fcae68b335a752083ca Mon Sep 17 00:00:00 2001
++From: SH <push0ebp@gmail.com>
++Date: Wed, 22 May 2019 06:12:23 +0900
++Subject: [PATCH] bpo-35907, CVE-2019-9948: urllib rejects local_file:// scheme
++  (GH-11842)
++
++ CVE-2019-9948: Avoid file reading as disallowing the unnecessary URL scheme in urllib.urlopen().
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Lib/test/test_urllib.py                                           | 7 +++++++
++ Lib/urllib.py                                                     | 4 +++-
++ Misc/NEWS.d/next/Library/2019-02-13-17-21-10.bpo-35907.ckk2zg.rst | 1 +
++ 3 files changed, 11 insertions(+), 1 deletion(-)
++ create mode 100644 Misc/NEWS.d/next/Library/2019-02-13-17-21-10.bpo-35907.ckk2zg.rst
++
++diff --git a/Lib/test/test_urllib.py b/Lib/test/test_urllib.py
++index d7778d4194..ae1f6c0b29 100644
++--- a/Lib/test/test_urllib.py
+++++ b/Lib/test/test_urllib.py
++@@ -1048,6 +1048,13 @@ class URLopener_Tests(unittest.TestCase):
++             "spam://c:|windows%/:=&?~#+!$,;'@()*[]|/path/"),
++             "//c:|windows%/:=&?~#+!$,;'@()*[]|/path/")
++ 
+++    def test_local_file_open(self):
+++        class DummyURLopener(urllib.URLopener):
+++            def open_local_file(self, url):
+++                return url
+++        for url in ('local_file://example', 'local-file://example'):
+++            self.assertRaises(IOError, DummyURLopener().open, url)
+++            self.assertRaises(IOError, urllib.urlopen, url)
++ 
++ # Just commented them out.
++ # Can't really tell why keep failing in windows and sparc.
++diff --git a/Lib/urllib.py b/Lib/urllib.py
++index d85504a5cb..156879dd0a 100644
++--- a/Lib/urllib.py
+++++ b/Lib/urllib.py
++@@ -203,7 +203,9 @@ class URLopener:
++         name = 'open_' + urltype
++         self.type = urltype
++         name = name.replace('-', '_')
++-        if not hasattr(self, name):
+++
+++        # bpo-35907: disallow the file reading with the type not allowed
+++        if not hasattr(self, name) or name == 'open_local_file':
++             if proxy:
++                 return self.open_unknown_proxy(proxy, fullurl, data)
++             else:
++diff --git a/Misc/NEWS.d/next/Library/2019-02-13-17-21-10.bpo-35907.ckk2zg.rst b/Misc/NEWS.d/next/Library/2019-02-13-17-21-10.bpo-35907.ckk2zg.rst
++new file mode 100644
++index 0000000000..bb187d8d65
++--- /dev/null
+++++ b/Misc/NEWS.d/next/Library/2019-02-13-17-21-10.bpo-35907.ckk2zg.rst
++@@ -0,0 +1 @@
+++CVE-2019-9948: Avoid file reading as disallowing the unnecessary URL scheme in urllib.urlopen
++-- 
++2.11.0
++
+diff --git a/package/python/0036-bpo-36216-Add-check-for-characters-in-netloc-that-no.patch b/package/python/0036-bpo-36216-Add-check-for-characters-in-netloc-that-no.patch
+new file mode 100644
+index 0000000000..3b61144713
+--- /dev/null
++++ b/package/python/0036-bpo-36216-Add-check-for-characters-in-netloc-that-no.patch
+@@ -0,0 +1,159 @@
++From e37ef41289b77e0f0bb9a6aedb0360664c55bdd5 Mon Sep 17 00:00:00 2001
++From: Steve Dower <steve.dower@microsoft.com>
++Date: Thu, 7 Mar 2019 09:08:45 -0800
++Subject: [PATCH] bpo-36216: Add check for characters in netloc that normalize
++ to separators (GH-12201)
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Doc/library/urlparse.rst                           | 20 ++++++++++++++++++
++ Lib/test/test_urlparse.py                          | 24 ++++++++++++++++++++++
++ Lib/urlparse.py                                    | 17 +++++++++++++++
++ .../2019-03-06-09-38-40.bpo-36216.6q1m4a.rst       |  3 +++
++ 4 files changed, 64 insertions(+)
++ create mode 100644 Misc/NEWS.d/next/Security/2019-03-06-09-38-40.bpo-36216.6q1m4a.rst
++
++diff --git a/Doc/library/urlparse.rst b/Doc/library/urlparse.rst
++index 22249da54f..0989c88c30 100644
++--- a/Doc/library/urlparse.rst
+++++ b/Doc/library/urlparse.rst
++@@ -119,12 +119,22 @@ The :mod:`urlparse` module defines the following functions:
++    See section :ref:`urlparse-result-object` for more information on the result
++    object.
++ 
+++   Characters in the :attr:`netloc` attribute that decompose under NFKC
+++   normalization (as used by the IDNA encoding) into any of ``/``, ``?``,
+++   ``#``, ``@``, or ``:`` will raise a :exc:`ValueError`. If the URL is
+++   decomposed before parsing, or is not a Unicode string, no error will be
+++   raised.
+++
++    .. versionchanged:: 2.5
++       Added attributes to return value.
++ 
++    .. versionchanged:: 2.7
++       Added IPv6 URL parsing capabilities.
++ 
+++   .. versionchanged:: 2.7.17
+++      Characters that affect netloc parsing under NFKC normalization will
+++      now raise :exc:`ValueError`.
+++
++ 
++ .. function:: parse_qs(qs[, keep_blank_values[, strict_parsing[, max_num_fields]]])
++ 
++@@ -232,11 +242,21 @@ The :mod:`urlparse` module defines the following functions:
++    See section :ref:`urlparse-result-object` for more information on the result
++    object.
++ 
+++   Characters in the :attr:`netloc` attribute that decompose under NFKC
+++   normalization (as used by the IDNA encoding) into any of ``/``, ``?``,
+++   ``#``, ``@``, or ``:`` will raise a :exc:`ValueError`. If the URL is
+++   decomposed before parsing, or is not a Unicode string, no error will be
+++   raised.
+++
++    .. versionadded:: 2.2
++ 
++    .. versionchanged:: 2.5
++       Added attributes to return value.
++ 
+++   .. versionchanged:: 2.7.17
+++      Characters that affect netloc parsing under NFKC normalization will
+++      now raise :exc:`ValueError`.
+++
++ 
++ .. function:: urlunsplit(parts)
++ 
++diff --git a/Lib/test/test_urlparse.py b/Lib/test/test_urlparse.py
++index 4e1ded73c2..73b0228ea8 100644
++--- a/Lib/test/test_urlparse.py
+++++ b/Lib/test/test_urlparse.py
++@@ -1,4 +1,6 @@
++ from test import test_support
+++import sys
+++import unicodedata
++ import unittest
++ import urlparse
++ 
++@@ -624,6 +626,28 @@ class UrlParseTestCase(unittest.TestCase):
++         self.assertEqual(urlparse.urlparse("http://www.python.org:80"),
++                 ('http','www.python.org:80','','','',''))
++ 
+++    def test_urlsplit_normalization(self):
+++        # Certain characters should never occur in the netloc,
+++        # including under normalization.
+++        # Ensure that ALL of them are detected and cause an error
+++        illegal_chars = u'/:#?@'
+++        hex_chars = {'{:04X}'.format(ord(c)) for c in illegal_chars}
+++        denorm_chars = [
+++            c for c in map(unichr, range(128, sys.maxunicode))
+++            if (hex_chars & set(unicodedata.decomposition(c).split()))
+++            and c not in illegal_chars
+++        ]
+++        # Sanity check that we found at least one such character
+++        self.assertIn(u'\u2100', denorm_chars)
+++        self.assertIn(u'\uFF03', denorm_chars)
+++
+++        for scheme in [u"http", u"https", u"ftp"]:
+++            for c in denorm_chars:
+++                url = u"{}://netloc{}false.netloc/path".format(scheme, c)
+++                print "Checking %r" % url
+++                with self.assertRaises(ValueError):
+++                    urlparse.urlsplit(url)
+++
++ def test_main():
++     test_support.run_unittest(UrlParseTestCase)
++ 
++diff --git a/Lib/urlparse.py b/Lib/urlparse.py
++index f7c2b032b0..54eda08651 100644
++--- a/Lib/urlparse.py
+++++ b/Lib/urlparse.py
++@@ -165,6 +165,21 @@ def _splitnetloc(url, start=0):
++             delim = min(delim, wdelim)     # use earliest delim position
++     return url[start:delim], url[delim:]   # return (domain, rest)
++ 
+++def _checknetloc(netloc):
+++    if not netloc or not isinstance(netloc, unicode):
+++        return
+++    # looking for characters like \u2100 that expand to 'a/c'
+++    # IDNA uses NFKC equivalence, so normalize for this check
+++    import unicodedata
+++    netloc2 = unicodedata.normalize('NFKC', netloc)
+++    if netloc == netloc2:
+++        return
+++    _, _, netloc = netloc.rpartition('@') # anything to the left of '@' is okay
+++    for c in '/?#@:':
+++        if c in netloc2:
+++            raise ValueError("netloc '" + netloc2 + "' contains invalid " +
+++                             "characters under NFKC normalization")
+++
++ def urlsplit(url, scheme='', allow_fragments=True):
++     """Parse a URL into 5 components:
++     <scheme>://<netloc>/<path>?<query>#<fragment>
++@@ -193,6 +208,7 @@ def urlsplit(url, scheme='', allow_fragments=True):
++                 url, fragment = url.split('#', 1)
++             if '?' in url:
++                 url, query = url.split('?', 1)
+++            _checknetloc(netloc)
++             v = SplitResult(scheme, netloc, url, query, fragment)
++             _parse_cache[key] = v
++             return v
++@@ -216,6 +232,7 @@ def urlsplit(url, scheme='', allow_fragments=True):
++         url, fragment = url.split('#', 1)
++     if '?' in url:
++         url, query = url.split('?', 1)
+++    _checknetloc(netloc)
++     v = SplitResult(scheme, netloc, url, query, fragment)
++     _parse_cache[key] = v
++     return v
++diff --git a/Misc/NEWS.d/next/Security/2019-03-06-09-38-40.bpo-36216.6q1m4a.rst b/Misc/NEWS.d/next/Security/2019-03-06-09-38-40.bpo-36216.6q1m4a.rst
++new file mode 100644
++index 0000000000..1e1ad92c6f
++--- /dev/null
+++++ b/Misc/NEWS.d/next/Security/2019-03-06-09-38-40.bpo-36216.6q1m4a.rst
++@@ -0,0 +1,3 @@
+++Changes urlsplit() to raise ValueError when the URL contains characters that
+++decompose under IDNA encoding (NFKC-normalization) into characters that
+++affect how the URL is parsed.
++\ No newline at end of file
++-- 
++2.11.0
++
+diff --git a/package/python/0037-3.7-bpo-36216-Only-print-test-messages-when-verbose-.patch b/package/python/0037-3.7-bpo-36216-Only-print-test-messages-when-verbose-.patch
+new file mode 100644
+index 0000000000..7e61fceb80
+--- /dev/null
++++ b/package/python/0037-3.7-bpo-36216-Only-print-test-messages-when-verbose-.patch
+@@ -0,0 +1,28 @@
++From 507bd8cde60ced74d13a1ffa883bb9b0e73c38be Mon Sep 17 00:00:00 2001
++From: Steve Dower <steve.dower@microsoft.com>
++Date: Tue, 12 Mar 2019 13:51:58 -0700
++Subject: [PATCH] [3.7] bpo-36216: Only print test messages when verbose
++ (GH-12291)
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Lib/test/test_urlparse.py | 3 ++-
++ 1 file changed, 2 insertions(+), 1 deletion(-)
++
++diff --git a/Lib/test/test_urlparse.py b/Lib/test/test_urlparse.py
++index 73b0228ea8..1830d0b286 100644
++--- a/Lib/test/test_urlparse.py
+++++ b/Lib/test/test_urlparse.py
++@@ -644,7 +644,8 @@ class UrlParseTestCase(unittest.TestCase):
++         for scheme in [u"http", u"https", u"ftp"]:
++             for c in denorm_chars:
++                 url = u"{}://netloc{}false.netloc/path".format(scheme, c)
++-                print "Checking %r" % url
+++                if test_support.verbose:
+++                    print "Checking %r" % url
++                 with self.assertRaises(ValueError):
++                     urlparse.urlsplit(url)
++ 
++-- 
++2.11.0
++
+diff --git a/package/python/0038-bpo-36742-Fixes-handling-of-pre-normalization-charac.patch b/package/python/0038-bpo-36742-Fixes-handling-of-pre-normalization-charac.patch
+new file mode 100644
+index 0000000000..a5fadf8bb0
+--- /dev/null
++++ b/package/python/0038-bpo-36742-Fixes-handling-of-pre-normalization-charac.patch
+@@ -0,0 +1,66 @@
++From 98a4dcefbbc3bce5ab07e7c0830a183157250259 Mon Sep 17 00:00:00 2001
++From: Steve Dower <steve.dower@python.org>
++Date: Wed, 1 May 2019 15:00:27 +0000
++Subject: [PATCH] bpo-36742: Fixes handling of pre-normalization characters in
++ urlsplit() (GH-13017)
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Lib/test/test_urlparse.py                                     |  6 ++++++
++ Lib/urlparse.py                                               | 11 +++++++----
++ .../next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst    |  1 +
++ 3 files changed, 14 insertions(+), 4 deletions(-)
++ create mode 100644 Misc/NEWS.d/next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst
++
++diff --git a/Lib/test/test_urlparse.py b/Lib/test/test_urlparse.py
++index 1830d0b286..6fd1071bf7 100644
++--- a/Lib/test/test_urlparse.py
+++++ b/Lib/test/test_urlparse.py
++@@ -641,6 +641,12 @@ class UrlParseTestCase(unittest.TestCase):
++         self.assertIn(u'\u2100', denorm_chars)
++         self.assertIn(u'\uFF03', denorm_chars)
++ 
+++        # bpo-36742: Verify port separators are ignored when they
+++        # existed prior to decomposition
+++        urlparse.urlsplit(u'http://\u30d5\u309a:80')
+++        with self.assertRaises(ValueError):
+++            urlparse.urlsplit(u'http://\u30d5\u309a\ufe1380')
+++
++         for scheme in [u"http", u"https", u"ftp"]:
++             for c in denorm_chars:
++                 url = u"{}://netloc{}false.netloc/path".format(scheme, c)
++diff --git a/Lib/urlparse.py b/Lib/urlparse.py
++index 54eda08651..f08e0fe584 100644
++--- a/Lib/urlparse.py
+++++ b/Lib/urlparse.py
++@@ -171,13 +171,16 @@ def _checknetloc(netloc):
++     # looking for characters like \u2100 that expand to 'a/c'
++     # IDNA uses NFKC equivalence, so normalize for this check
++     import unicodedata
++-    netloc2 = unicodedata.normalize('NFKC', netloc)
++-    if netloc == netloc2:
+++    n = netloc.rpartition('@')[2] # ignore anything to the left of '@'
+++    n = n.replace(':', '')        # ignore characters already included
+++    n = n.replace('#', '')        # but not the surrounding text
+++    n = n.replace('?', '')
+++    netloc2 = unicodedata.normalize('NFKC', n)
+++    if n == netloc2:
++         return
++-    _, _, netloc = netloc.rpartition('@') # anything to the left of '@' is okay
++     for c in '/?#@:':
++         if c in netloc2:
++-            raise ValueError("netloc '" + netloc2 + "' contains invalid " +
+++            raise ValueError("netloc '" + netloc + "' contains invalid " +
++                              "characters under NFKC normalization")
++ 
++ def urlsplit(url, scheme='', allow_fragments=True):
++diff --git a/Misc/NEWS.d/next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst b/Misc/NEWS.d/next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst
++new file mode 100644
++index 0000000000..d729ed2f3c
++--- /dev/null
+++++ b/Misc/NEWS.d/next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst
++@@ -0,0 +1 @@
+++Fixes mishandling of pre-normalization characters in urlsplit().
++-- 
++2.11.0
++
+diff --git a/package/python/0039-bpo-36742-Corrects-fix-to-handle-decomposition-in-us.patch b/package/python/0039-bpo-36742-Corrects-fix-to-handle-decomposition-in-us.patch
+new file mode 100644
+index 0000000000..c74bf73a80
+--- /dev/null
++++ b/package/python/0039-bpo-36742-Corrects-fix-to-handle-decomposition-in-us.patch
+@@ -0,0 +1,67 @@
++From f61599b050c621386a3fc6bc480359e2d3bb93de Mon Sep 17 00:00:00 2001
++From: Steve Dower <steve.dower@python.org>
++Date: Tue, 4 Jun 2019 09:40:16 -0700
++Subject: [PATCH] bpo-36742: Corrects fix to handle decomposition in usernames
++ (GH-13812)
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Lib/test/test_urlparse.py | 13 +++++++------
++ Lib/urlparse.py           | 12 ++++++------
++ 2 files changed, 13 insertions(+), 12 deletions(-)
++
++diff --git a/Lib/test/test_urlparse.py b/Lib/test/test_urlparse.py
++index 6fd1071bf7..857ed96d92 100644
++--- a/Lib/test/test_urlparse.py
+++++ b/Lib/test/test_urlparse.py
++@@ -648,12 +648,13 @@ class UrlParseTestCase(unittest.TestCase):
++             urlparse.urlsplit(u'http://\u30d5\u309a\ufe1380')
++ 
++         for scheme in [u"http", u"https", u"ftp"]:
++-            for c in denorm_chars:
++-                url = u"{}://netloc{}false.netloc/path".format(scheme, c)
++-                if test_support.verbose:
++-                    print "Checking %r" % url
++-                with self.assertRaises(ValueError):
++-                    urlparse.urlsplit(url)
+++            for netloc in [u"netloc{}false.netloc", u"n{}user@netloc"]:
+++                for c in denorm_chars:
+++                    url = u"{}://{}/path".format(scheme, netloc.format(c))
+++                    if test_support.verbose:
+++                        print "Checking %r" % url
+++                    with self.assertRaises(ValueError):
+++                        urlparse.urlsplit(url)
++ 
++ def test_main():
++     test_support.run_unittest(UrlParseTestCase)
++diff --git a/Lib/urlparse.py b/Lib/urlparse.py
++index f08e0fe584..6834f3c179 100644
++--- a/Lib/urlparse.py
+++++ b/Lib/urlparse.py
++@@ -171,17 +171,17 @@ def _checknetloc(netloc):
++     # looking for characters like \u2100 that expand to 'a/c'
++     # IDNA uses NFKC equivalence, so normalize for this check
++     import unicodedata
++-    n = netloc.rpartition('@')[2] # ignore anything to the left of '@'
++-    n = n.replace(':', '')        # ignore characters already included
++-    n = n.replace('#', '')        # but not the surrounding text
++-    n = n.replace('?', '')
+++    n = netloc.replace(u'@', u'') # ignore characters already included
+++    n = n.replace(u':', u'')      # but not the surrounding text
+++    n = n.replace(u'#', u'')
+++    n = n.replace(u'?', u'')
++     netloc2 = unicodedata.normalize('NFKC', n)
++     if n == netloc2:
++         return
++     for c in '/?#@:':
++         if c in netloc2:
++-            raise ValueError("netloc '" + netloc + "' contains invalid " +
++-                             "characters under NFKC normalization")
+++            raise ValueError(u"netloc '" + netloc + u"' contains invalid " +
+++                             u"characters under NFKC normalization")
++ 
++ def urlsplit(url, scheme='', allow_fragments=True):
++     """Parse a URL into 5 components:
++-- 
++2.11.0
++
+diff --git a/package/python/0040-2.7-bpo-36742-Fix-urlparse.urlsplit-error-message-fo.patch b/package/python/0040-2.7-bpo-36742-Fix-urlparse.urlsplit-error-message-fo.patch
+new file mode 100644
+index 0000000000..8bb9028267
+--- /dev/null
++++ b/package/python/0040-2.7-bpo-36742-Fix-urlparse.urlsplit-error-message-fo.patch
+@@ -0,0 +1,67 @@
++From 2b578479b96aa3deeeb8bac313a02b5cf3cb1aff Mon Sep 17 00:00:00 2001
++From: Victor Stinner <vstinner@redhat.com>
++Date: Tue, 11 Jun 2019 12:45:35 +0200
++Subject: [PATCH] [2.7] bpo-36742: Fix urlparse.urlsplit() error message for
++ Unicode URL (GH-13937)
++
++If urlparse.urlsplit() detects an invalid netloc according to NFKC
++normalization, the error message type is now str rather than unicode,
++and use repr() to format the URL, to prevent <exception str() failed>
++when display the error message.
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Lib/test/test_urlparse.py                                        | 9 +++++++++
++ Lib/urlparse.py                                                  | 5 +++--
++ .../NEWS.d/next/Library/2019-06-10-12-02-45.bpo-36742.UEdHXJ.rst | 3 +++
++ 3 files changed, 15 insertions(+), 2 deletions(-)
++ create mode 100644 Misc/NEWS.d/next/Library/2019-06-10-12-02-45.bpo-36742.UEdHXJ.rst
++
++diff --git a/Lib/test/test_urlparse.py b/Lib/test/test_urlparse.py
++index 857ed96d92..86c4a0595c 100644
++--- a/Lib/test/test_urlparse.py
+++++ b/Lib/test/test_urlparse.py
++@@ -656,6 +656,15 @@ class UrlParseTestCase(unittest.TestCase):
++                     with self.assertRaises(ValueError):
++                         urlparse.urlsplit(url)
++ 
+++        # check error message: invalid netloc must be formated with repr()
+++        # to get an ASCII error message
+++        with self.assertRaises(ValueError) as cm:
+++            urlparse.urlsplit(u'http://example.com\uFF03@bing.com')
+++        self.assertEqual(str(cm.exception),
+++                         "netloc u'example.com\\uff03@bing.com' contains invalid characters "
+++                         "under NFKC normalization")
+++        self.assertIsInstance(cm.exception.args[0], str)
+++
++ def test_main():
++     test_support.run_unittest(UrlParseTestCase)
++ 
++diff --git a/Lib/urlparse.py b/Lib/urlparse.py
++index 6834f3c179..798b467b60 100644
++--- a/Lib/urlparse.py
+++++ b/Lib/urlparse.py
++@@ -180,8 +180,9 @@ def _checknetloc(netloc):
++         return
++     for c in '/?#@:':
++         if c in netloc2:
++-            raise ValueError(u"netloc '" + netloc + u"' contains invalid " +
++-                             u"characters under NFKC normalization")
+++            raise ValueError("netloc %r contains invalid characters "
+++                             "under NFKC normalization"
+++                             % netloc)
++ 
++ def urlsplit(url, scheme='', allow_fragments=True):
++     """Parse a URL into 5 components:
++diff --git a/Misc/NEWS.d/next/Library/2019-06-10-12-02-45.bpo-36742.UEdHXJ.rst b/Misc/NEWS.d/next/Library/2019-06-10-12-02-45.bpo-36742.UEdHXJ.rst
++new file mode 100644
++index 0000000000..3ba774056f
++--- /dev/null
+++++ b/Misc/NEWS.d/next/Library/2019-06-10-12-02-45.bpo-36742.UEdHXJ.rst
++@@ -0,0 +1,3 @@
+++:func:`urlparse.urlsplit` error message for invalid ``netloc`` according to
+++NFKC normalization is now a :class:`str` string, rather than a
+++:class:`unicode` string, to prevent error when displaying the error.
++-- 
++2.11.0
++
+diff --git a/package/python3/0033-bpo-36742-Fixes-handling-of-pre-normalization-charac.patch b/package/python3/0033-bpo-36742-Fixes-handling-of-pre-normalization-charac.patch
+new file mode 100644
+index 0000000000..38f8ed625b
+--- /dev/null
++++ b/package/python3/0033-bpo-36742-Fixes-handling-of-pre-normalization-charac.patch
+@@ -0,0 +1,70 @@
++From 4d723e76e1ad17e9e7d5e828e59bb47e76f2174b Mon Sep 17 00:00:00 2001
++From: "Miss Islington (bot)"
++ <31488909+miss-islington@users.noreply.github.com>
++Date: Tue, 30 Apr 2019 05:21:02 -0700
++Subject: [PATCH] bpo-36742: Fixes handling of pre-normalization characters in
++ urlsplit() (GH-13017)
++
++(cherry picked from commit d537ab0ff9767ef024f26246899728f0116b1ec3)
++
++Co-authored-by: Steve Dower <steve.dower@python.org>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Lib/test/test_urlparse.py                                     |  6 ++++++
++ Lib/urllib/parse.py                                           | 11 +++++++----
++ .../next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst    |  1 +
++ 3 files changed, 14 insertions(+), 4 deletions(-)
++ create mode 100644 Misc/NEWS.d/next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst
++
++diff --git a/Lib/test/test_urlparse.py b/Lib/test/test_urlparse.py
++index e6638aee22..c262354494 100644
++--- a/Lib/test/test_urlparse.py
+++++ b/Lib/test/test_urlparse.py
++@@ -1001,6 +1001,12 @@ class UrlParseTestCase(unittest.TestCase):
++         self.assertIn('\u2100', denorm_chars)
++         self.assertIn('\uFF03', denorm_chars)
++ 
+++        # bpo-36742: Verify port separators are ignored when they
+++        # existed prior to decomposition
+++        urllib.parse.urlsplit('http://\u30d5\u309a:80')
+++        with self.assertRaises(ValueError):
+++            urllib.parse.urlsplit('http://\u30d5\u309a\ufe1380')
+++
++         for scheme in ["http", "https", "ftp"]:
++             for c in denorm_chars:
++                 url = "{}://netloc{}false.netloc/path".format(scheme, c)
++diff --git a/Lib/urllib/parse.py b/Lib/urllib/parse.py
++index 1eec26e0f1..f5b3487ea9 100644
++--- a/Lib/urllib/parse.py
+++++ b/Lib/urllib/parse.py
++@@ -397,13 +397,16 @@ def _checknetloc(netloc):
++     # looking for characters like \u2100 that expand to 'a/c'
++     # IDNA uses NFKC equivalence, so normalize for this check
++     import unicodedata
++-    netloc2 = unicodedata.normalize('NFKC', netloc)
++-    if netloc == netloc2:
+++    n = netloc.rpartition('@')[2] # ignore anything to the left of '@'
+++    n = n.replace(':', '')        # ignore characters already included
+++    n = n.replace('#', '')        # but not the surrounding text
+++    n = n.replace('?', '')
+++    netloc2 = unicodedata.normalize('NFKC', n)
+++    if n == netloc2:
++         return
++-    _, _, netloc = netloc.rpartition('@') # anything to the left of '@' is okay
++     for c in '/?#@:':
++         if c in netloc2:
++-            raise ValueError("netloc '" + netloc2 + "' contains invalid " +
+++            raise ValueError("netloc '" + netloc + "' contains invalid " +
++                              "characters under NFKC normalization")
++ 
++ def urlsplit(url, scheme='', allow_fragments=True):
++diff --git a/Misc/NEWS.d/next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst b/Misc/NEWS.d/next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst
++new file mode 100644
++index 0000000000..d729ed2f3c
++--- /dev/null
+++++ b/Misc/NEWS.d/next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst
++@@ -0,0 +1 @@
+++Fixes mishandling of pre-normalization characters in urlsplit().
++-- 
++2.11.0
++
+diff --git a/package/python3/0034-bpo-36742-Corrects-fix-to-handle-decomposition-in-us.patch b/package/python3/0034-bpo-36742-Corrects-fix-to-handle-decomposition-in-us.patch
+new file mode 100644
+index 0000000000..653d4116c9
+--- /dev/null
++++ b/package/python3/0034-bpo-36742-Corrects-fix-to-handle-decomposition-in-us.patch
+@@ -0,0 +1,58 @@
++From 250b62acc59921d399f0db47db3b462cd6037e09 Mon Sep 17 00:00:00 2001
++From: "Miss Islington (bot)"
++ <31488909+miss-islington@users.noreply.github.com>
++Date: Tue, 4 Jun 2019 09:15:13 -0700
++Subject: [PATCH] bpo-36742: Corrects fix to handle decomposition in usernames
++ (GH-13812)
++
++(cherry picked from commit 8d0ef0b5edeae52960c7ed05ae8a12388324f87e)
++
++Co-authored-by: Steve Dower <steve.dower@python.org>
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ Lib/test/test_urlparse.py | 11 ++++++-----
++ Lib/urllib/parse.py       |  6 +++---
++ 2 files changed, 9 insertions(+), 8 deletions(-)
++
++diff --git a/Lib/test/test_urlparse.py b/Lib/test/test_urlparse.py
++index c262354494..68f633ca3a 100644
++--- a/Lib/test/test_urlparse.py
+++++ b/Lib/test/test_urlparse.py
++@@ -1008,11 +1008,12 @@ class UrlParseTestCase(unittest.TestCase):
++             urllib.parse.urlsplit('http://\u30d5\u309a\ufe1380')
++ 
++         for scheme in ["http", "https", "ftp"]:
++-            for c in denorm_chars:
++-                url = "{}://netloc{}false.netloc/path".format(scheme, c)
++-                with self.subTest(url=url, char='{:04X}'.format(ord(c))):
++-                    with self.assertRaises(ValueError):
++-                        urllib.parse.urlsplit(url)
+++            for netloc in ["netloc{}false.netloc", "n{}user@netloc"]:
+++                for c in denorm_chars:
+++                    url = "{}://{}/path".format(scheme, netloc.format(c))
+++                    with self.subTest(url=url, char='{:04X}'.format(ord(c))):
+++                        with self.assertRaises(ValueError):
+++                            urllib.parse.urlsplit(url)
++ 
++ class Utility_Tests(unittest.TestCase):
++     """Testcase to test the various utility functions in the urllib."""
++diff --git a/Lib/urllib/parse.py b/Lib/urllib/parse.py
++index f5b3487ea9..4c8e77fe39 100644
++--- a/Lib/urllib/parse.py
+++++ b/Lib/urllib/parse.py
++@@ -397,9 +397,9 @@ def _checknetloc(netloc):
++     # looking for characters like \u2100 that expand to 'a/c'
++     # IDNA uses NFKC equivalence, so normalize for this check
++     import unicodedata
++-    n = netloc.rpartition('@')[2] # ignore anything to the left of '@'
++-    n = n.replace(':', '')        # ignore characters already included
++-    n = n.replace('#', '')        # but not the surrounding text
+++    n = netloc.replace('@', '')   # ignore characters already included
+++    n = n.replace(':', '')        # but not the surrounding text
+++    n = n.replace('#', '')
++     n = n.replace('?', '')
++     netloc2 = unicodedata.normalize('NFKC', n)
++     if n == netloc2:
++-- 
++2.11.0
++
+diff --git a/package/qt5/qt5base/qt5base.mk b/package/qt5/qt5base/qt5base.mk
+index 1c20b67e4b..da1a11b266 100644
+--- a/package/qt5/qt5base/qt5base.mk
++++ b/package/qt5/qt5base/qt5base.mk
+@@ -27,6 +27,13 @@ QT5BASE_CONFIGURE_OPTS += \
+ 	-no-pch \
+ 	-shared
+ 
++# starting from version 5.9.0, -optimize-debug is enabled by default
++# for debug builds and it overrides -O* with -Og which is not what we
++# want.
++ifeq ($(BR2_PACKAGE_QT5_VERSION_LATEST),y)
++QT5BASE_CONFIGURE_OPTS += -no-optimize-debug
++endif
++
+ ifeq ($(BR2_PACKAGE_QT5_VERSION_5_6),y)
+ QT5BASE_DEPENDENCIES += pcre
+ else
+diff --git a/package/samba4/0002-Fix-compilation-of-Samba-4.7.4-with-disabled-ADS.patch b/package/samba4/0002-Fix-compilation-of-Samba-4.7.4-with-disabled-ADS.patch
+deleted file mode 100644
+index 45d3050a39..0000000000
+--- a/package/samba4/0002-Fix-compilation-of-Samba-4.7.4-with-disabled-ADS.patch
++++ /dev/null
+@@ -1,41 +0,0 @@
+-From da2f2cf8e7a1dfcb661b707e4649cec1e8a0e79c Mon Sep 17 00:00:00 2001
+-From: Bernd Kuhls <bernd.kuhls@t-online.de>
+-Date: Thu, 9 Aug 2018 10:03:06 +0200
+-Subject: [PATCH] Fix compilation of Samba 4.7.4 with disabled ADS
+-
+-Downloaded from upstream mailinglist
+-https://lists.samba.org/archive/samba-technical/2017-December/124629.html
+-
+-Patch originates from FreeBSD:
+-https://svnweb.freebsd.org/ports/head/net/samba47/files/patch-source3__libads__kerberos_keytab.c?revision=457119&view=markup
+-
+-Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+----
+- source3/libads/kerberos_keytab.c | 4 ++--
+- 1 file changed, 2 insertions(+), 2 deletions(-)
+-
+-diff --git a/source3/libads/kerberos_keytab.c b/source3/libads/kerberos_keytab.c
+-index 37ac7ba985e..71250962090 100644
+---- a/source3/libads/kerberos_keytab.c
+-+++ b/source3/libads/kerberos_keytab.c
+-@@ -32,8 +32,6 @@
+- 
+- #ifdef HAVE_KRB5
+- 
+--#ifdef HAVE_ADS
+--
+- /* This MAX_NAME_LEN is a constant defined in krb5.h */
+- #ifndef MAX_KEYTAB_NAME_LEN
+- #define MAX_KEYTAB_NAME_LEN 1100
+-@@ -85,6 +83,8 @@ out:
+- 	return ret;
+- }
+- 
+-+#ifdef HAVE_ADS
+-+
+- /**********************************************************************
+-  Adds a single service principal, i.e. 'host' to the system keytab
+- ***********************************************************************/
+--- 
+-2.14.4
+-
+diff --git a/package/samba4/0003-Fix-uClibc-build-on-64bit-platforms-by-including-std.patch b/package/samba4/0002-Fix-uClibc-build-on-64bit-platforms-by-including-std.patch
+similarity index 100%
+rename from package/samba4/0003-Fix-uClibc-build-on-64bit-platforms-by-including-std.patch
+rename to package/samba4/0002-Fix-uClibc-build-on-64bit-platforms-by-including-std.patch
+diff --git a/package/samba4/0005-test_regfio.c-include-stdint.h-before-cmoka.h.patch b/package/samba4/0003-test_regfio.c-include-stdint.h-before-cmoka.h.patch
+similarity index 100%
+rename from package/samba4/0005-test_regfio.c-include-stdint.h-before-cmoka.h.patch
+rename to package/samba4/0003-test_regfio.c-include-stdint.h-before-cmoka.h.patch
+diff --git a/package/samba4/0004-Disable-build-of-manpages-and-documentation.patch b/package/samba4/0004-Disable-build-of-manpages-and-documentation.patch
+deleted file mode 100644
+index ad8712634e..0000000000
+--- a/package/samba4/0004-Disable-build-of-manpages-and-documentation.patch
++++ /dev/null
+@@ -1,123 +0,0 @@
+-From 3cd608170b99492bdd5fe3b7b8e7db61af199845 Mon Sep 17 00:00:00 2001
+-From: Bernd Kuhls <bernd.kuhls@t-online.de>
+-Date: Thu, 9 Aug 2018 09:59:06 +0200
+-Subject: [PATCH] Disable build of manpages and documentation
+-
+-This patch fixes a bug described in an upstream bug report
+-https://bugzilla.samba.org/show_bug.cgi?id=9515
+-which was closed as WONTFIX by disabling the build of manpages and
+-documentation.
+-
+-If installed on the host, samba4 uses the docbook-xsl package to build
+-parts of the documentation. This package is broken, on Debian for
+-example the bug reported to samba4 was fixed in the docbook-xsl package:
+-https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=765567
+-
+-Since we do not provide a host version of docbook-xsl we need to disable
+-the build of manpages and documentation.
+-
+-Patch was downloaded from
+-https://github.com/LibreELEC/LibreELEC.tv/blob/master/packages/network/samba/patches/samba-950-no-man.patch
+-
+-[Bernd: rebased for samba-4.8.5]
+-Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+----
+- buildtools/wafsamba/wafsamba.py | 10 ++++-----
+- docs-xml/wscript_build          | 40 ++++++++++++++++-----------------
+- source4/scripting/wscript_build |  4 ++--
+- 3 files changed, 27 insertions(+), 27 deletions(-)
+-
+-diff --git a/buildtools/wafsamba/wafsamba.py b/buildtools/wafsamba/wafsamba.py
+-index 4bb19d070e2..a255d841111 100644
+---- a/buildtools/wafsamba/wafsamba.py
+-+++ b/buildtools/wafsamba/wafsamba.py
+-@@ -335,9 +335,9 @@ def SAMBA_LIBRARY(bld, libname, source,
+-         else:
+-             bld.PKG_CONFIG_FILES(pc_files, vnum=vnum)
+- 
+--    if (manpages is not None and 'XSLTPROC_MANPAGES' in bld.env and
+--        bld.env['XSLTPROC_MANPAGES']):
+--        bld.MANPAGES(manpages, install)
+-+#    if (manpages is not None and 'XSLTPROC_MANPAGES' in bld.env and
+-+#        bld.env['XSLTPROC_MANPAGES']):
+-+#        bld.MANPAGES(manpages, install)
+- 
+- 
+- Build.BuildContext.SAMBA_LIBRARY = SAMBA_LIBRARY
+-@@ -442,8 +442,8 @@ def SAMBA_BINARY(bld, binname, source,
+-         samba_ldflags  = pie_ldflags
+-         )
+- 
+--    if manpages is not None and 'XSLTPROC_MANPAGES' in bld.env and bld.env['XSLTPROC_MANPAGES']:
+--        bld.MANPAGES(manpages, install)
+-+#    if manpages is not None and 'XSLTPROC_MANPAGES' in bld.env and bld.env['XSLTPROC_MANPAGES']:
+-+#        bld.MANPAGES(manpages, install)
+- 
+- Build.BuildContext.SAMBA_BINARY = SAMBA_BINARY
+- 
+-diff --git a/docs-xml/wscript_build b/docs-xml/wscript_build
+-index ec5d28fc62a..f81c125bcd4 100644
+---- a/docs-xml/wscript_build
+-+++ b/docs-xml/wscript_build
+-@@ -148,23 +148,23 @@ bld.SAMBA_GENERATOR(parameter_all,
+-                     rule=smbdotconf_generate_parameter_list,
+-                     dep_vars=bld.dynconfig_varnames())
+- 
+--def SMBDOTCONF_MANPAGE(bld, target):
+--    ''' assemble and build smb.conf.5 manual page'''
+--    bld.SAMBAMANPAGES(target, parameter_all)
+--
+--if ('XSLTPROC_MANPAGES' in bld.env and bld.env['XSLTPROC_MANPAGES']):
+--
+--    SMBDOTCONF_MANPAGE(bld, 'manpages/smb.conf.5')
+--    bld.SAMBAMANPAGES(manpages)
+--
+--    if bld.CONFIG_SET('WITH_PAM_MODULES') and bld.CONFIG_SET('HAVE_PAM_START'):
+--        bld.SAMBAMANPAGES(pam_winbind_manpages)
+--
+--    if bld.CONFIG_SET('HAVE_KRB5_LOCATE_PLUGIN_H'):
+--        bld.SAMBAMANPAGES(krb5_locator_manpages)
+--
+--    if bld.CONFIG_SET('HAVE_KRB5_LOCALAUTH_PLUGIN_H'):
+--        bld.SAMBAMANPAGES(krb5_localauth_manpages)
+--
+--    if bld.SAMBA3_IS_ENABLED_MODULE('vfs_zfsacl'):
+--        bld.SAMBAMANPAGES('manpages/vfs_zfsacl.8')
+-+#def SMBDOTCONF_MANPAGE(bld, target):
+-+#    ''' assemble and build smb.conf.5 manual page'''
+-+#    bld.SAMBAMANPAGES(target, parameter_all)
+-+#
+-+#if ('XSLTPROC_MANPAGES' in bld.env and bld.env['XSLTPROC_MANPAGES']):
+-+#
+-+#    SMBDOTCONF_MANPAGE(bld, 'manpages/smb.conf.5')
+-+#    bld.SAMBAMANPAGES(manpages)
+-+#
+-+#    if bld.CONFIG_SET('WITH_PAM_MODULES') and bld.CONFIG_SET('HAVE_PAM_START'):
+-+#        bld.SAMBAMANPAGES(pam_winbind_manpages)
+-+#
+-+#    if bld.CONFIG_SET('HAVE_KRB5_LOCATE_PLUGIN_H'):
+-+#        bld.SAMBAMANPAGES(krb5_locator_manpages)
+-+#
+-+#    if bld.CONFIG_SET('HAVE_KRB5_LOCALAUTH_PLUGIN_H'):
+-+#        bld.SAMBAMANPAGES(krb5_localauth_manpages)
+-+#
+-+#    if bld.SAMBA3_IS_ENABLED_MODULE('vfs_zfsacl'):
+-+#        bld.SAMBAMANPAGES('manpages/vfs_zfsacl.8')
+-diff --git a/source4/scripting/wscript_build b/source4/scripting/wscript_build
+-index 2f53cce12b7..9841ae0a116 100644
+---- a/source4/scripting/wscript_build
+-+++ b/source4/scripting/wscript_build
+-@@ -12,8 +12,8 @@ if sbin_files:
+-     bld.INSTALL_FILES('${SBINDIR}',
+-                       sbin_files,
+-                       chmod=MODE_755, python_fixup=True, flat=True)
+--    if 'XSLTPROC_MANPAGES' in bld.env and bld.env['XSLTPROC_MANPAGES']:
+--        bld.MANPAGES(man_files, True)
+-+#    if 'XSLTPROC_MANPAGES' in bld.env and bld.env['XSLTPROC_MANPAGES']:
+-+#        bld.MANPAGES(man_files, True)
+- 
+- if bld.CONFIG_SET('AD_DC_BUILD_IS_ENABLED'):
+-     bld.INSTALL_FILES('${BINDIR}',
+--- 
+-2.18.0
+-
+diff --git a/package/samba4/samba4.hash b/package/samba4/samba4.hash
+index 7e82261b4e..60c724e4b8 100644
+--- a/package/samba4/samba4.hash
++++ b/package/samba4/samba4.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated after checking pgp signature
+-# https://download.samba.org/pub/samba/stable/samba-4.9.8.tar.asc
+-sha256 82ebb7c3f1847c39341dd97ff8b73f40fa83f5f794daeceb80f3c349ace3cf56  samba-4.9.8.tar.gz
++# https://download.samba.org/pub/samba/stable/samba-4.9.9.tar.asc
++sha256 af0bf46abc74c62c5a8fe7b567103684b7bf4ce086d32bcd2f6681f592bf63ca  samba-4.9.9.tar.gz
+ sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  COPYING
+diff --git a/package/samba4/samba4.mk b/package/samba4/samba4.mk
+index d2f89e2c82..063f06d728 100644
+--- a/package/samba4/samba4.mk
++++ b/package/samba4/samba4.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SAMBA4_VERSION = 4.9.8
++SAMBA4_VERSION = 4.9.9
+ SAMBA4_SITE = https://download.samba.org/pub/samba/stable
+ SAMBA4_SOURCE = samba-$(SAMBA4_VERSION).tar.gz
+ SAMBA4_INSTALL_STAGING = YES
+@@ -21,7 +21,8 @@ SAMBA4_CFLAGS = $(TARGET_CFLAGS)
+ SAMBA4_LDFLAGS = $(TARGET_LDFLAGS) $(TARGET_NLS_LIBS)
+ SAMBA4_CONF_ENV = \
+ 	CFLAGS="$(SAMBA4_CFLAGS)" \
+-	LDFLAGS="$(SAMBA4_LDFLAGS)"
++	LDFLAGS="$(SAMBA4_LDFLAGS)" \
++	XSLTPROC=false
+ 
+ ifeq ($(BR2_PACKAGE_LIBTIRPC),y)
+ SAMBA4_CFLAGS += `$(PKG_CONFIG_HOST_BINARY) --cflags libtirpc`
+diff --git a/package/taglib/0001-fix-taglib-config-file-for-cross-compiling-906.patch b/package/taglib/0001-fix-taglib-config-file-for-cross-compiling-906.patch
+new file mode 100644
+index 0000000000..2c6ebd74db
+--- /dev/null
++++ b/package/taglib/0001-fix-taglib-config-file-for-cross-compiling-906.patch
+@@ -0,0 +1,66 @@
++From 7470f92a67375d00e53b3785a88fa7b26ad6f1da Mon Sep 17 00:00:00 2001
++From: =?UTF-8?q?J=C3=B6rg=20Krause?= <joerg.krause@embedded.rocks>
++Date: Fri, 17 May 2019 13:13:35 +0200
++Subject: [PATCH] fix taglib-config file for cross compiling (#906)
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++The current taglib-config program does not work for cross-compiling as it only
++returns the paths to the host, which breaks building programs which uses
++`taglib-config` to link against taglib.
++
++Fix this by passing sysroot to the `prefix` and `exec_prefix` fields.
++
++Backported from: 7470f92a67375d00e53b3785a88fa7b26ad6f1da
++
++Signed-off-by: Jörg Krause <joerg.krause@embedded.rocks>
++---
++ CMakeLists.txt      |  2 +-
++ taglib-config.cmake | 10 +++++-----
++ 2 files changed, 6 insertions(+), 6 deletions(-)
++
++diff --git a/CMakeLists.txt b/CMakeLists.txt
++index 2de06324..1a0302c4 100644
++--- a/CMakeLists.txt
+++++ b/CMakeLists.txt
++@@ -105,7 +105,7 @@ math(EXPR TAGLIB_SOVERSION_PATCH "${TAGLIB_SOVERSION_REVISION}")
++ include(ConfigureChecks.cmake)
++ 
++ if(NOT WIN32)
++-  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/taglib-config.cmake" "${CMAKE_CURRENT_BINARY_DIR}/taglib-config")
+++  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/taglib-config.cmake" "${CMAKE_CURRENT_BINARY_DIR}/taglib-config" @ONLY)
++   install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/taglib-config" DESTINATION "${BIN_INSTALL_DIR}")
++ endif()
++ 
++diff --git a/taglib-config.cmake b/taglib-config.cmake
++index 2bc2811a..96ef6883 100644
++--- a/taglib-config.cmake
+++++ b/taglib-config.cmake
++@@ -14,10 +14,10 @@ EOH
++ 	exit 1;
++ }
++ 
++-prefix=${CMAKE_INSTALL_PREFIX}
++-exec_prefix=${CMAKE_INSTALL_PREFIX}
++-libdir=${LIB_INSTALL_DIR}
++-includedir=${INCLUDE_INSTALL_DIR}
+++prefix=@CMAKE_SYSROOT@@CMAKE_INSTALL_PREFIX@
+++exec_prefix=@CMAKE_SYSROOT@@CMAKE_INSTALL_PREFIX@
+++libdir=${exec_prefix}/lib
+++includedir=${prefix}/include
++ 
++ flags=""
++ 
++@@ -35,7 +35,7 @@ do
++ 	  flags="$flags -I$includedir/taglib"
++ 	  ;;
++     --version)
++-	  echo ${TAGLIB_LIB_VERSION_STRING}
+++	  echo @TAGLIB_LIB_VERSION_STRING@
++ 	  ;;
++     --prefix)
++ 	  echo $prefix
++-- 
++2.22.0
++
+diff --git a/package/tvheadend/0002-Makefile-fix-pie-linking-according-to-disable-pie.patch b/package/tvheadend/0002-Makefile-fix-pie-linking-according-to-disable-pie.patch
+new file mode 100644
+index 0000000000..385c94b36b
+--- /dev/null
++++ b/package/tvheadend/0002-Makefile-fix-pie-linking-according-to-disable-pie.patch
+@@ -0,0 +1,34 @@
++From 5cbf08213222cb507d365e6cbda87277f0b8f31e Mon Sep 17 00:00:00 2001
++From: Giulio Benetti <giulio.benetti@micronovasrl.com>
++Date: Fri, 14 Jun 2019 14:25:08 +0200
++Subject: [PATCH] Makefile: fix -pie linking according to --disable-pie
++
++Only compilation follows './configure --disable-pie', linking instead
++doesn't, because '-pie' flag is passed to LDFLAGS uncoditionally.
++
++So add '-pie' flag only if CONFIG_PIE=yes.
++
++Signed-off-by: Giulio Benetti <giulio.benetti@micronovasrl.com>
++---
++ Makefile | 5 ++++-
++ 1 file changed, 4 insertions(+), 1 deletion(-)
++
++diff --git a/Makefile b/Makefile
++index 41783b546..4e5a947a3 100644
++--- a/Makefile
+++++ b/Makefile
++@@ -62,7 +62,10 @@ LDFLAGS += -ldl -lm
++ else
++ LDFLAGS += -ldl -lpthread -lm
++ endif
++-LDFLAGS += -pie -Wl,-z,now
+++ifeq ($(CONFIG_PIE),yes)
+++LDFLAGS += -pie
+++endif
+++LDFLAGS += -Wl,-z,now
++ ifeq ($(CONFIG_LIBICONV),yes)
++ LDFLAGS += -liconv
++ endif
++-- 
++2.17.1
++
+diff --git a/package/tvheadend/tvheadend.mk b/package/tvheadend/tvheadend.mk
+index e92c111082..b192a33d4a 100644
+--- a/package/tvheadend/tvheadend.mk
++++ b/package/tvheadend/tvheadend.mk
+@@ -94,6 +94,10 @@ else
+ TVHEADEND_CONF_OPTS += --disable-pcre
+ endif
+ 
++ifeq ($(BR2_TOOLCHAIN_SUPPORTS_PIE),)
++TVHEADEND_CONF_OPTS += --disable-pie
++endif
++
+ TVHEADEND_DEPENDENCIES += dtv-scan-tables
+ 
+ # The tvheadend build system expects the transponder data to be present inside
+diff --git a/package/vlc/vlc.hash b/package/vlc/vlc.hash
+index e2c5fecfad..9cda094337 100644
+--- a/package/vlc/vlc.hash
++++ b/package/vlc/vlc.hash
+@@ -1,9 +1,9 @@
+-# From http://download.videolan.org/pub/videolan/vlc/3.0.6/vlc-3.0.6.tar.xz.sha256
+-sha256 18c16d4be0f34861d0aa51fbd274fb87f0cab3b7119757ead93f3db3a1f27ed3 vlc-3.0.6.tar.xz
+-# From http://download.videolan.org/pub/videolan/vlc/3.0.6/vlc-3.0.6.tar.xz.sha1
+-sha1 b35168c1811b07844d861311bd0f2194f4bb82ac vlc-3.0.6.tar.xz
+-# From http://download.videolan.org/pub/videolan/vlc/3.0.6/vlc-3.0.6.tar.xz.md5
+-md5 4ff71d262e070fd19f86a1c3542c7b4e vlc-3.0.6.tar.xz
++# From http://download.videolan.org/pub/videolan/vlc/3.0.7/vlc-3.0.7.tar.xz.sha256
++sha256 5cb5fe140f0f4bae3e0a613fb5f516270f62e2dbde6de27fa78ea9f43cd73916 vlc-3.0.7.tar.xz
++# From http://download.videolan.org/pub/videolan/vlc/3.0.7/vlc-3.0.7.tar.xz.sha1
++sha1 8c9f96a11199e813ec718c3d1885501a557e336f vlc-3.0.7.tar.xz
++# From http://download.videolan.org/pub/videolan/vlc/3.0.7/vlc-3.0.7.tar.xz.md5
++md5 230932ec40185856af28f82ec2e38b8a vlc-3.0.7.tar.xz
+ # Locally computed
+ sha256 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  COPYING
+ sha256 dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551  COPYING.LIB
+diff --git a/package/vlc/vlc.mk b/package/vlc/vlc.mk
+index 8dbaf86a08..1f58823ad3 100644
+--- a/package/vlc/vlc.mk
++++ b/package/vlc/vlc.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-VLC_VERSION = 3.0.6
++VLC_VERSION = 3.0.7
+ VLC_SITE = https://get.videolan.org/vlc/$(VLC_VERSION)
+ VLC_SOURCE = vlc-$(VLC_VERSION).tar.xz
+ VLC_LICENSE = GPL-2.0+, LGPL-2.1+
+diff --git a/package/webkitgtk/webkitgtk.hash b/package/webkitgtk/webkitgtk.hash
+index 40bb6f7b63..f1784da2ad 100644
+--- a/package/webkitgtk/webkitgtk.hash
++++ b/package/webkitgtk/webkitgtk.hash
+@@ -1,7 +1,7 @@
+-# From https://webkitgtk.org/releases/webkitgtk-2.24.2.tar.xz.sums
+-md5 83012998e1b9f71abb37d8baf6f9c7e6 webkitgtk-2.24.2.tar.xz
+-sha1 632a65d93beb996bebdf7592ef9591f3993dea91 webkitgtk-2.24.2.tar.xz
+-sha256 019cb1f0d05bf6148b72c7a85734bcd006388a1c14132843ef9a1b2cb7b4321c webkitgtk-2.24.2.tar.xz
++# From https://webkitgtk.org/releases/webkitgtk-2.24.3.tar.xz.sums
++md5 e2a5bbd09a217eba096a2d1562143e35 webkitgtk-2.24.3.tar.xz
++sha1 26a33fd0af8223c130427cd59aaf5ccaba584114 webkitgtk-2.24.3.tar.xz
++sha256 940d746d7e82c357222feb5b3f44c4b201e81df7d81ddca5ca2bf3ae0acf6c51 webkitgtk-2.24.3.tar.xz
+ 
+ # Hashes for license files:
+ sha256 0b5d3a7cc325942567373b0ecd757d07c132e0ebd7c97bfc63f7e1a76094edb4 Source/WebCore/LICENSE-APPLE
+diff --git a/package/webkitgtk/webkitgtk.mk b/package/webkitgtk/webkitgtk.mk
+index e81ba047e4..f8cd728351 100644
+--- a/package/webkitgtk/webkitgtk.mk
++++ b/package/webkitgtk/webkitgtk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WEBKITGTK_VERSION = 2.24.2
++WEBKITGTK_VERSION = 2.24.3
+ WEBKITGTK_SITE = https://www.webkitgtk.org/releases
+ WEBKITGTK_SOURCE = webkitgtk-$(WEBKITGTK_VERSION).tar.xz
+ WEBKITGTK_INSTALL_STAGING = YES
+diff --git a/package/x11r7/xserver_xorg-server/1.20.4/0001-modesettings-needs-dri2.patch b/package/x11r7/xserver_xorg-server/1.20.5/0001-modesettings-needs-dri2.patch
+similarity index 100%
+rename from package/x11r7/xserver_xorg-server/1.20.4/0001-modesettings-needs-dri2.patch
+rename to package/x11r7/xserver_xorg-server/1.20.5/0001-modesettings-needs-dri2.patch
+diff --git a/package/x11r7/xserver_xorg-server/1.20.4/0002-configure.ac-Fix-check-for-CLOCK_MONOTONIC.patch b/package/x11r7/xserver_xorg-server/1.20.5/0002-configure.ac-Fix-check-for-CLOCK_MONOTONIC.patch
+similarity index 100%
+rename from package/x11r7/xserver_xorg-server/1.20.4/0002-configure.ac-Fix-check-for-CLOCK_MONOTONIC.patch
+rename to package/x11r7/xserver_xorg-server/1.20.5/0002-configure.ac-Fix-check-for-CLOCK_MONOTONIC.patch
+diff --git a/package/x11r7/xserver_xorg-server/1.20.4/0003-Remove-check-for-useSIGIO-option.patch b/package/x11r7/xserver_xorg-server/1.20.5/0003-Remove-check-for-useSIGIO-option.patch
+similarity index 100%
+rename from package/x11r7/xserver_xorg-server/1.20.4/0003-Remove-check-for-useSIGIO-option.patch
+rename to package/x11r7/xserver_xorg-server/1.20.5/0003-Remove-check-for-useSIGIO-option.patch
+diff --git a/package/x11r7/xserver_xorg-server/1.20.4/0004-include-misc.h-fix-uClibc-build.patch b/package/x11r7/xserver_xorg-server/1.20.5/0004-include-misc.h-fix-uClibc-build.patch
+similarity index 100%
+rename from package/x11r7/xserver_xorg-server/1.20.4/0004-include-misc.h-fix-uClibc-build.patch
+rename to package/x11r7/xserver_xorg-server/1.20.5/0004-include-misc.h-fix-uClibc-build.patch
+diff --git a/package/x11r7/xserver_xorg-server/1.20.4/0005-hw-xwayland-Makefile.am-fix-build-without-glx.patch b/package/x11r7/xserver_xorg-server/1.20.5/0005-hw-xwayland-Makefile.am-fix-build-without-glx.patch
+similarity index 100%
+rename from package/x11r7/xserver_xorg-server/1.20.4/0005-hw-xwayland-Makefile.am-fix-build-without-glx.patch
+rename to package/x11r7/xserver_xorg-server/1.20.5/0005-hw-xwayland-Makefile.am-fix-build-without-glx.patch
+diff --git a/package/x11r7/xserver_xorg-server/Config.in b/package/x11r7/xserver_xorg-server/Config.in
+index ed238d570b..ec4ba91502 100644
+--- a/package/x11r7/xserver_xorg-server/Config.in
++++ b/package/x11r7/xserver_xorg-server/Config.in
+@@ -61,7 +61,7 @@ choice
+ 	bool "X Window System server version"
+ 
+ config BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_20
+-	bool "1.20.4"
++	bool "1.20.5"
+ 	select BR2_PACKAGE_XSERVER_XORG_SERVER_VIDEODRV_ABI_24
+ 	select BR2_PACKAGE_XLIB_LIBXFONT2
+ 
+@@ -79,7 +79,7 @@ endchoice
+ 
+ config BR2_PACKAGE_XSERVER_XORG_SERVER_VERSION
+ 	string
+-	default "1.20.4" if BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_20
++	default "1.20.5" if BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_20
+ 	default "1.17.4" if BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_17
+ 	default "1.14.7" if BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_14
+ 
+diff --git a/package/x11r7/xserver_xorg-server/xserver_xorg-server.hash b/package/x11r7/xserver_xorg-server/xserver_xorg-server.hash
+index 5c1beb1379..f79dc0c4eb 100644
+--- a/package/x11r7/xserver_xorg-server/xserver_xorg-server.hash
++++ b/package/x11r7/xserver_xorg-server/xserver_xorg-server.hash
+@@ -3,8 +3,8 @@ sha1   7a95765e56b124758fcd7b609589e65b8870880b                                x
+ sha256 fcf66fa6ad86227613d2d3e8ae13ded297e2a1e947e9060a083eaf80d323451f        xorg-server-1.14.7.tar.bz2
+ # From https://lists.x.org/archives/xorg-announce/2015-October/002650.html
+ sha256 0c4b45c116a812a996eb432d8508cf26c2ec8c3916ff2a50781796882f8d6457        xorg-server-1.17.4.tar.bz2
+-# From https://lists.x.org/archives/xorg-announce/2019-February/002957.html
+-md5 c4841cc24b79420205d082fe82e0a650  xorg-server-1.20.4.tar.bz2
+-sha1 1a79da92122124cb782a4eebfd83fd33d5c0d7d4  xorg-server-1.20.4.tar.bz2
+-sha256 fe0fd493ebe93bfc56bede382fa204458ff5f636ea54d413a5d1bd58e19166ee  xorg-server-1.20.4.tar.bz2
+-sha512 f1c92ef6d7613e0636973d3395b48dfdad42230847ab1c8b1cea84647a968f649f9aba97bdb01c10ee8351cbe954d4e6ca4a0fc84bb8fa662d49c8ba2aee00a8  xorg-server-1.20.4.tar.bz2
++# From https://lists.x.org/archives/xorg-announce/2019-May/002993.html
++md5 c9fc7e21e11286dbedd22c00df652130  xorg-server-1.20.5.tar.bz2
++sha1 fea6fd34c7f48b3c69fbecd8fb294eaa1498e69c  xorg-server-1.20.5.tar.bz2
++sha256 a81d8243f37e75a03d4f8c55f96d0bc25802be6ec45c3bfa5cb614c6d01bac9d  xorg-server-1.20.5.tar.bz2
++sha512 625f0626b122cf95600abe382c3217348999357a0e2d2443092f1b67cff1c98d7ef09303884ceaeac181e0555dc56b0d4d44bda45cc464dac2d9a50c5b32d631  xorg-server-1.20.5.tar.bz2
+diff --git a/package/znc/znc.hash b/package/znc/znc.hash
+index b685a7bf7b..216d105f23 100644
+--- a/package/znc/znc.hash
++++ b/package/znc/znc.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256 1e4cc31837a1e8e6cc310873659a167cec16a3fd4281cbc3bf364e42352c113d  znc-1.7.3.tar.gz
++sha256 b1a32921a8e6d79ee6c5900c8d07293026966db7c05aaac48984231befc49b71  znc-1.7.4.tar.gz
+ sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30  LICENSE
+diff --git a/package/znc/znc.mk b/package/znc/znc.mk
+index fdc147a8a1..24795886ae 100644
+--- a/package/znc/znc.mk
++++ b/package/znc/znc.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-ZNC_VERSION = 1.7.3
++ZNC_VERSION = 1.7.4
+ ZNC_SITE = http://znc.in/releases/archive
+ ZNC_LICENSE = Apache-2.0
+ ZNC_LICENSE_FILES = LICENSE
+diff --git a/support/download/git b/support/download/git
+index 17ca04eb98..075f665bbf 100755
+--- a/support/download/git
++++ b/support/download/git
+@@ -130,7 +130,7 @@ fi
+ # scratch won't help, so we don't want to trash the repository for a
+ # missing commit. We just exit without going through the ERR trap.
+ if ! _git rev-parse --quiet --verify "'${cset}^{commit}'" >/dev/null 2>&1; then
+-    printf "Commit '%s' does not exist in this repository\n." "${cset}"
++    printf "Commit '%s' does not exist in this repository.\n" "${cset}"
+     exit 1
+ fi
+ 
+diff --git a/support/testing/infra/emulator.py b/support/testing/infra/emulator.py
+index 802e89d4b4..3d3e1750c6 100644
+--- a/support/testing/infra/emulator.py
++++ b/support/testing/infra/emulator.py
+@@ -38,7 +38,8 @@ class Emulator(object):
+ 
+         qemu_cmd = ["qemu-system-{}".format(qemu_arch),
+                     "-serial", "stdio",
+-                    "-display", "none"]
++                    "-display", "none",
++                    "-m", "256"]
+ 
+         if options:
+             qemu_cmd += options
+diff --git a/utils/check-package b/utils/check-package
+index ce1fe98d67..f09aaeea03 100755
+--- a/utils/check-package
++++ b/utils/check-package
+@@ -33,6 +33,7 @@ def parse_args():
+                         default="http://nightly.buildroot.org/",
+                         help="default: %(default)s")
+     parser.add_argument("--verbose", "-v", action="count", default=0)
++    parser.add_argument("--quiet", "-q", action="count", default=0)
+ 
+     # Now the debug options in the order they are processed.
+     parser.add_argument("--include-only", dest="include_list", action="append",
+@@ -177,8 +178,10 @@ def __main__():
+     # (e.g. counted by 'wc'), so for stats use stderr. Wait all warnings are
+     # printed, for the case there are many of them, before printing stats.
+     sys.stdout.flush()
+-    print("{} lines processed".format(total_lines), file=sys.stderr)
+-    print("{} warnings generated".format(total_warnings), file=sys.stderr)
++
++    if not flags.quiet:
++        print("{} lines processed".format(total_lines), file=sys.stderr)
++        print("{} warnings generated".format(total_warnings), file=sys.stderr)
+ 
+     if total_warnings > 0:
+         sys.exit(1)
+diff --git a/utils/test-pkg b/utils/test-pkg
+index cce4679b04..f3b34d5d0d 100755
+--- a/utils/test-pkg
++++ b/utils/test-pkg
+@@ -12,18 +12,19 @@ do_clean() {
+ 
+ main() {
+     local o O opts
+-    local cfg dir pkg random toolchains_dir toolchain all number mode
+-    local ret nb nb_skip nb_fail nb_legal nb_tc build_dir
++    local cfg dir pkg random toolchains_csv toolchain all number mode
++    local ret nb nb_skip nb_fail nb_legal nb_tc build_dir keep
+     local -a toolchains
+     local pkg_br_name
+ 
+-    o='hac:d:n:p:r:t:'
+-    O='help,config-snippet:build-dir:package:,random:,toolchains-dir:'
++    o='hakc:d:n:p:r:t:'
++    O='help,all,keep,config-snippet:,build-dir:,number:,package:,random:,toolchains-csv:'
+     opts="$(getopt -n "${my_name}" -o "${o}" -l "${O}" -- "${@}")"
+     eval set -- "${opts}"
+ 
+     random=0
+     all=0
++    keep=0
+     number=0
+     mode=0
+     toolchains_csv="${TOOLCHAINS_CSV}"
+@@ -35,6 +36,9 @@ main() {
+         (-a|--all)
+             all=1; shift 1
+             ;;
++        (-k|--keep)
++            keep=1; shift 1
++            ;;
+         (-c|--config-snippet)
+             cfg="${2}"; shift 2
+             ;;
+@@ -176,6 +180,12 @@ build_one() {
+     if ! make O="${dir}" legal-info >> "${dir}/logfile" 2>&1; then
+         return 3
+     fi
++
++    # If we get here, the build was successful. Clean up the build/host
++    # directories to save disk space, unless 'keep' was set.
++    if [ ${keep} -ne 1 ]; then
++        make O="${dir}" clean >> "${dir}/logfile" 2>&1
++    fi
+ }
+ 
+ help() {
+@@ -236,6 +246,11 @@ Options:
+         try. If not specified, the toolchains in ${TOOLCHAINS_CSV} will be
+         used.
+ 
++    -k, --keep
++        Keep the build directories even if the build succeeds.
++        Note: the logfile and configuration is always retained, even without
++        this option.
++
+ Example:
+ 
+     Testing libcec would require a config snippet that contains:
