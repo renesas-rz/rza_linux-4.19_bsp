@@ -1,0 +1,23 @@
+From b1e286a5979116fc0d433894061ea6fbf02f244f Mon Sep 17 00:00:00 2001
+From: Dat Dinh <dat.dinh.ym@renesas.com>
+Date: Tue, 27 Aug 2019 09:56:05 +0700
+Subject: [PATCH 1/1] board-rza2mvb: pin setup for ADC
+
+
+diff --git a/arch/arm/mach-shmobile/board-rza2mevb.c b/arch/arm/mach-shmobile/board-rza2mevb.c
+index 81b6113..d7b4886 100644
+--- a/arch/arm/mach-shmobile/board-rza2mevb.c
++++ b/arch/arm/mach-shmobile/board-rza2mevb.c
+@@ -108,6 +108,9 @@ static int __init rza2mevb_init_early(void)
+ 	pfc_set_pin_function(P5, 7, 2);	/* IRQ3 */
+ #endif
+ 
++	/* Pin setup for sample ADC app */
++	pfc_set_pin_function(P5, 6, 1);	/* ADC */
++
+ 	return 0;
+ }
+ /* HINT: When you declare a function with early_initcall, that function
+-- 
+2.7.4
+
