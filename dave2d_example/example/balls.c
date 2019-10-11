@@ -16,7 +16,7 @@
 #include "bg_800x480.c"
 
 #define D2_FORMAT d2_mode_rgb565
-#define SUBPXL	16	/* 16 subpixels per pixel */
+#define SUBPXL	16	/* 16 sub-pixels per pixel */
 
 #define RUN_TIME 10 /* runs for 10 seconds, then exists */
 
@@ -454,7 +454,7 @@ int main(void)
 		d2_startframe(d2_handle);
 
 		/* Define address and memory organization of the next framebuffer */
-		/* We select the current live becaues we will not start painting until it get swapped out */
+		/* We select the current live because we will not start painting until it get swapped out */
 		d2_framebuffer( d2_handle, fb_phys_addr[live_fb], lcd_width, lcd_width, lcd_height, D2_FORMAT );
 
 #if 0
@@ -478,7 +478,7 @@ int main(void)
 			d2_rendercircle( d2_handle, balls[i].x, balls[i].y, balls[i].z, 0 );
 		}
 
-		/* End the sequnce of command */
+		/* End the sequence of command */
 		/* Also waits for HW to finish rendering the other command buffer that
 		 * d2_startframe was started by */
 		d2_endframe(d2_handle);
@@ -494,7 +494,7 @@ int main(void)
 		var.yoffset = lcd_height * live_fb;
 		ioctl(fb_fd, FBIOPAN_DISPLAY, &var);
 
-		/* FBIOPAN_DISPLAY returns immedialy, so we need to wait for the next
+		/* FBIOPAN_DISPLAY returns immediately, so we need to wait for the next
 		 * VSYNC (next screen becomes visible) before we continue. */
 		ioctl(fb_fd, FBIO_WAITFORVSYNC, NULL);
 
