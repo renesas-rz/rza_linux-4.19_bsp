@@ -1,0 +1,234 @@
+<HTML>
+<HEAD>
+<TITLE> RZ/A Linux-4.19 BSP </TITLE>
+</HEAD>
+<BODY>
+<H1> RZ/A Linux-4.19 BSP</H1>
+<BR>
+This BSP is for RZ/A1 and RZ/A2.
+<BR>
+<BR>
+If this is the first time using the BSP, please follow the below sections in order.
+<BR>
+<H2>Table of Contents</H2>
+<LI> <A href="#S1"> Modifying the RSK board</A>
+<LI> <A href="#S2"> Building</A>
+<LI> <A href="#S3"> How to set up your serial port interface between the board and PC</A>
+<LI> <A href="#S4"> How to program in a MAC address into your board (RZ/A1H RSK only)</A>
+<LI> <A href="#S5"> Tracking Upstream Changes</A>
+<LI> <A href="#S6"> Installing J-Link Software for Linux</A>
+
+
+<HR>
+
+<!---------------------------------------------------------------------------->
+<A NAME="S1">
+<H2> Modifying the boards </H2>
+<P>
+Instructions for any hardware modification can be found on the follwing page.
+<BR>
+<BR>
+<a href=https://elinux.org/RZ-A>https://elinux.org/RZ-A</a>
+</P>
+
+<!---------------------------------------------------------------------------->
+<A NAME="S2">
+<H2> Building</H2>
+<P>
+To build this BSP, please open a terminal window in Linux and change into the base
+directory of this BSP. From there, type:
+<PRE>
+	$ ./build.sh
+</PRE>
+
+This will show you your options on what you can build.
+For best results, run each build stage one at a time in the order they
+appeared in the help message.
+<BR><BR>
+For building the Linux kernel, you can choose to build a traditional kernel that
+will execute from RAM (uImage) or an XIP kernel that will execute directly from
+Flash (xipImage). Since this is an ARM architecture, the "Device Tree Blobs"
+will also be built ('dtbs' is added to the end of command line) and also programmed
+into your boards.
+<BR><BR>
+You may continue to use the build.sh script for individual component development.
+For example, to add/remove kernel driver support, you can run:
+<PRE>
+	$ ./build.sh kernel menuconfig
+</PRE>
+
+Or to add more software packages to your root file system:
+<PRE>
+	$ ./build.sh buildroot menuconfig
+</PRE>
+<BR><BR>
+To build the minimum RAM version of the XIP kernel, run the following:
+<PRE>
+	$ ./build.sh kernel rskrza1_xip_min_defconfig
+	$ ./build.sh kernel xipImage
+	$ ./build.sh kernel dtbs
+</PRE>
+<BR><BR>
+The individual binaries from the build.sh process can be found at these locations:
+<PRE>
+	rza_linux-4.19_bsp/output/u-boot-2017.02/u-boot.bin
+	rza_linux-4.19_bsp/output/linux-4.19/arch/arm/boot/uImage
+	rza_linux-4.19_bsp/output/linux-4.19/arch/arm/boot/xipImage
+	rza_linux-4.19_bsp/output/linux-4.19/arch/arm/boot/dts/r7s72100-rskrza1.dtb
+	rza_linux-4.19_bsp/output/buildroot-2019.02/output/images/rootfs.squashfs
+	rza_linux-4.19_bsp/output/buildroot-2019.02/output/images/rootfs.axfs
+</PRE>
+<BR><BR>
+NOTE: If you've already built a 'uImage', and now you want to build a 'xipImage', you must
+first run the following command:
+<PRE>
+	$ ./build.sh kernel distclean
+</PRE>
+<BR><BR>
+</P>
+
+<!---------------------------------------------------------------------------->
+<A NAME="S3">
+<H2> How to set up your serial port interface between the board and PC</H2>
+<P>
+Serial Port Setup
+<BR><BR>
+You will need a serial port connection between the board and the PC.
+The RSK board has an USB-to-Serial device already mounted, so you only need
+to connect the USB cable that comes with the kit to between connector CN18 and
+your PC.
+<PRE>
+	baudrate    :115200 bps
+	data        :     8 bit
+	parity      :  none
+	stop        :     1 bit
+	flow control:  none
+</PRE>
+<BR><BR>
+<H3>Linux:</H3>
+Linux will already have native support for this USB-to-Serial converter.
+It should show up as /dev/ttyACM0. Therefore, you can use it like:
+<PRE>
+	$ minicom -D /dev/ttyACM0 -b 115200
+
+	NOTE: minicom is not pre-installed, so you have to do a 'apt-get install minicom'
+	NOTE: To close minicom, press Ctrl+A, then 'q'
+</PRE>
+
+<H3>Windows:</H3>
+While windows natively supports a CDC class driver, you will need to point it
+to a .INF file. That INF file comes on the RZ/A1 RSK CD.
+You can also find it in the BSP in the "Extra" directory.
+</P>
+
+<!---------------------------------------------------------------------------->
+<A NAME="S4">
+<H2> How to program in a MAC address into your board (RZ/A1H RSK only).</H2>
+<P>
+Setup MAC Address
+<BR><BR>
+This is done in u-boot.
+<BR><BR>
+The MAC Address is stored in the first 8 bytes of eeprom.
+First two bytes are 0, and following 6 bytes as MAC Address.
+<BR><BR>
+An example of eeprom writing procedure is as follows:
+<BR><BR>
+(1) Write new address
+<PRE>
+	Ex. MAC Address = 66:55:44:33:22:11
+	  * Use MAC address printed on the label on the board.
+
+	# First create the address in RAM
+	=> mm.b 0x20000000
+		#First 2byte should be set 0.
+		    20000000: XX ? 0
+		    20000001: XX ? 0
+		#Enter the MAC Address and then enter "." to exit.
+		    20000002: XX ? 66
+		    20000003: XX ? 55
+		    20000004: XX ? 44
+		    20000005: XX ? 33
+		    20000006: XX ? 22
+		    20000007: XX ? 11
+		    20000008: XX ? .
+	# Display the address you just created in RAM
+	=> md.b 0x20000000 8
+		ex)20000000: 00 00 66 55 44 33 22 11
+
+	# Write the address from RAM into EEPROM
+	=> eeprom write 0x20000000 0 8
+		ex)EEPROM @0x50 write: addr 20000000  off 0000  count 8 ... done
+</PRE>
+(2) Check current address
+<PRE>
+        # Read from EERPOM into RAM
+	=> eeprom read 0x20000000 0 8
+		ex)EEPROM @0x50 read: addr 08000000  off 0000  count 8 ... done
+
+        # Display the RAM data
+	=> md.b 0x20000000 8
+		ex)20000000: 00 00 66 55 44 33 22 11
+</PRE>
+</P>
+
+<!---------------------------------------------------------------------------->
+<A NAME="S5">
+<H2> Tracking Upstream Changes</H2>
+<P>
+In between BSP releases, new features and bug fixes are applied and checked into
+a public github account. Enter these commands to update your BSP.
+<BR><BR>
+The 'udpate'  command will 'git pull' the latest code from the github repositories.
+Any changes you have made will be save and re-applied after the updated.
+Basically, we will do the following:
+<PRE>
+  git stash      # save current changes
+  git pull       # download latest version
+  git stash pop  # re-apply saved changes
+</PRE>
+
+<PRE>
+$ ./build.sh update b   # updates bsp build scripts
+$ ./build.sh update u   # updates uboot source
+$ ./build.sh update k   # updates kernel source
+</PRE>
+
+NOTE: Even though github has a valid SSL certificate, some have mentioned that
+git doesn't resolve it correctly. If you cannot git clone correctly, you might
+want to try adding "env GIT_SSL_NO_VERIFY=true" before git clone.
+<BR><BR>
+Example: 
+<PRE>
+$ env GIT_SSL_NO_VERIFY=true git clone https://github.com/renesas-rz/rza_linux-4.19_bsp.git
+</PRE>
+
+</P>
+
+
+<!---------------------------------------------------------------------------->
+<A NAME="S6">
+<H2> Installing J-Link Software for Linux</H2>
+<P>
+These are the instructions for installing the Segger Jlink drivers and utilities for Linux.
+<BR><BR>
+Download "Software and documentation pack for Linux" from
+<BR><BR>
+	<a href="https://www.segger.com/jlink-software.html">https://www.segger.com/jlink-software.html</a>
+<BR><BR>
+In a command window, install the downloaded file. For example:
+<PRE>
+	$ sudo dpkg -i jlink_5.0.9_i386.deb
+</PRE>
+After the install, on a command line you can type "JLink" then hit the 'tab' key on your keyboard to see all the utilities it
+installed. You should see something like this:
+<PRE>
+$ JLink
+JLinkDebugger JLinkGDBServer JLinkRTTClient JLinkSWOViewer
+JLinkExe JLinkRemoteServer JLinkSTM32
+</PRE>
+</P>
+
+</BODY>
+</HTML>
+
