@@ -34,7 +34,7 @@ Step 2. Build your application and add it to your file system.
 Step 3. Program the new file system into your board.
 
 	NOTE: This requires the Segger J-Link drivers and software to be
-	installed on your Linux machine. Please see doc/User_Guild.html for
+	installed on your Linux machine. Please see doc/User_Guide.html for
 	more information on how to install them.
 
  * Make sure you boards is powered up and J-Link is plugged in
