@@ -1,0 +1,4495 @@
+diff --git a/CHANGES b/CHANGES
+index 5d2bc0064f..3bea34bf4d 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,39 @@
++2019.02.7, Released November 10th, 2019
++
++	Important / security related fixes.
++
++	support/testing: use a kernel with HW_RANDOM_VIRTIO to work
++	around issues with lack of entrophy
++
++	Toolchain: Also copy libssp.so for external toolchains if SSP
++	is enabled to handle toolchains providing SSP support in
++	libssp rather than in the C library
++
++	Download: Also use the package download method for extra
++	downloads from the same site, so it does not get confused by
++	URLs containing '+'
++
++	Fakeroot now works correctly under Microsoft Windows 10
++	Services for Linux, which does not provide SYSV IPC support
++
++	utils/test-pkg: ensure to exit with an error upon failure
++
++	Updated/fixed packages: asterisk, azmq, cups-filters,
++	domoticz, duma, elf2flt, eudev, exfat, exfat-utils, fakeroot,
++	file, freerdp, gd, ghostscript, go, gvfs, intel-microcode,
++	kvm-unit-tests, libarchive, libnspr, libnss, libopenssl,
++	libpcap, libpciaccess, librsvg, libseccomp, libsigrok,
++	libtorrent, libunwind, linux-tools, lua-sdl2, lxc, minizip,
++	mjpegtools, mongoose, php, python, python-pysnmp-apps,
++	python3, qemu, qt5base, ruby, safeclib, samba4, sdl_mixer,
++	sox, sudo, systemd, tcpdump, unscd, util-lkinux, vtun, xvisor,
++	yaffs2utils
++
++	Issues resolved (http://bugs.uclibc.org):
++
++	#11366: [2018.08] SysV IPC not available for fakeroot on WSL
++	#12261: sudo versions prior to 1.8.28 are affected
++
+ 2019.02.6, Released October 3rd, 2019
+ 
+ 	Important / security related fixes.
+diff --git a/DEVELOPERS b/DEVELOPERS
+index c62a2cb8bf..ae2df884ea 100644
+--- a/DEVELOPERS
++++ b/DEVELOPERS
+@@ -207,7 +207,7 @@ F:	package/libuv/
+ F:	package/python*
+ F:	package/zeromq/
+ 
+-N:	Ash Charles <ash.charles@savoirfairelinux.com>
++N:	Ash Charles <ashcharles@gmail.com>
+ F:	package/pru-software-support/
+ F:	package/ti-cgt-pru/
+ 
+@@ -261,7 +261,6 @@ F:	package/alsa-utils/
+ F:	package/apache/
+ F:	package/apr/
+ F:	package/apr-util/
+-F:	package/asterisk/
+ F:	package/bcg729/
+ F:	package/bluez-tools/
+ F:	package/boinc/
+@@ -966,7 +965,6 @@ F:	board/bananapi/
+ F:	board/engicam/
+ F:	board/friendlyarm/nanopi-a64/
+ F:	board/friendlyarm/nanopi-neo2/
+-F:	board/olimex/a33_olinuxino/
+ F:	board/olimex/a64-olinuxino/
+ F:	board/orangepi/orangepi-lite2/
+ F:	board/orangepi/orangepi-one-plus
+@@ -987,7 +985,6 @@ F:	configs/engicam_imx6ul_geam_defconfig
+ F:	configs/engicam_imx6ul_isiot_defconfig
+ F:	configs/friendlyarm_nanopi_a64_defconfig
+ F:	configs/friendlyarm_nanopi_neo2_defconfig
+-F:	configs/olimex_a33_olinuxino_defconfig
+ F:	configs/olimex_a64_olinuxino_defconfig
+ F:	configs/orangepi_lite2_defconfig
+ F:	configs/orangepi_one_plus_defconfig
+@@ -1124,10 +1121,6 @@ F:	package/phidgetwebservice/
+ F:	package/rapidxml/
+ F:	package/sphinxbase/
+ 
+-N:	Jonathan Liu <net147@gmail.com>
+-F:	package/python-meld3/
+-F:	package/supervisor/
+-
+ N:	Jörg Krause <joerg.krause@embedded.rocks>
+ F:	board/lemaker/bananapro/
+ F:	configs/bananapro_defconfig
+@@ -1546,9 +1539,6 @@ F:	package/shadowsocks-libev/
+ N:	Mirza Krak <mirza.krak@northern.tech>
+ F:	package/mender/
+ 
+-N:	Morgan Delestre <m.delestre@sinters.fr>
+-F:	package/monkey/
+-
+ N:	Murat Demirten <mdemirten@yh.com.tr>
+ F:	package/jpeg-turbo/
+ F:	package/libgeotiff/
+@@ -1678,6 +1668,8 @@ F:	package/python-webob/
+ F:	package/python-websocket-client/
+ F:	package/sedutil/
+ F:	package/triggerhappy/
++F:	package/wireguard/
++F:	support/testing/tests/package/test_docker_compose.py
+ 
+ N:	Peter Seiderer <ps.report@gmx.net>
+ F:	board/raspberrypi/
+@@ -1798,7 +1790,6 @@ F:	support/testing/tests/download/
+ F:	support/testing/tests/package/*_python*.py
+ F:	support/testing/tests/package/test_atop.py
+ F:	support/testing/tests/package/test_syslog_ng.py
+-F:	support/testing/tests/utils/test_check_package.py
+ F:	utils/check-package
+ F:	utils/checkpackagelib/
+ 
+@@ -1824,6 +1815,8 @@ F:	package/vnstat/
+ N:	Romain Naour <romain.naour@gmail.com>
+ F:	package/aubio/
+ F:	package/bullet/
++F:	package/clang/
++F:	package/clinfo/
+ F:	package/efl/
+ F:	package/enlightenment/
+ F:	package/flare-engine/
+@@ -1831,9 +1824,11 @@ F:	package/flare-game/
+ F:	package/irrlicht/
+ F:	package/liblinear/
+ F:	package/lensfun/
++F:	package/libclc/
+ F:	package/libgta/
+ F:	package/libspatialindex/
+ F:	package/linux-syscall-support/
++F:	package/llvm/
+ F:	package/lugaru/
+ F:	package/mcelog/
+ F:	package/mesa3d/
+diff --git a/Makefile b/Makefile
+index 8bdf546097..43c4411e67 100644
+--- a/Makefile
++++ b/Makefile
+@@ -92,9 +92,9 @@ all:
+ .PHONY: all
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2019.02.6
++export BR2_VERSION := 2019.02.7
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1570115000
++BR2_VERSION_EPOCH = 1573422000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+diff --git a/docs/manual/adding-packages-cargo.txt b/docs/manual/adding-packages-cargo.txt
+index b7fc09acfe..b6029e1eed 100644
+--- a/docs/manual/adding-packages-cargo.txt
++++ b/docs/manual/adding-packages-cargo.txt
+@@ -17,7 +17,7 @@ The +Config.in+ file of Cargo-based package 'foo' should contain:
+ ---------------------------
+ 01: config BR2_PACKAGE_FOO
+ 02: 	bool "foo"
+-03: 	depends on BR2_PACKAGE_HOST_RUSTC_ARCH_SUPPORTS
++03: 	depends on BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS
+ 04: 	select BR2_PACKAGE_HOST_CARGO
+ 05: 	help
+ 06: 	  This is a comment that explains what foo is.
+diff --git a/docs/manual/configure.txt b/docs/manual/configure.txt
+index 008813c9b4..c9eef567f4 100644
+--- a/docs/manual/configure.txt
++++ b/docs/manual/configure.txt
+@@ -206,9 +206,9 @@ Buildroot or crosstool-NG.
+ 
+ If you want to generate a custom toolchain for your project, that can
+ be used as an external toolchain in Buildroot, our recommendation is
+-definitely to build it with http://crosstool-ng.org[crosstool-NG]. We
+-recommend to build the toolchain separately from Buildroot, and then
+-_import_ it in Buildroot using the external toolchain backend.
++to build it either with Buildroot itself (see
++xref:build-toolchain-with-buildroot[]) or with
++http://crosstool-ng.org[crosstool-NG].
+ 
+ Advantages of this backend:
+ 
+@@ -223,7 +223,53 @@ Drawbacks of this backend:
+ 
+ * If your pre-built external toolchain has a bug, may be hard to get a
+   fix from the toolchain vendor, unless you build your external
+-  toolchain by yourself using Crosstool-NG.
++  toolchain by yourself using Buildroot or Crosstool-NG.
++
++[[build-toolchain-with-buildroot]]
++==== Build an external toolchain with Buildroot
++
++The Buildroot internal toolchain option can be used to create an
++external toolchain. Here are a series of steps to build an internal
++toolchain and package it up for reuse by Buildroot itself (or other
++projects).
++
++Create a new Buildroot configuration, with the following details:
++
++* Select the appropriate *Target options* for your target CPU
++  architecture
++
++* In the *Toolchain* menu, keep the default of *Buildroot toolchain*
++  for *Toolchain type*, and configure your toolchain as desired
++
++* In the *System configuration* menu, select *None* as the *Init
++  system* and *none* as */bin/sh*
++
++* In the *Target packages* menu, disable *BusyBox*
++
++* In the *Filesystem images* menu, disable *tar the root filesystem*
++
++Then, we can trigger the build, and also ask Buildroot to generate a
++SDK. This will conveniently generate for us a tarball which contains
++our toolchain:
++
++-----
++make sdk
++-----
++
++This produces the SDK tarball in +$(O)/images+, with a name similar to
+++arm-buildroot-linux-uclibcgnueabi_sdk-buildroot.tar.gz+. Save this
++tarball, as it is now the toolchain that you can re-use as an external
++toolchain in other Buildroot projects.
++
++In those other Buildroot projects, in the *Toolchain* menu:
++
++* Set *Toolchain type* to *External toolchain*
++
++* Set *Toolchain* to *Custom toolchain*
++
++* Set *Toolchain origin* to *Toolchain to be downloaded and installed*
++
++* Set *Toolchain URL* to +file:///path/to/your/sdk/tarball.tar.gz+
+ 
+ ===== External toolchain wrapper
+ 
+diff --git a/docs/manual/rebuilding-packages.txt b/docs/manual/rebuilding-packages.txt
+index 6faa67adcb..8f4d40d4d6 100644
+--- a/docs/manual/rebuilding-packages.txt
++++ b/docs/manual/rebuilding-packages.txt
+@@ -99,16 +99,20 @@ re-configure, re-compile and re-install this package from scratch. You
+ can ask buildroot to do this with the +make <package>-dirclean+ command.
+ 
+ On the other hand, if you only want to restart the build process of a
+-package from its compilation step, you can run +make
+-<package>-rebuild+, followed by +make+ or +make <package>+. It will
+-restart the compilation and installation of the package, but not from
+-scratch: it basically re-executes +make+ and +make install+
+-inside the package, so it will only rebuild files that changed.
+-
+-If you want to restart the build process of a package from its
+-configuration step, you can run +make <package>-reconfigure+, followed
+-by +make+ or +make <package>+. It will restart the configuration,
+-compilation and installation of the package.
++package from its compilation step, you can run +make <package>-rebuild+. It
++will restart the compilation and installation of the package, but not from
++scratch: it basically re-executes +make+ and +make install+ inside the package,
++so it will only rebuild files that changed.
++
++If you want to restart the build process of a package from its configuration
++step, you can run +make <package>-reconfigure+. It will restart the
++configuration, compilation and installation of the package.
++
++While +<package>-rebuild+ implies +<package>-reinstall+ and
+++<package>-reconfigure+ implies +<package>-rebuild+, these targets as well
++as +<package>+ only act on the said package, and do not trigger re-creating
++the root filesystem image. If re-creating the root filesystem in necessary,
++one should in addition run +make+ or +make all+.
+ 
+ Internally, Buildroot creates so-called _stamp files_ to keep track of
+ which build steps have been completed for each package. They are
+diff --git a/linux/Config.in b/linux/Config.in
+index c00ddeefc5..61e4fb6d72 100644
+--- a/linux/Config.in
++++ b/linux/Config.in
+@@ -122,7 +122,7 @@ endif
+ 
+ config BR2_LINUX_KERNEL_VERSION
+ 	string
+-	default "4.19.76" if BR2_LINUX_KERNEL_LATEST_VERSION
++	default "4.19.81" if BR2_LINUX_KERNEL_LATEST_VERSION
+ 	default "v4.4.176-cip31" if BR2_LINUX_KERNEL_LATEST_CIP_VERSION
+ 	default BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE \
+ 		if BR2_LINUX_KERNEL_CUSTOM_VERSION
+diff --git a/linux/linux.hash b/linux/linux.hash
+index 0c7d200939..33db15ab5b 100644
+--- a/linux/linux.hash
++++ b/linux/linux.hash
+@@ -1,6 +1,6 @@
+ # From https://www.kernel.org/pub/linux/kernel/v4.x/sha256sums.asc
+ sha256 d011245629b980d4c15febf080b54804aaf215167b514a3577feddb2495f8a3e  linux-4.20.17.tar.xz
+-sha256 ba4dd29902734b263a5197410363b17f30dc60bc999bd6ce90b6f5910b971e66  linux-4.19.76.tar.xz
+-sha256 a3c54b887ea3e679382bd4c0536e6a281b071dab2258bd3ee8af75baef2023f5  linux-4.14.146.tar.xz
+-sha256 d5f4bb7584e461f1faa9a3f94c2ad292246fe692b0e992e072dac255f806c2e3  linux-4.9.194.tar.xz
+-sha256 d5f4bb7584e461f1faa9a3f94c2ad292246fe692b0e992e072dac255f806c2e3  linux-4.9.194.tar.xz
++sha256 293ec1ae0f6b3b4be83a217224b51d137f2163cf2d9d294eecf5d0a354e4e29d  linux-4.19.81.tar.xz
++sha256 ff519c428ee9bbb513a84db5ec32a7e3705cd8c23a57104b25b944cb79583fae  linux-4.14.151.tar.xz
++sha256 9572ebfa6ba0efcf9f1ec7b62c7b89baa36a621ab9fd4c5ad025196c549605ac  linux-4.9.198.tar.xz
++sha256 ecf808d88d04086da25bf44288d63a7110dd99948c17bc1162e5301abccff312  linux-4.4.198.tar.xz
+diff --git a/package/Config.in.host b/package/Config.in.host
+index b4c501a33b..2c68fb7e3a 100644
+--- a/package/Config.in.host
++++ b/package/Config.in.host
+@@ -16,6 +16,7 @@ menu "Host utilities"
+ 	source "package/dtc/Config.in.host"
+ 	source "package/e2fsprogs/Config.in.host"
+ 	source "package/e2tools/Config.in.host"
++	source "package/eudev/Config.in.host"
+ 	source "package/f2fs-tools/Config.in.host"
+ 	source "package/faketime/Config.in.host"
+ 	source "package/fwup/Config.in.host"
+diff --git a/package/asterisk/asterisk.hash b/package/asterisk/asterisk.hash
+index 1184e4333d..4cb4a42e19 100644
+--- a/package/asterisk/asterisk.hash
++++ b/package/asterisk/asterisk.hash
+@@ -1,5 +1,5 @@
+ # Locally computed
+-sha256  122ecf242e06da373488024e0c76154f2404d024d09eed20b23cae0795033380  asterisk-16.5.1.tar.gz
++sha256  9323f1fd41416d2d997015b2199d5507847e54da64c2e24923d75f5c283c5e83  asterisk-16.6.1.tar.gz
+ 
+ # sha1 from: http://downloads.asterisk.org/pub/telephony/sounds/releases
+ # sha256 locally computed
+@@ -11,5 +11,5 @@ sha256  449fb810d16502c3052fedf02f7e77b36206ac5a145f3dacf4177843a2fcb538  asteri
+ # License files, locally computed
+ sha256  82af40ed7f49c08685360811993d9396320842f021df828801d733e8fdc0312f  COPYING
+ sha256  ac5571f00e558e3b7c9b3f13f421b874cc12cf4250c4f70094c71544cf486312  main/sha1.c
+-sha256  309462c10e84f46bda22032ebe6359f3e9e3e23afcf1fc2aaed5b59daf800d84  codecs/speex/speex_resampler.h
++sha256  6215e3ed73c3982a5c6701127d681ec0b9f1121ac78a28805bd93f93c3eb84c0  codecs/speex/speex_resampler.h
+ sha256  1ca2c7a7a1ae7ccd75212a8c1e85dd9ec92bdbc9170aafd97ea60459387755fd  utils/db1-ast/include/db.h
+diff --git a/package/asterisk/asterisk.mk b/package/asterisk/asterisk.mk
+index 1f3061b450..6f94f628a4 100644
+--- a/package/asterisk/asterisk.mk
++++ b/package/asterisk/asterisk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-ASTERISK_VERSION = 16.5.1
++ASTERISK_VERSION = 16.6.1
+ # Use the github mirror: it's an official mirror maintained by Digium, and
+ # provides tarballs, which the main Asterisk git tree (behind Gerrit) does not.
+ ASTERISK_SITE = $(call github,asterisk,asterisk,$(ASTERISK_VERSION))
+diff --git a/package/azmq/Config.in b/package/azmq/Config.in
+index eeafa2ad6d..2904890d5f 100644
+--- a/package/azmq/Config.in
++++ b/package/azmq/Config.in
+@@ -20,7 +20,7 @@ config BR2_PACKAGE_AZMQ
+ 
+ 	  https://github.com/zeromq/azmq
+ 
+-comment "azmq needs a toolchain w/ C++11, wchar and NTPL"
++comment "azmq needs a toolchain w/ C++11, wchar and NPTL"
+ 	depends on !(BR2_INSTALL_LIBSTDCPP && BR2_TOOLCHAIN_GCC_AT_LEAST_4_8 \
+ 		&& BR2_USE_WCHAR && BR2_TOOLCHAIN_HAS_THREADS_NPTL)
+ 
+diff --git a/package/cups-filters/cups-filters.mk b/package/cups-filters/cups-filters.mk
+index 292c8e9be9..e5d7318961 100644
+--- a/package/cups-filters/cups-filters.mk
++++ b/package/cups-filters/cups-filters.mk
+@@ -22,6 +22,16 @@ CUPS_FILTERS_CONF_OPTS = --disable-imagefilters \
+ 	--with-pdftops=pdftops \
+ 	--with-jpeg
+ 
++# 0001-install-support-old-ln-versions-without-the-r-option.patch adds
++# a ln-srf script for older distributions, but GNU patch < 2.7 does
++# not handle the git patch permission extensions - So ensure it is
++# executable
++define CUPS_FILTERS_MAKE_LN_SRF_EXECUTABLE
++	chmod +x $(@D)/ln-srf
++endef
++
++CUPS_FILTERS_POST_PATCH_HOOKS += CUPS_FILTERS_MAKE_LN_SRF_EXECUTABLE
++
+ # After 0002-filter-texttotext.c-link-with-libiconv-if-needed.patch autoreconf
+ # needs config.rpath and ABOUT-NLS, which are not in v1.25.4 yet. Fake them.
+ define CUPS_FILTERS_ADD_MISSING_FILE
+diff --git a/package/domoticz/0003-CMakeLists.txt-add-c-argument-to-build-precompiled-h.patch b/package/domoticz/0003-CMakeLists.txt-add-c-argument-to-build-precompiled-h.patch
+new file mode 100644
+index 0000000000..b14f4c56c3
+--- /dev/null
++++ b/package/domoticz/0003-CMakeLists.txt-add-c-argument-to-build-precompiled-h.patch
+@@ -0,0 +1,34 @@
++From 17107b876fb308e3ef3e759ab90f3d8e4755cdc4 Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Fri, 8 Nov 2019 14:17:58 +0100
++Subject: [PATCH] CMakeLists.txt: add -c argument to build precompiled headers
++
++Add "-c" argument when building precompiler headers as suggested
++by Arnout in https://patchwork.ozlabs.org/patch/1187328.
++
++This will fix the build with RELRO
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Retrieved from:
++https://github.com/domoticz/domoticz/commit/17107b876fb308e3ef3e759ab90f3d8e4755cdc4]
++---
++ CMakeLists.txt | 4 ++--
++ 1 file changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/CMakeLists.txt b/CMakeLists.txt
++index 32a0dd2a8c..010cdf2db8 100644
++--- a/CMakeLists.txt
+++++ b/CMakeLists.txt
++@@ -277,10 +277,10 @@ MACRO(ADD_PRECOMPILED_HEADER _targetName _input)
++     ENDFOREACH(item)
++ 
++     SEPARATE_ARGUMENTS(_compiler_FLAGS)
++-    MESSAGE("${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_ARG1} ${_compiler_FLAGS} -x c++-header -o ${_output} ${_source}")
+++    MESSAGE("${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_ARG1} ${_compiler_FLAGS} -x c++-header -c -o ${_output} ${_source}")
++     ADD_CUSTOM_COMMAND(
++       OUTPUT ${_output}
++-      COMMAND ${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_ARG1} ${_compiler_FLAGS} -x c++-header -o ${_output} ${_source}
+++      COMMAND ${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_ARG1} ${_compiler_FLAGS} -x c++-header -c -o ${_output} ${_source}
++       DEPENDS ${_source} )
++     ADD_CUSTOM_TARGET(${_targetName}_gch DEPENDS ${_output})
++     ADD_DEPENDENCIES(${_targetName} ${_targetName}_gch)
+diff --git a/package/duma/0004-Fix-build-with-latest-glibc.patch b/package/duma/0004-Fix-build-with-latest-glibc.patch
+new file mode 100644
+index 0000000000..2d73d7ae57
+--- /dev/null
++++ b/package/duma/0004-Fix-build-with-latest-glibc.patch
+@@ -0,0 +1,22 @@
++Fix build with latest glibc
++
++Fixes:
++ - http://autobuild.buildroot.net/results/c7de1a1d01edced2098a804ad87dcb67b5dc6832
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++
++diff -durN duma_2_5_15.orig/print.c duma_2_5_15/print.c
++--- duma_2_5_15.orig/print.c	2019-10-28 10:21:14.080149620 +0100
+++++ duma_2_5_15/print.c	2019-10-28 10:22:01.256151561 +0100
++@@ -326,9 +326,9 @@
++   if(DUMA_OUTPUT_FILE != NULL)
++   {
++ #if defined(WIN32) && !defined(__CYGWIN__)
++-    fd = _open(DUMA_OUTPUT_FILE, _O_APPEND|_O_CREAT|_O_WRONLY);
+++    fd = _open(DUMA_OUTPUT_FILE, _O_APPEND|_O_CREAT|_O_WRONLY, 0600);
++ #else
++-    fd = open(DUMA_OUTPUT_FILE, O_APPEND|O_CREAT|O_WRONLY);
+++    fd = open(DUMA_OUTPUT_FILE, O_APPEND|O_CREAT|O_WRONLY, 0600);
++ #endif
++     if ( fd >= 0 )
++     {
+diff --git a/package/elf2flt/0002-elf2flt-fix-relocations-for-read-only-data.patch b/package/elf2flt/0002-elf2flt-fix-relocations-for-read-only-data.patch
+new file mode 100644
+index 0000000000..6cb3a55433
+--- /dev/null
++++ b/package/elf2flt/0002-elf2flt-fix-relocations-for-read-only-data.patch
+@@ -0,0 +1,58 @@
++From 6006e8d789f7a1129414fb3a8c930b094af0cafa Mon Sep 17 00:00:00 2001
++From: Greg Ungerer <gerg@kernel.org>
++Date: Wed, 6 Nov 2019 21:19:24 +0100
++Subject: [PATCH] elf2flt: fix relocations for read-only data
++
++Readonly data sections are mapped into the "text" section in the
++elf2flt.ld linker script. The relocation generation code is not handling
++that case properly though, and is actually mapping any data section type
++into the "data" section of the target binary.
++
++This problem case has been detected with elf2flt core dumping when used
++with binutils-2.33.1 (on ARM architecture targets). See thread at:
++
++   https://sourceware.org/ml/binutils/2019-10/msg00132.html
++
++Tested by Christophe Priouzeau [1]
++
++* binutils 2.33.1
++* buildroot 2019.11-rc1
++* patch on top of elf2flt (patch available on this thread)
++* configuration: stm32f469-disco with initramfs configuration on buildroot
++
++Result:
++Build: OK, all the binaries are generated
++Runtime test on stm32f469-disco: OK
++
++[1] https://github.com/uclinux-dev/elf2flt/issues/12
++
++Signed-off-by: Greg Ungerer <gerg@kernel.org>
++Signed-off-by: Romain Naour <romain.naour@smile.fr>
++Cc: Christophe Priouzeau <christophe.priouzeau@st.com>
++---
++ elf2flt.c | 8 +++++---
++ 1 file changed, 5 insertions(+), 3 deletions(-)
++
++diff --git a/elf2flt.c b/elf2flt.c
++index 67f720a..8973cef 100644
++--- a/elf2flt.c
+++++ b/elf2flt.c
++@@ -418,10 +418,12 @@ output_relocs (
++ //		continue;
++ 
++ 	/*
++-	 *	Only relocate things in the data sections if we are PIC/GOT.
++-	 *	otherwise do text as well
+++	 * Only relocate things in the writable data sections if we are PIC/GOT.
+++	 * Otherwise do text (and read only data) as well.
++ 	 */
++-	if ((!pic_with_got || ALWAYS_RELOC_TEXT) && (a->flags & SEC_CODE))
+++	if ((!pic_with_got || ALWAYS_RELOC_TEXT) &&
+++	    ((a->flags & SEC_CODE) ||
+++	    ((a->flags & (SEC_DATA | SEC_READONLY)) == (SEC_DATA | SEC_READONLY))))
++ 		sectionp = text + (a->vma - text_vma);
++ 	else if (a->flags & SEC_DATA)
++ 		sectionp = data + (a->vma - data_vma);
++-- 
++2.21.0
++
+diff --git a/package/eudev/Config.in b/package/eudev/Config.in
+index 2220265a55..b1d2f37a72 100644
+--- a/package/eudev/Config.in
++++ b/package/eudev/Config.in
+@@ -29,8 +29,9 @@ config BR2_PACKAGE_EUDEV_RULES_GEN
+ config BR2_PACKAGE_EUDEV_ENABLE_HWDB
+ 	bool "enable hwdb installation"
+ 	default y
++	select BR2_PACKAGE_HOST_EUDEV # for udevadm, during target-finalize
+ 	help
+-	  Enables hardware database installation to /etc/udev/hwdb.d
++	  Enables hardware database installation to /etc/udev/hwdb.bin
+ 
+ endif
+ 
+diff --git a/package/eudev/Config.in.host b/package/eudev/Config.in.host
+new file mode 100644
+index 0000000000..87dfc43912
+--- /dev/null
++++ b/package/eudev/Config.in.host
+@@ -0,0 +1,3 @@
++# Select this if you need host eudev tools (e.g. udevadm)
++config BR2_PACKAGE_HOST_EUDEV
++	bool
+diff --git a/package/eudev/eudev.mk b/package/eudev/eudev.mk
+index 58a9590289..e41675d3ef 100644
+--- a/package/eudev/eudev.mk
++++ b/package/eudev/eudev.mk
+@@ -55,4 +55,40 @@ define EUDEV_USERS
+ 	- - kvm -1 * - - - kvm nodes
+ endef
+ 
++HOST_EUDEV_DEPENDENCIES = host-gperf host-pkgconf
++
++HOST_EUDEV_SYSCONFDIR = $(if $(BR2_PACKAGE_SYSTEMD),/usr/lib,/etc)
++HOST_EUDEV_CONF_OPTS = \
++	--prefix=/usr \
++	--sbindir=/sbin \
++	--libexecdir=/lib \
++	--with-rootlibdir=/lib \
++	--sysconfdir=$(HOST_EUDEV_SYSCONFDIR) \
++	--disable-blkid \
++	--disable-introspection \
++	--disable-kmod \
++	--disable-manpages \
++	--disable-rule-generator \
++	--disable-selinux \
++	--enable-hwdb
++
++define HOST_EUDEV_INSTALL_CMDS
++	$(INSTALL) -D -m 0755 $(@D)/src/udev/udevadm \
++		$(HOST_DIR)/bin/udevadm
++endef
++
++define HOST_EUDEV_BUILD_HWDB
++	$(HOST_DIR)/bin/udevadm hwdb --update --root $(TARGET_DIR)
++endef
++HOST_EUDEV_TARGET_FINALIZE_HOOKS += HOST_EUDEV_BUILD_HWDB
++
++# Note: this will run in the filesystem context, so will use a copy
++# of tharget/, not the real one, so the files are still available on
++# re-builds (foo-rebuild, etc...)
++define HOST_EUDEV_RM_HWDB_SRC
++	rm -rf $(TARGET_DIR)/$(HOST_EUDEV_SYSCONFDIR)/udev/hwdb.d/
++endef
++HOST_EUDEV_ROOTFS_PRE_CMD_HOOKS += HOST_EUDEV_RM_HWDB_SRC
++
+ $(eval $(autotools-package))
++$(eval $(host-autotools-package))
+diff --git a/package/exfat-utils/exfat-utils.mk b/package/exfat-utils/exfat-utils.mk
+index 62cd47186f..16d5aa03db 100644
+--- a/package/exfat-utils/exfat-utils.mk
++++ b/package/exfat-utils/exfat-utils.mk
+@@ -9,4 +9,6 @@ EXFAT_UTILS_SITE = https://github.com/relan/exfat/releases/download/v$(EXFAT_UTI
+ EXFAT_UTILS_LICENSE = GPL-3.0+
+ EXFAT_UTILS_LICENSE_FILES = COPYING
+ 
++EXFAT_UTILS_CONF_OPTS += --exec-prefix=/
++
+ $(eval $(autotools-package))
+diff --git a/package/exfat/exfat.mk b/package/exfat/exfat.mk
+index b52b197062..d8744feb9b 100644
+--- a/package/exfat/exfat.mk
++++ b/package/exfat/exfat.mk
+@@ -12,4 +12,6 @@ EXFAT_LICENSE = GPL-3.0+
+ EXFAT_LICENSE_FILES = COPYING
+ EXFAT_CFLAGS = $(TARGET_CFLAGS) -std=c99
+ 
++EXFAT_CONF_OPTS += --exec-prefix=/
++
+ $(eval $(autotools-package))
+diff --git a/package/fakeroot/0002-communicate-check-return-status-of-msgrcv.patch b/package/fakeroot/0002-communicate-check-return-status-of-msgrcv.patch
+index 3bb4f9701f..4e81b49122 100644
+--- a/package/fakeroot/0002-communicate-check-return-status-of-msgrcv.patch
++++ b/package/fakeroot/0002-communicate-check-return-status-of-msgrcv.patch
+@@ -1,7 +1,7 @@
+ From a853f21633693f9eefc4949660253a5328d2d2f3 Mon Sep 17 00:00:00 2001
+ From: "Yann E. MORIN" <yann.morin.1998@free.fr>
+ Date: Sun, 13 Aug 2017 23:21:54 +0200
+-Subject: [PATCH 1/1] communicate: check return status of msgrcv()
++Subject: [PATCH] communicate: check return status of msgrcv()
+ 
+ msgrcv can return with -1 to indicate an error condition.
+ One such error is to have been interrupted by a signal.
+diff --git a/package/fakeroot/0003-Select-TCP-when-lack-of-SYSV-IPC.patch b/package/fakeroot/0003-Select-TCP-when-lack-of-SYSV-IPC.patch
+new file mode 100644
+index 0000000000..07b206b68e
+--- /dev/null
++++ b/package/fakeroot/0003-Select-TCP-when-lack-of-SYSV-IPC.patch
+@@ -0,0 +1,77 @@
++From 8e9a7a8c72a9fe407d296ec0ffeb56b2cd271959 Mon Sep 17 00:00:00 2001
++From: Matt Weber <matthew.weber@rockwellcollins.com>
++Date: Mon, 16 Sep 2019 22:00:29 -0500
++Subject: [PATCH] Select TCP when lack of SYSV IPC
++
++Update to add a configure test to build and install the TCP IPC version
++when detecting SYSV IPC MsgQ support isn't available.
++
++The issue was initially discovered on Windows Services for Linux
++(WSL1.0). WSL does have some SysV IPC, but no message Q's, which is
++required by fakeroot/faked by default.
++
++Fixes:
++https://github.com/Microsoft/WSL/issues/2465
++
++Additional bug reports:
++https://bugs.busybox.net/show_bug.cgi?id=11366
++
++Upstream:
++https://salsa.debian.org/clint/fakeroot/merge_requests/2
++
++Signed-off-by: Jean-Francois Doyon <jfdoyon@gmail.com>
++Signed-off-by: Matthew Weber <matthew.weber@rockwellcollins.com>
++---
++ configure.ac | 36 ++++++++++++++++++++++++++++++++++++
++ 1 file changed, 36 insertions(+)
++
++diff --git a/configure.ac b/configure.ac
++index a9189e6..1650f77 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -25,6 +25,42 @@ AC_CACHE_CHECK([which IPC method to use],
++ 	       [ac_cv_use_ipc],
++ 	       [ac_cv_use_ipc=sysv])
++ 
+++if test $ac_cv_use_ipc = "sysv"; then
+++  AC_MSG_CHECKING([whether SysV IPC message queues are actually working on the host])
+++
+++  AC_LANG_PUSH(C)
+++  AC_TRY_RUN([
+++#include <stdlib.h>
+++#include <sys/types.h>
+++#include <sys/ipc.h>
+++#include <sys/msg.h>
+++#include <time.h>
+++#include <unistd.h>
+++
+++int main() {
+++
+++  srandom(time(NULL)+getpid()*33151);
+++  key_t msg_key = random();
+++  int msg_get = msgget(msg_key, IPC_CREAT|0600);
+++
+++  if (msg_get==-1) {
+++    return 1;
+++  } else {
+++    msgctl(msg_get, IPC_RMID, NULL);
+++    return 0;
+++  }
+++
+++}], [ac_cv_use_ipc=sysv], [ac_cv_use_ipc=tcp])
+++
+++  if test $ac_cv_use_ipc = "tcp"; then
+++    AC_MSG_RESULT([No, using TCP])
+++  else
+++    AC_MSG_RESULT([Yes])
+++  fi
+++
+++  AC_LANG_POP(C)
+++fi
+++
++ AC_ARG_WITH([dbformat],
++ 	    AS_HELP_STRING([--with-dbformat@<:@=DBFORMAT@:>@],
++ 			   [database format to use: either inode (default) or path]),
++-- 
++2.17.1
++
+diff --git a/package/fakeroot/fakeroot.mk b/package/fakeroot/fakeroot.mk
+index 4aa27a1b0c..1be99071bf 100644
+--- a/package/fakeroot/fakeroot.mk
++++ b/package/fakeroot/fakeroot.mk
+@@ -15,8 +15,14 @@ HOST_FAKEROOT_DEPENDENCIES = host-acl
+ HOST_FAKEROOT_CONF_ENV = \
+ 	ac_cv_header_sys_capability_h=no \
+ 	ac_cv_func_capset=no
+-
++# 0003-Select-TCP-when-lack-of-SYSV-IPC.patch touches configure.ac
++HOST_FAKEROOT_AUTORECONF = YES
+ FAKEROOT_LICENSE = GPL-3.0+
+ FAKEROOT_LICENSE_FILES = COPYING
+ 
++define HOST_FAKEROOT_BUILD_AUX
++	mkdir -p $(@D)/build-aux
++endef
++HOST_FAKEROOT_POST_PATCH_HOOKS += HOST_FAKEROOT_BUILD_AUX
++
+ $(eval $(host-autotools-package))
+diff --git a/package/file/0001-Detect-multiplication-overflow-when-computing-sector.patch b/package/file/0001-Detect-multiplication-overflow-when-computing-sector.patch
+new file mode 100644
+index 0000000000..c7ef4f2e0d
+--- /dev/null
++++ b/package/file/0001-Detect-multiplication-overflow-when-computing-sector.patch
+@@ -0,0 +1,68 @@
++From 06de62c022138f63de9bcd04074491945eaa8662 Mon Sep 17 00:00:00 2001
++From: Christos Zoulas <christos@zoulas.com>
++Date: Fri, 23 Aug 2019 14:29:14 +0000
++Subject: [PATCH] Detect multiplication overflow when computing sector position
++ (found by oss-fuzz)
++
++Fixes CVE-2019-18218
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/cdf.c | 20 +++++++++++++++++---
++ 1 file changed, 17 insertions(+), 3 deletions(-)
++
++diff --git a/src/cdf.c b/src/cdf.c
++index 556a3ff8..9d639674 100644
++--- a/src/cdf.c
+++++ b/src/cdf.c
++@@ -35,7 +35,7 @@
++ #include "file.h"
++ 
++ #ifndef lint
++-FILE_RCSID("@(#)$File: cdf.c,v 1.114 2019/02/20 02:35:27 christos Exp $")
+++FILE_RCSID("@(#)$File: cdf.c,v 1.115 2019/08/23 14:29:14 christos Exp $")
++ #endif
++ 
++ #include <assert.h>
++@@ -53,6 +53,10 @@ FILE_RCSID("@(#)$File: cdf.c,v 1.114 2019/02/20 02:35:27 christos Exp $")
++ #define EFTYPE EINVAL
++ #endif
++ 
+++#ifndef SIZE_T_MAX
+++#define SIZE_T_MAX CAST(size_t, ~0ULL)
+++#endif
+++
++ #include "cdf.h"
++ 
++ #ifdef CDF_DEBUG
++@@ -405,7 +409,12 @@ cdf_read_sector(const cdf_info_t *info, void *buf, size_t offs, size_t len,
++     const cdf_header_t *h, cdf_secid_t id)
++ {
++ 	size_t ss = CDF_SEC_SIZE(h);
++-	size_t pos = CDF_SEC_POS(h, id);
+++	size_t pos;
+++
+++	if (SIZE_T_MAX / ss < CAST(size_t, id))
+++		return -1;
+++
+++	pos = CDF_SEC_POS(h, id);
++ 	assert(ss == len);
++ 	return cdf_read(info, CAST(off_t, pos), RCAST(char *, buf) + offs, len);
++ }
++@@ -415,7 +424,12 @@ cdf_read_short_sector(const cdf_stream_t *sst, void *buf, size_t offs,
++     size_t len, const cdf_header_t *h, cdf_secid_t id)
++ {
++ 	size_t ss = CDF_SHORT_SEC_SIZE(h);
++-	size_t pos = CDF_SHORT_SEC_POS(h, id);
+++	size_t pos;
+++
+++	if (SIZE_T_MAX / ss < CAST(size_t, id))
+++		return -1;
+++
+++	pos = CDF_SHORT_SEC_POS(h, id);
++ 	assert(ss == len);
++ 	if (pos + len > CDF_SEC_SIZE(h) * sst->sst_len) {
++ 		DPRINTF(("Out of bounds read %" SIZE_T_FORMAT "u > %"
++-- 
++2.20.1
++
+diff --git a/package/file/0002-Limit-the-number-of-elements-in-a-vector-found-by-os.patch b/package/file/0002-Limit-the-number-of-elements-in-a-vector-found-by-os.patch
+new file mode 100644
+index 0000000000..6f16894f98
+--- /dev/null
++++ b/package/file/0002-Limit-the-number-of-elements-in-a-vector-found-by-os.patch
+@@ -0,0 +1,62 @@
++From 46a8443f76cec4b41ec736eca396984c74664f84 Mon Sep 17 00:00:00 2001
++From: Christos Zoulas <christos@zoulas.com>
++Date: Mon, 26 Aug 2019 14:31:39 +0000
++Subject: [PATCH] Limit the number of elements in a vector (found by oss-fuzz)
++
++Fixes CVE-2019-18218
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/cdf.c | 9 ++++-----
++ src/cdf.h | 1 +
++ 2 files changed, 5 insertions(+), 5 deletions(-)
++
++diff --git a/src/cdf.c b/src/cdf.c
++index 9d639674..bb81d637 100644
++--- a/src/cdf.c
+++++ b/src/cdf.c
++@@ -35,7 +35,7 @@
++ #include "file.h"
++ 
++ #ifndef lint
++-FILE_RCSID("@(#)$File: cdf.c,v 1.115 2019/08/23 14:29:14 christos Exp $")
+++FILE_RCSID("@(#)$File: cdf.c,v 1.116 2019/08/26 14:31:39 christos Exp $")
++ #endif
++ 
++ #include <assert.h>
++@@ -1027,8 +1027,9 @@ cdf_read_property_info(const cdf_stream_t *sst, const cdf_header_t *h,
++ 				goto out;
++ 			}
++ 			nelements = CDF_GETUINT32(q, 1);
++-			if (nelements == 0) {
++-				DPRINTF(("CDF_VECTOR with nelements == 0\n"));
+++			if (nelements > CDF_ELEMENT_LIMIT || nelements == 0) {
+++				DPRINTF(("CDF_VECTOR with nelements == %"
+++				    SIZE_T_FORMAT "u\n", nelements));
++ 				goto out;
++ 			}
++ 			slen = 2;
++@@ -1070,8 +1071,6 @@ cdf_read_property_info(const cdf_stream_t *sst, const cdf_header_t *h,
++ 					goto out;
++ 				inp += nelem;
++ 			}
++-			DPRINTF(("nelements = %" SIZE_T_FORMAT "u\n",
++-			    nelements));
++ 			for (j = 0; j < nelements && i < sh.sh_properties;
++ 			    j++, i++)
++ 			{
++diff --git a/src/cdf.h b/src/cdf.h
++index 2f7e554b..05056668 100644
++--- a/src/cdf.h
+++++ b/src/cdf.h
++@@ -48,6 +48,7 @@
++ typedef int32_t cdf_secid_t;
++ 
++ #define CDF_LOOP_LIMIT					10000
+++#define CDF_ELEMENT_LIMIT				100000
++ 
++ #define CDF_SECID_NULL					0
++ #define CDF_SECID_FREE					-1
++-- 
++2.20.1
++
+diff --git a/package/file/file.hash b/package/file/file.hash
+index 7948e856ee..241820d0fb 100644
+--- a/package/file/file.hash
++++ b/package/file/file.hash
+@@ -1,7 +1,7 @@
+ # Locally calculated after verifying signature
+-# ftp://ftp.astron.com/pub/file/file-5.36.tar.gz.asc
++# ftp://ftp.astron.com/pub/file/file-5.37.tar.gz.asc
+ # using key BE04995BA8F90ED0C0C176C471112AB16CB33B3A
+-sha256 fb608290c0fd2405a8f63e5717abf6d03e22e183fb21884413d1edd918184379  file-5.36.tar.gz
++sha256 e9c13967f7dd339a3c241b7710ba093560b9a33013491318e88e6b8b57bae07f  file-5.37.tar.gz
+ sha256 0bfa856a9930bddadbef95d1be1cf4e163c0be618e76ea3275caaf255283e274  COPYING
+ sha256 4ccb60d623884ef637af4a5bc16b2cb350163e2135e967655837336019a64462  src/mygetopt.h
+ sha256 7ac061e1a1c840c4dfa0573aec6f3497676c9295b5ec4190d3576646eb1646bf  src/vasprintf.c
+diff --git a/package/file/file.mk b/package/file/file.mk
+index 1a835015a7..a13acbc47c 100644
+--- a/package/file/file.mk
++++ b/package/file/file.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-FILE_VERSION = 5.36
++FILE_VERSION = 5.37
+ FILE_SITE = ftp://ftp.astron.com/pub/file
+ FILE_DEPENDENCIES = host-file zlib
+ HOST_FILE_DEPENDENCIES = host-zlib
+diff --git a/package/freerdp/freerdp.mk b/package/freerdp/freerdp.mk
+index 0f32ff4718..293b6b5c01 100644
+--- a/package/freerdp/freerdp.mk
++++ b/package/freerdp/freerdp.mk
+@@ -50,10 +50,10 @@ FREERDP_CONF_OPTS += -DWITH_ALSA=OFF
+ endif
+ 
+ ifeq ($(BR2_PACKAGE_PULSEAUDIO),y)
+-FREERDP_CONF_OPTS += -DWITH_PULSEAUDIO=ON
++FREERDP_CONF_OPTS += -DWITH_PULSE=ON
+ FREERDP_DEPENDENCIES += pulseaudio
+ else
+-FREERDP_CONF_OPTS += -DWITH_PULSEAUDIO=OFF
++FREERDP_CONF_OPTS += -DWITH_PULSE=OFF
+ endif
+ 
+ # For the systemd journal
+diff --git a/package/gd/0001-bmp-check-return-value-in-gdImageBmpPtr.patch b/package/gd/0001-bmp-check-return-value-in-gdImageBmpPtr.patch
+new file mode 100644
+index 0000000000..f3c9ea481c
+--- /dev/null
++++ b/package/gd/0001-bmp-check-return-value-in-gdImageBmpPtr.patch
+@@ -0,0 +1,80 @@
++From ac16bdf2d41724b5a65255d4c28fb0ec46bc42f5 Mon Sep 17 00:00:00 2001
++From: Mike Frysinger <vapier@gentoo.org>
++Date: Sat, 14 Jul 2018 13:54:08 -0400
++Subject: [PATCH] bmp: check return value in gdImageBmpPtr
++
++Closes #447.
++
++CVE-2018-1000222
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/gd_bmp.c | 17 ++++++++++++++---
++ 1 file changed, 14 insertions(+), 3 deletions(-)
++
++diff --git a/src/gd_bmp.c b/src/gd_bmp.c
++index bde0b9d..78f40d9 100644
++--- a/src/gd_bmp.c
+++++ b/src/gd_bmp.c
++@@ -47,6 +47,8 @@ static int bmp_read_4bit(gdImagePtr im, gdIOCtxPtr infile, bmp_info_t *info, bmp
++ static int bmp_read_8bit(gdImagePtr im, gdIOCtxPtr infile, bmp_info_t *info, bmp_hdr_t *header);
++ static int bmp_read_rle(gdImagePtr im, gdIOCtxPtr infile, bmp_info_t *info);
++ 
+++static int _gdImageBmpCtx(gdImagePtr im, gdIOCtxPtr out, int compression);
+++
++ #define BMP_DEBUG(s)
++ 
++ static int gdBMPPutWord(gdIOCtx *out, int w)
++@@ -87,8 +89,10 @@ BGD_DECLARE(void *) gdImageBmpPtr(gdImagePtr im, int *size, int compression)
++ 	void *rv;
++ 	gdIOCtx *out = gdNewDynamicCtx(2048, NULL);
++ 	if (out == NULL) return NULL;
++-	gdImageBmpCtx(im, out, compression);
++-	rv = gdDPExtractData(out, size);
+++	if (!_gdImageBmpCtx(im, out, compression))
+++		rv = gdDPExtractData(out, size);
+++	else
+++		rv = NULL;
++ 	out->gd_free(out);
++ 	return rv;
++ }
++@@ -141,6 +145,11 @@ BGD_DECLARE(void) gdImageBmp(gdImagePtr im, FILE *outFile, int compression)
++ 		compression - whether to apply RLE or not.
++ */
++ BGD_DECLARE(void) gdImageBmpCtx(gdImagePtr im, gdIOCtxPtr out, int compression)
+++{
+++	_gdImageBmpCtx(im, out, compression);
+++}
+++
+++static int _gdImageBmpCtx(gdImagePtr im, gdIOCtxPtr out, int compression)
++ {
++ 	int bitmap_size = 0, info_size, total_size, padding;
++ 	int i, row, xpos, pixel;
++@@ -148,6 +157,7 @@ BGD_DECLARE(void) gdImageBmpCtx(gdImagePtr im, gdIOCtxPtr out, int compression)
++ 	unsigned char *uncompressed_row = NULL, *uncompressed_row_start = NULL;
++ 	FILE *tmpfile_for_compression = NULL;
++ 	gdIOCtxPtr out_original = NULL;
+++	int ret = 1;
++ 
++ 	/* No compression if its true colour or we don't support seek */
++ 	if (im->trueColor) {
++@@ -325,6 +335,7 @@ BGD_DECLARE(void) gdImageBmpCtx(gdImagePtr im, gdIOCtxPtr out, int compression)
++ 		out_original = NULL;
++ 	}
++ 
+++	ret = 0;
++ cleanup:
++ 	if (tmpfile_for_compression) {
++ #ifdef _WIN32
++@@ -338,7 +349,7 @@ cleanup:
++ 	if (out_original) {
++ 		out_original->gd_free(out_original);
++ 	}
++-	return;
+++	return ret;
++ }
++ 
++ static int compress_row(unsigned char *row, int length)
++-- 
++2.20.1
++
+diff --git a/package/gd/0002-Fix-420-Potential-infinite-loop-in-gdImageCreateFrom.patch b/package/gd/0002-Fix-420-Potential-infinite-loop-in-gdImageCreateFrom.patch
+new file mode 100644
+index 0000000000..8d77f0ee18
+--- /dev/null
++++ b/package/gd/0002-Fix-420-Potential-infinite-loop-in-gdImageCreateFrom.patch
+@@ -0,0 +1,61 @@
++From a11f47475e6443b7f32d21f2271f28f417e2ac04 Mon Sep 17 00:00:00 2001
++From: "Christoph M. Becker" <cmbecker69@gmx.de>
++Date: Wed, 29 Nov 2017 19:37:38 +0100
++Subject: [PATCH] Fix #420: Potential infinite loop in gdImageCreateFromGifCtx
++
++Due to a signedness confusion in `GetCode_` a corrupt GIF file can
++trigger an infinite loop.  Furthermore we make sure that a GIF without
++any palette entries is treated as invalid *after* open palette entries
++have been removed.
++
++CVE-2018-5711
++
++See also https://bugs.php.net/bug.php?id=75571.
++
++[Peter: drop tests]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/gd_gif_in.c             |  12 ++++++------
++ 1 files changed, 38 insertions(+), 6 deletions(-)
++
++diff --git a/src/gd_gif_in.c b/src/gd_gif_in.c
++index daf26e7..0a8bd71 100644
++--- a/src/gd_gif_in.c
+++++ b/src/gd_gif_in.c
++@@ -335,11 +335,6 @@ terminated:
++ 		return 0;
++ 	}
++ 
++-	if(!im->colorsTotal) {
++-		gdImageDestroy(im);
++-		return 0;
++-	}
++-
++ 	/* Check for open colors at the end, so
++ 	 * we can reduce colorsTotal and ultimately
++ 	 * BitsPerPixel */
++@@ -351,6 +346,11 @@ terminated:
++ 		}
++ 	}
++ 
+++	if(!im->colorsTotal) {
+++		gdImageDestroy(im);
+++		return 0;
+++	}
+++
++ 	return im;
++ }
++ 
++@@ -447,7 +447,7 @@ static int
++ GetCode_(gdIOCtx *fd, CODE_STATIC_DATA *scd, int code_size, int flag, int *ZeroDataBlockP)
++ {
++ 	int i, j, ret;
++-	unsigned char count;
+++	int count;
++ 
++ 	if(flag) {
++ 		scd->curbit = 0;
++
++-- 
++2.20.1
++
+diff --git a/package/gd/0003-Fix-501-Uninitialized-read-in-gdImageCreateFromXbm-C.patch b/package/gd/0003-Fix-501-Uninitialized-read-in-gdImageCreateFromXbm-C.patch
+new file mode 100644
+index 0000000000..57df1a2fb1
+--- /dev/null
++++ b/package/gd/0003-Fix-501-Uninitialized-read-in-gdImageCreateFromXbm-C.patch
+@@ -0,0 +1,41 @@
++From e13a342c079aeb73e31dfa19eaca119761bac3f3 Mon Sep 17 00:00:00 2001
++From: Jonas Meurer <jonas@freesources.org>
++Date: Tue, 11 Jun 2019 12:16:46 +0200
++Subject: [PATCH] Fix #501: Uninitialized read in gdImageCreateFromXbm
++ (CVE-2019-11038)
++
++Bug-Debian-Security: https://security-tracker.debian.org/tracker/CVE-2019-11038
++Bug-Debian: https://bugs.debian.org/929821
++Bug: https://github.com/libgd/libgd/issues/501
++
++We have to ensure that `sscanf()` does indeed read a hex value here,
++and bail out otherwise.
++
++Original patch by Christoph M. Becker <cmbecker69@gmx.de> for PHP libgd ext.
++https://git.php.net/?p=php-src.git;a=commit;h=ed6dee9a198c904ad5e03113e58a2d2c200f5184
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/gd_xbm.c | 6 +++++-
++ 1 file changed, 5 insertions(+), 1 deletion(-)
++
++diff --git a/src/gd_xbm.c b/src/gd_xbm.c
++index 4ca41ac..cf0545e 100644
++--- a/src/gd_xbm.c
+++++ b/src/gd_xbm.c
++@@ -169,7 +169,11 @@ BGD_DECLARE(gdImagePtr) gdImageCreateFromXbm(FILE * fd)
++ 			}
++ 			h[3] = ch;
++ 		}
++-		sscanf(h, "%x", &b);
+++		if (sscanf(h, "%x", &b) != 1) {
+++			gd_error("invalid XBM");
+++			gdImageDestroy(im);
+++			return 0;
+++		}
++ 		for (bit = 1; bit <= max_bit; bit = bit << 1) {
++ 			gdImageSetPixel(im, x++, y, (b & bit) ? 1 : 0);
++ 			if (x == im->sx) {
++-- 
++2.20.1
++
+diff --git a/package/gd/0004-Fix-492-Potential-double-free-in-gdImage-Ptr.patch b/package/gd/0004-Fix-492-Potential-double-free-in-gdImage-Ptr.patch
+new file mode 100644
+index 0000000000..e51428a646
+--- /dev/null
++++ b/package/gd/0004-Fix-492-Potential-double-free-in-gdImage-Ptr.patch
+@@ -0,0 +1,219 @@
++From 553702980ae89c83f2d6e254d62cf82e204956d0 Mon Sep 17 00:00:00 2001
++From: "Christoph M. Becker" <cmbecker69@gmx.de>
++Date: Thu, 17 Jan 2019 11:54:55 +0100
++Subject: [PATCH] Fix #492: Potential double-free in gdImage*Ptr()
++
++Whenever `gdImage*Ptr()` calls `gdImage*Ctx()` and the latter fails, we
++must not call `gdDPExtractData()`; otherwise a double-free would
++happen.  Since `gdImage*Ctx()` are void functions, and we can't change
++that for BC reasons, we're introducing static helpers which are used
++internally.
++
++We're adding a regression test for `gdImageJpegPtr()`, but not for
++`gdImageGifPtr()` and `gdImageWbmpPtr()` since we don't know how to
++trigger failure of the respective `gdImage*Ctx()` calls.
++
++This potential security issue has been reported by Solmaz Salimi (aka.
++Rooney).
++
++CVE-2019-6978
++
++[Peter: drop tests]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/gd_gif_out.c                  | 18 +++++++++++++++---
++ src/gd_jpeg.c                     | 20 ++++++++++++++++----
++ src/gd_wbmp.c                     | 21 ++++++++++++++++++---
++ 3 files changed, 84 insertions(+), 11 deletions(-)
++
++diff --git a/src/gd_gif_out.c b/src/gd_gif_out.c
++index 298a581..d5a9534 100644
++--- a/src/gd_gif_out.c
+++++ b/src/gd_gif_out.c
++@@ -99,6 +99,7 @@ static void char_init(GifCtx *ctx);
++ static void char_out(int c, GifCtx *ctx);
++ static void flush_char(GifCtx *ctx);
++ 
+++static int _gdImageGifCtx(gdImagePtr im, gdIOCtxPtr out);
++ 
++ 
++ 
++@@ -131,8 +132,11 @@ BGD_DECLARE(void *) gdImageGifPtr(gdImagePtr im, int *size)
++ 	void *rv;
++ 	gdIOCtx *out = gdNewDynamicCtx(2048, NULL);
++ 	if (out == NULL) return NULL;
++-	gdImageGifCtx(im, out);
++-	rv = gdDPExtractData(out, size);
+++	if (!_gdImageGifCtx(im, out)) {
+++		rv = gdDPExtractData(out, size);
+++	} else {
+++		rv = NULL;
+++	}
++ 	out->gd_free(out);
++ 	return rv;
++ }
++@@ -220,6 +224,12 @@ BGD_DECLARE(void) gdImageGif(gdImagePtr im, FILE *outFile)
++ 
++ */
++ BGD_DECLARE(void) gdImageGifCtx(gdImagePtr im, gdIOCtxPtr out)
+++{
+++	_gdImageGifCtx(im, out);
+++}
+++
+++/* returns 0 on success, 1 on failure */
+++static int _gdImageGifCtx(gdImagePtr im, gdIOCtxPtr out)
++ {
++ 	gdImagePtr pim = 0, tim = im;
++ 	int interlace, BitsPerPixel;
++@@ -231,7 +241,7 @@ BGD_DECLARE(void) gdImageGifCtx(gdImagePtr im, gdIOCtxPtr out)
++ 		based temporary image. */
++ 		pim = gdImageCreatePaletteFromTrueColor(im, 1, 256);
++ 		if(!pim) {
++-			return;
+++			return 1;
++ 		}
++ 		tim = pim;
++ 	}
++@@ -247,6 +257,8 @@ BGD_DECLARE(void) gdImageGifCtx(gdImagePtr im, gdIOCtxPtr out)
++ 		/* Destroy palette based temporary image. */
++ 		gdImageDestroy(	pim);
++ 	}
+++
+++	return 0;
++ }
++ 
++ 
++diff --git a/src/gd_jpeg.c b/src/gd_jpeg.c
++index fc05842..96ef430 100644
++--- a/src/gd_jpeg.c
+++++ b/src/gd_jpeg.c
++@@ -117,6 +117,8 @@ static void fatal_jpeg_error(j_common_ptr cinfo)
++ 	exit(99);
++ }
++ 
+++static int _gdImageJpegCtx(gdImagePtr im, gdIOCtx *outfile, int quality);
+++
++ /*
++  * Write IM to OUTFILE as a JFIF-formatted JPEG image, using quality
++  * QUALITY.  If QUALITY is in the range 0-100, increasing values
++@@ -231,8 +233,11 @@ BGD_DECLARE(void *) gdImageJpegPtr(gdImagePtr im, int *size, int quality)
++ 	void *rv;
++ 	gdIOCtx *out = gdNewDynamicCtx(2048, NULL);
++ 	if (out == NULL) return NULL;
++-	gdImageJpegCtx(im, out, quality);
++-	rv = gdDPExtractData(out, size);
+++	if (!_gdImageJpegCtx(im, out, quality)) {
+++		rv = gdDPExtractData(out, size);
+++	} else {
+++		rv = NULL;
+++	}
++ 	out->gd_free(out);
++ 	return rv;
++ }
++@@ -253,6 +258,12 @@ void jpeg_gdIOCtx_dest(j_compress_ptr cinfo, gdIOCtx *outfile);
++ 
++ */
++ BGD_DECLARE(void) gdImageJpegCtx(gdImagePtr im, gdIOCtx *outfile, int quality)
+++{
+++	_gdImageJpegCtx(im, outfile, quality);
+++}
+++
+++/* returns 0 on success, 1 on failure */
+++static int _gdImageJpegCtx(gdImagePtr im, gdIOCtx *outfile, int quality)
++ {
++ 	struct jpeg_compress_struct cinfo;
++ 	struct jpeg_error_mgr jerr;
++@@ -287,7 +298,7 @@ BGD_DECLARE(void) gdImageJpegCtx(gdImagePtr im, gdIOCtx *outfile, int quality)
++ 		if(row) {
++ 			gdFree(row);
++ 		}
++-		return;
+++		return 1;
++ 	}
++ 
++ 	cinfo.err->emit_message = jpeg_emit_message;
++@@ -328,7 +339,7 @@ BGD_DECLARE(void) gdImageJpegCtx(gdImagePtr im, gdIOCtx *outfile, int quality)
++ 	if(row == 0) {
++ 		gd_error("gd-jpeg: error: unable to allocate JPEG row structure: gdCalloc returns NULL\n");
++ 		jpeg_destroy_compress(&cinfo);
++-		return;
+++		return 1;
++ 	}
++ 
++ 	rowptr[0] = row;
++@@ -405,6 +416,7 @@ BGD_DECLARE(void) gdImageJpegCtx(gdImagePtr im, gdIOCtx *outfile, int quality)
++ 	jpeg_finish_compress(&cinfo);
++ 	jpeg_destroy_compress(&cinfo);
++ 	gdFree(row);
+++	return 0;
++ }
++ 
++ 
++diff --git a/src/gd_wbmp.c b/src/gd_wbmp.c
++index f19a1c9..a49bdbe 100644
++--- a/src/gd_wbmp.c
+++++ b/src/gd_wbmp.c
++@@ -88,6 +88,8 @@ int gd_getin(void *in)
++ 	return (gdGetC((gdIOCtx *)in));
++ }
++ 
+++static int _gdImageWBMPCtx(gdImagePtr image, int fg, gdIOCtx *out);
+++
++ /*
++ 	Function: gdImageWBMPCtx
++ 
++@@ -100,6 +102,12 @@ int gd_getin(void *in)
++ 		out   - the stream where to write
++ */
++ BGD_DECLARE(void) gdImageWBMPCtx(gdImagePtr image, int fg, gdIOCtx *out)
+++{
+++	_gdImageWBMPCtx(image, fg, out);
+++}
+++
+++/* returns 0 on success, 1 on failure */
+++static int _gdImageWBMPCtx(gdImagePtr image, int fg, gdIOCtx *out)
++ {
++ 	int x, y, pos;
++ 	Wbmp *wbmp;
++@@ -107,7 +115,7 @@ BGD_DECLARE(void) gdImageWBMPCtx(gdImagePtr image, int fg, gdIOCtx *out)
++ 	/* create the WBMP */
++ 	if((wbmp = createwbmp(gdImageSX(image), gdImageSY(image), WBMP_WHITE)) == NULL) {
++ 		gd_error("Could not create WBMP\n");
++-		return;
+++		return 1;
++ 	}
++ 
++ 	/* fill up the WBMP structure */
++@@ -123,11 +131,15 @@ BGD_DECLARE(void) gdImageWBMPCtx(gdImagePtr image, int fg, gdIOCtx *out)
++ 
++ 	/* write the WBMP to a gd file descriptor */
++ 	if(writewbmp(wbmp, &gd_putout, out)) {
+++		freewbmp(wbmp);
++ 		gd_error("Could not save WBMP\n");
+++		return 1;
++ 	}
++ 
++ 	/* des submitted this bugfix: gdFree the memory. */
++ 	freewbmp(wbmp);
+++
+++	return 0;
++ }
++ 
++ /*
++@@ -271,8 +283,11 @@ BGD_DECLARE(void *) gdImageWBMPPtr(gdImagePtr im, int *size, int fg)
++ 	void *rv;
++ 	gdIOCtx *out = gdNewDynamicCtx(2048, NULL);
++ 	if (out == NULL) return NULL;
++-	gdImageWBMPCtx(im, fg, out);
++-	rv = gdDPExtractData(out, size);
+++	if (!_gdImageWBMPCtx(im, fg, out)) {
+++		rv = gdDPExtractData(out, size);
+++	} else {
+++		rv = NULL;
+++	}
++ 	out->gd_free(out);
++ 	return rv;
++ }
++-- 
++2.20.1
++
+diff --git a/package/ghostscript/0002-Bug-700986-Remove-the-crazy-md5-file-copying-nonsense.patch b/package/ghostscript/0002-Bug-700986-Remove-the-crazy-md5-file-copying-nonsense.patch
+deleted file mode 100644
+index 49bcfcdd3b..0000000000
+--- a/package/ghostscript/0002-Bug-700986-Remove-the-crazy-md5-file-copying-nonsense.patch
++++ /dev/null
+@@ -1,252 +0,0 @@
+-From d86210973df93ccca0befd56afba2132da925ebc Mon Sep 17 00:00:00 2001
+-From: Chris Liddell <chris.liddell@artifex.com>
+-Date: Thu, 18 Apr 2019 16:58:41 +0100
+-Subject: [PATCH] Bug 700986: Remove the crazy md5 file copying nonsense
+-
+-To preserve building as a standalone test exe, we avoided using Ghostscript
+-includes in the md5 source and header files, but dynamically add them to
+-copies of the files during the build. Since we no longer need/care for the
+-stand alone exe, remove the build complication, and just include the header
+-file normally.
+-
+-Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
+-[Retrieved from:
+-http://git.ghostscript.com/?p=user/chrisl/ghostpdl.git;a=commitdiff;h=d86210973df9]
+----
+- base/gsmd5.h                   |   2 +
+- base/lib.mak                   |  10 +--
+- base/md5main.c                 | 141 -----------------------------------------
+- doc/Develop.htm                |   1 -
+- windows/ghostscript.vcproj     |   4 --
+- windows/ghostscript_rt.vcxproj |   1 -
+- 6 files changed, 5 insertions(+), 154 deletions(-)
+- delete mode 100644 base/md5main.c
+-
+-diff --git a/base/gsmd5.h b/base/gsmd5.h
+-index 206ea6b..b159afb 100644
+---- a/base/gsmd5.h
+-+++ b/base/gsmd5.h
+-@@ -50,6 +50,8 @@
+- #ifndef md5_INCLUDED
+- #  define md5_INCLUDED
+- 
+-+#include "memory_.h"
+-+
+- /*
+-  * This package supports both compile-time and run-time determination of CPU
+-  * byte order.  If ARCH_IS_BIG_ENDIAN is defined as 0, the code will be
+-diff --git a/base/lib.mak b/base/lib.mak
+-index 3ed088a..21e2cb7 100644
+---- a/base/lib.mak
+-+++ b/base/lib.mak
+-@@ -387,13 +387,8 @@ gsmd5_h=$(GLSRC)gsmd5.h
+- # We have to use a slightly different compilation approach in order to
+- # get std.h included when compiling md5.c.
+- md5_=$(GLOBJ)gsmd5.$(OBJ)
+--$(GLOBJ)gsmd5.$(OBJ) : $(GLSRC)gsmd5.c $(AK) $(gsmd5_h)\
+-- $(EXP)$(ECHOGS_XE) $(LIB_MAK) $(MAKEDIRS)
+--	$(EXP)$(ECHOGS_XE) -w $(GLGEN)gsmd5.h -x 23 include -x 2022 memory_.h -x 22
+--	$(EXP)$(ECHOGS_XE) -a $(GLGEN)gsmd5.h -+R $(GLSRC)gsmd5.h
+--	$(CP_) $(GLSRC)gsmd5.c $(GLGEN)gsmd5.c
+--	$(GLCC) $(GLO_)gsmd5.$(OBJ) $(C_) $(GLGEN)gsmd5.c
+--	$(RM_) $(GLGEN)gsmd5.c $(GLGEN)gsmd5.h
+-+$(GLOBJ)gsmd5.$(OBJ) : $(GLSRC)gsmd5.c $(AK) $(gsmd5_h) $(LIB_MAK) $(MAKEDIRS)
+-+	$(GLCC) $(GLO_)gsmd5.$(OBJ) $(C_) $(GLSRC)gsmd5.c
+- 
+- # SHA-256 digest
+- sha2_h=$(GLSRC)sha2.h
+-@@ -12346,3 +12341,4 @@ $(GLSRC)gxshade4.h:$(GLSRC)gstypes.h
+- $(GLSRC)gxshade4.h:$(GLSRC)stdpre.h
+- $(GLSRC)gxshade4.h:$(GLGEN)arch.h
+- $(GLSRC)gxshade4.h:$(GLSRC)gs_dll_call.h
+-+$(GLSRC)gsmd5.h:$(GLSRC)memory_.h
+-diff --git a/base/md5main.c b/base/md5main.c
+-deleted file mode 100644
+-index 75c523b..0000000
+---- a/base/md5main.c
+-+++ /dev/null
+-@@ -1,141 +0,0 @@
+--/*
+--  Copyright (C) 2002-2018 Artifex Software, Inc.
+--  All rights reserved.
+--
+--  This software is provided 'as-is', without any express or implied
+--  warranty.  In no event will the authors be held liable for any damages
+--  arising from the use of this software.
+--
+--  Permission is granted to anyone to use this software for any purpose,
+--  including commercial applications, and to alter it and redistribute it
+--  freely, subject to the following restrictions:
+--
+--  1. The origin of this software must not be misrepresented; you must not
+--     claim that you wrote the original software. If you use this software
+--     in a product, an acknowledgment in the product documentation would be
+--     appreciated but is not required.
+--  2. Altered source versions must be plainly marked as such, and must not be
+--     misrepresented as being the original software.
+--  3. This notice may not be removed or altered from any source distribution.
+--
+--  L. Peter Deutsch
+--  ghost@aladdin.com
+--
+-- */
+--/*
+--  Independent implementation of MD5 (RFC 1321).
+--
+--  This code implements the MD5 Algorithm defined in RFC 1321, whose
+--  text is available at
+--        http://www.ietf.org/rfc/rfc1321.txt
+--  The code is derived from the text of the RFC, including the test suite
+--  (section A.5) but excluding the rest of Appendix A.  It does not include
+--  any code or documentation that is identified in the RFC as being
+--  copyrighted.
+--
+--  The original and principal author of md5.c is L. Peter Deutsch
+--  <ghost@aladdin.com>.  Other authors are noted in the change history
+--  that follows (in reverse chronological order):
+--
+--  2007-06-08 RG  Namespaced the api calls to avoid conflict with other
+--        implementations when linking gs as a library.
+--  2002-04-13 lpd Splits off main program into a separate file, md5main.c.
+-- */
+--
+--#include "gsmd5.h"
+--#include <math.h>
+--#include <stdio.h>
+--#include <string.h>
+--
+--/*
+-- * This file builds an executable that performs various functions related
+-- * to the MD5 library.  Typical compilation:
+-- *	gcc -o md5main -lm md5main.c md5.c
+-- */
+--static const char *const usage = "\
+--Usage:\n\
+--    md5main --test		# run the self-test (A.5 of RFC 1321)\n\
+--    md5main --t-values		# print the T values for the library\n\
+--    md5main --version		# print the version of the package\n\
+--";
+--static const char *const version = "2002-04-13";
+--
+--/* Run the self-test. */
+--static int
+--do_test(void)
+--{
+--    static const char *const test[7*2] = {
+--        "", "d41d8cd98f00b204e9800998ecf8427e",
+--        "a", "0cc175b9c0f1b6a831c399e269772661",
+--        "abc", "900150983cd24fb0d6963f7d28e17f72",
+--        "message digest", "f96b697d7cb7938d525a2f31aaf161d0",
+--        "abcdefghijklmnopqrstuvwxyz", "c3fcd3d76192e4007dfb496cca67e13b",
+--        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+--                                "d174ab98d277d9f5a5611c2c9f419d9f",
+--        "12345678901234567890123456789012345678901234567890123456789012345678901234567890", "57edf4a22be3c955ac49da2e2107b67a"
+--    };
+--    int i;
+--    int status = 0;
+--
+--    for (i = 0; i < 7*2; i += 2) {
+--        gs_md5_state_t state;
+--        gs_md5_byte_t digest[16];
+--        char hex_output[16*2 + 1];
+--        int di;
+--
+--        gs_md5_init(&state);
+--        gs_md5_append(&state, (const gs_md5_byte_t *)test[i], strlen(test[i]));
+--        gs_md5_finish(&state, digest);
+--        for (di = 0; di < 16; ++di)
+--            gs_sprintf(hex_output + di * 2, "%02x", digest[di]);
+--        if (strcmp(hex_output, test[i + 1])) {
+--            printf("MD5 (\"%s\") = ", test[i]);
+--            puts(hex_output);
+--            printf("**** ERROR, should be: %s\n", test[i + 1]);
+--            status = 1;
+--        }
+--    }
+--    if (status == 0)
+--        puts("md5 self-test completed successfully.");
+--    return status;
+--}
+--
+--/* Print the T values. */
+--static int
+--do_t_values(void)
+--{
+--    int i;
+--    for (i = 1; i <= 64; ++i) {
+--        unsigned long v = (unsigned long)(4294967296.0 * fabs(sin((double)i)));
+--
+--        /*
+--         * The following nonsense is only to avoid compiler warnings about
+--         * "integer constant is unsigned in ANSI C, signed with -traditional".
+--         */
+--        if (v >> 31) {
+--            printf("#define T%d /* 0x%08lx */ (T_MASK ^ 0x%08lx)\n", i,
+--                   v, (unsigned long)(unsigned int)(~v));
+--        } else {
+--            printf("#define T%d    0x%08lx\n", i, v);
+--        }
+--    }
+--    return 0;
+--}
+--
+--/* Main program */
+--int
+--main(int argc, char *argv[])
+--{
+--    if (argc == 2) {
+--        if (!strcmp(argv[1], "--test"))
+--            return do_test();
+--        if (!strcmp(argv[1], "--t-values"))
+--            return do_t_values();
+--        if (!strcmp(argv[1], "--version")) {
+--            puts(version);
+--            return 0;
+--        }
+--    }
+--    puts(usage);
+--    return 0;
+--}
+-diff --git a/doc/Develop.htm b/doc/Develop.htm
+-index c1ffceb..1ed3030 100644
+---- a/doc/Develop.htm
+-+++ b/doc/Develop.htm
+-@@ -684,7 +684,6 @@ Other:
+- <a href="../base/gx.h">base/gx.h</a>,
+- <a href="../base/gsmd5.c">base/gsmd5.c</a>,
+- <a href="../base/gsmd5.h">base/gsmd5.h</a>,
+--<a href="../base/md5main.c">base/md5main.c</a>,
+- <a href="../base/aes.c">base/aes.c</a>,
+- <a href="../base/aes.h">base/aes.h</a>.
+- 
+-diff --git a/windows/ghostscript.vcproj b/windows/ghostscript.vcproj
+-index d607949..fdbeaa1 100644
+---- a/windows/ghostscript.vcproj
+-+++ b/windows/ghostscript.vcproj
+-@@ -2510,10 +2510,6 @@
+- 				>
+- 			</File>
+- 			<File
+--				RelativePath="..\base\md5main.c"
+--				>
+--			</File>
+--			<File
+- 				RelativePath="..\base\memento.c"
+- 				>
+- 			</File>
+-diff --git a/windows/ghostscript_rt.vcxproj b/windows/ghostscript_rt.vcxproj
+-index 589b2d1..fca736b 100644
+---- a/windows/ghostscript_rt.vcxproj
+-+++ b/windows/ghostscript_rt.vcxproj
+-@@ -597,7 +597,6 @@
+-     <ClCompile Include="..\base\gxtype1.c" />
+-     <ClCompile Include="..\base\gzspotan.c" />
+-     <ClCompile Include="..\base\gsmd5.c" />
+--    <ClCompile Include="..\base\md5main.c" />
+-     <ClCompile Include="..\base\memento.c" />
+-     <ClCompile Include="..\base\minftrsz.c" />
+-     <ClCompile Include="..\base\mkromfs.c" />
+--- 
+-2.9.1
+-
+-
+diff --git a/package/ghostscript/ghostscript.hash b/package/ghostscript/ghostscript.hash
+index 383a414da4..51b3a2a094 100644
+--- a/package/ghostscript/ghostscript.hash
++++ b/package/ghostscript/ghostscript.hash
+@@ -1,5 +1,5 @@
+-# From https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs927/SHA512SUMS
+-sha512 5e67ad45a80f01c6ef0eabb1c76dfa8fb6e7f0fde8d82fd5daaf12f370c288a672f8fa69c74d9e30255582267e9a906e4e8b13655f8d993fefdfc8dbdb5d5401  ghostscript-9.27.tar.xz
++# From https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs950/SHA512SUMS
++sha512 3c1e5db519a427f4b6bfb8d93f3c3dfb67d5ec9ccd19c7afa7670deb768515f3fc617c5588e54934bbfbedfdf8609ce2ffa36dd7da3cb618937fe034f64f43ee  ghostscript-9.50.tar.xz
+ 
+ # Hash for license file:
+ sha256 6f852249f975287b3efd43a5883875e47fa9f3125e2f1b18b5c09517ac30ecf2  LICENSE
+diff --git a/package/ghostscript/ghostscript.mk b/package/ghostscript/ghostscript.mk
+index fefac2aee3..a6e85d9894 100644
+--- a/package/ghostscript/ghostscript.mk
++++ b/package/ghostscript/ghostscript.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-GHOSTSCRIPT_VERSION = 9.27
++GHOSTSCRIPT_VERSION = 9.50
+ GHOSTSCRIPT_SITE = https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs$(subst .,,$(GHOSTSCRIPT_VERSION))
+ GHOSTSCRIPT_SOURCE = ghostscript-$(GHOSTSCRIPT_VERSION).tar.xz
+ GHOSTSCRIPT_LICENSE = AGPL-3.0
+diff --git a/package/go/0003-Fix-CVE-2019-17596.patch b/package/go/0003-Fix-CVE-2019-17596.patch
+new file mode 100644
+index 0000000000..33a5baad5b
+--- /dev/null
++++ b/package/go/0003-Fix-CVE-2019-17596.patch
+@@ -0,0 +1,27 @@
++From: "Dr. Tobias Quathamer" <toddy@debian.org>
++Date: Sat, 19 Oct 2019 14:03:22 +0200
++Subject: Fix CVE-2019-17596
++
++Cherry-picked from upstream:
++https://github.com/golang/go/commit/2017d88dbc096381d4f348d2fb08bfb3c2b7ed73
++
++[Upstream: https://sources.debian.org/src/golang-1.11/1.11.6-1+deb10u3/debian/patches/0008-Fix-CVE-2019-17596.patch]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ src/crypto/dsa/dsa.go | 3 +++
++ 1 file changed, 3 insertions(+)
++
++diff --git a/src/crypto/dsa/dsa.go b/src/crypto/dsa/dsa.go
++index 575314b..2fc4f1f 100644
++--- a/src/crypto/dsa/dsa.go
+++++ b/src/crypto/dsa/dsa.go
++@@ -279,6 +279,9 @@ func Verify(pub *PublicKey, hash []byte, r, s *big.Int) bool {
++ 	}
++ 
++ 	w := new(big.Int).ModInverse(s, pub.Q)
+++	if w == nil {
+++		return false
+++	}
++ 
++ 	n := pub.Q.BitLen()
++ 	if n&7 != 0 {
+diff --git a/package/gvfs/gvfs.mk b/package/gvfs/gvfs.mk
+index 9bfe9e60fb..c380a710fb 100644
+--- a/package/gvfs/gvfs.mk
++++ b/package/gvfs/gvfs.mk
+@@ -13,12 +13,13 @@ GVFS_DEPENDENCIES = host-pkgconf host-libglib2 libglib2 dbus shared-mime-info \
+ 	$(TARGET_NLS_DEPENDENCIES)
+ GVFS_LICENSE = LGPL-2.0+
+ GVFS_LICENSE_FILES = COPYING
++GVFS_LIBS = $(TARGET_NLS_LIBS)
+ 
+ # Export ac_cv_path_LIBGCRYPT_CONFIG unconditionally to prevent
+ # build system from searching the host paths.
+ GVFS_CONF_ENV = \
+ 	ac_cv_path_LIBGCRYPT_CONFIG=$(STAGING_DIR)/usr/bin/libgcrypt-config \
+-	LIBS=$(TARGET_NLS_LIBS)
++	LIBS="$(GVFS_LIBS)"
+ 
+ # Most of these are missing library support
+ GVFS_CONF_OPTS = \
+@@ -60,6 +61,7 @@ GVFS_CONF_OPTS += \
+ 	--enable-archive \
+ 	--with-archive-includes=$(STAGING_DIR)/usr \
+ 	--with-archive-libs=$(STAGING_DIR)/usr
++GVFS_LIBS += `$(PKG_CONFIG_HOST_BINARY) --libs libarchive`
+ else
+ GVFS_CONF_OPTS += --disable-archive
+ endif
+diff --git a/package/intel-microcode/intel-microcode.hash b/package/intel-microcode/intel-microcode.hash
+index fbf7109f1d..5d340e627f 100644
+--- a/package/intel-microcode/intel-microcode.hash
++++ b/package/intel-microcode/intel-microcode.hash
+@@ -1,3 +1,3 @@
+ # Locally computed
+-sha256 74ec7415988d40fa53686d994cf8cb27accdbd35c5373c4c3afc2e93372ebba5  intel-microcode-20190618.tar.gz
++sha256 2b6b728d351764dfbf6a9763ac96ae7e04085f382a309fed3abc0118f094c943  intel-microcode-20190918.tar.gz
+ sha256 1f8bf63fc2b1b486c507b98ff7d283c7eb58c7945746b94188a310d6787cbee5  license
+diff --git a/package/intel-microcode/intel-microcode.mk b/package/intel-microcode/intel-microcode.mk
+index 74d5b6c5da..a4d4a01f71 100644
+--- a/package/intel-microcode/intel-microcode.mk
++++ b/package/intel-microcode/intel-microcode.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-INTEL_MICROCODE_VERSION = 20190618
++INTEL_MICROCODE_VERSION = 20190918
+ INTEL_MICROCODE_SITE = $(call github,intel,Intel-Linux-Processor-Microcode-Data-Files,microcode-$(INTEL_MICROCODE_VERSION))
+ INTEL_MICROCODE_LICENSE = PROPRIETARY
+ INTEL_MICROCODE_LICENSE_FILES = license
+diff --git a/package/kvm-unit-tests/kvm-unit-tests.mk b/package/kvm-unit-tests/kvm-unit-tests.mk
+index 92d67fb34b..bb08c0603d 100644
+--- a/package/kvm-unit-tests/kvm-unit-tests.mk
++++ b/package/kvm-unit-tests/kvm-unit-tests.mk
+@@ -37,6 +37,11 @@ KVM_UNIT_TESTS_CONF_OPTS =\
+ # x86-64 cannot do.
+ ifneq ($(BR2_x86_64),y)
+ KVM_UNIT_TESTS_CONF_OPTS += --cross-prefix="$(TARGET_CROSS)"
++# Arch Linux adds -fstack-protector even when building with -ffreestanding, but
++# it doesn't link with the stack-protector library when -nostdlib is passed,
++# which leads to a link error. Therefore, disable it explicitly to work around
++# this bug in Arch Linux. https://bugs.archlinux.org/task/64270
++KVM_UNIT_TESTS_MAKE_OPTS += EXTRA_CFLAGS=-fno-stack-protector
+ endif
+ 
+ define KVM_UNIT_TESTS_CONFIGURE_CMDS
+@@ -44,11 +49,12 @@ define KVM_UNIT_TESTS_CONFIGURE_CMDS
+ endef
+ 
+ define KVM_UNIT_TESTS_BUILD_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) standalone
++	$(TARGET_MAKE_ENV) $(MAKE) $(KVM_UNIT_TESTS_MAKE_OPTS) -C $(@D) \
++		standalone
+ endef
+ 
+ define KVM_UNIT_TESTS_INSTALL_TARGET_CMDS
+-	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) \
++	$(TARGET_MAKE_ENV) $(MAKE) $(KVM_UNIT_TESTS_MAKE_OPTS) -C $(@D) \
+ 		DESTDIR=$(TARGET_DIR)/usr/share/kvm-unit-tests/ \
+ 		install
+ endef
+diff --git a/package/libarchive/0007-RAR-reader-fix-use-after-free.patch b/package/libarchive/0007-RAR-reader-fix-use-after-free.patch
+new file mode 100644
+index 0000000000..5acbb77e96
+--- /dev/null
++++ b/package/libarchive/0007-RAR-reader-fix-use-after-free.patch
+@@ -0,0 +1,36 @@
++From b8592ecba2f9e451e1f5cb7ab6dcee8b8e7b3f60 Mon Sep 17 00:00:00 2001
++From: Martin Matuska <martin@matuska.org>
++Date: Sat, 11 May 2019 02:36:53 +0200
++Subject: [PATCH] RAR reader: fix use after free
++
++If read_data_compressed() returns ARCHIVE_FAILED, the caller is allowed
++to continue with next archive headers. We need to set rar->start_new_table
++after the ppmd7_context got freed, otherwise it won't be allocated again.
++
++Reported by: OSS-Fuzz issue 2582
++
++[Peter: fixes CVE-2019-18408]
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++---
++ libarchive/archive_read_support_format_rar.c | 4 +++-
++ 1 file changed, 3 insertions(+), 1 deletion(-)
++
++diff --git a/libarchive/archive_read_support_format_rar.c b/libarchive/archive_read_support_format_rar.c
++index a8cc5c94..49360876 100644
++--- a/libarchive/archive_read_support_format_rar.c
+++++ b/libarchive/archive_read_support_format_rar.c
++@@ -1024,8 +1024,10 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
++   case COMPRESS_METHOD_GOOD:
++   case COMPRESS_METHOD_BEST:
++     ret = read_data_compressed(a, buff, size, offset);
++-    if (ret != ARCHIVE_OK && ret != ARCHIVE_WARN)
+++    if (ret != ARCHIVE_OK && ret != ARCHIVE_WARN) {
++       __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
+++      rar->start_new_table = 1;
+++    }
++     break;
++ 
++   default:
++-- 
++2.20.1
++
+diff --git a/package/libnspr/libnspr.hash b/package/libnspr/libnspr.hash
+index 321b67956a..0317f20b19 100644
+--- a/package/libnspr/libnspr.hash
++++ b/package/libnspr/libnspr.hash
+@@ -1,4 +1,4 @@
+ # From https://ftp.mozilla.org/pub/nspr/releases/v4.20/src/SHA256SUMS
+-sha256	c9e4b6cc24856ec93202fe13704b38b38ba219f0f2aeac93090ce2b6c696d430  nspr-4.22.tar.gz
++sha256	4b9d821037faf5723da901515ed9cac8b23ef1ea3729022259777393453477a4  nspr-4.23.tar.gz
+ # Locally calculated
+ sha256	fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85  nspr/LICENSE
+diff --git a/package/libnspr/libnspr.mk b/package/libnspr/libnspr.mk
+index 29005d526a..f21f69a746 100644
+--- a/package/libnspr/libnspr.mk
++++ b/package/libnspr/libnspr.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBNSPR_VERSION = 4.22
++LIBNSPR_VERSION = 4.23
+ LIBNSPR_SOURCE = nspr-$(LIBNSPR_VERSION).tar.gz
+ LIBNSPR_SITE = https://ftp.mozilla.org/pub/mozilla.org/nspr/releases/v$(LIBNSPR_VERSION)/src
+ LIBNSPR_SUBDIR = nspr
+diff --git a/package/libnss/0003-Bug-1580126-Fix-build-failure-on-aarch64_be-while-bu.patch b/package/libnss/0003-Bug-1580126-Fix-build-failure-on-aarch64_be-while-bu.patch
+deleted file mode 100644
+index ed415c13d4..0000000000
+--- a/package/libnss/0003-Bug-1580126-Fix-build-failure-on-aarch64_be-while-bu.patch
++++ /dev/null
+@@ -1,36 +0,0 @@
+-From 6b3819159949ed7fc099e588e2e0669407135121 Mon Sep 17 00:00:00 2001
+-From: Giulio Benetti <giulio.benetti@micronovasrl.com>
+-Date: Tue, 10 Sep 2019 11:29:02 +0200
+-Subject: [PATCH] Bug 1580126 - Fix build failure on aarch64_be while building
+- freebl/gcm
+-
+-Build failure is caused by different #ifdef conditions in gcm.c and
+-gcm-aarch64.c that leads to double declaration of the same gcm_*
+-functions.
+-
+-Fix #ifdef condition in gcm-aarch64.c making it the same as the one in
+-gcm.c.
+-
+-[Upstream: https://bugzilla.mozilla.org/show_bug.cgi?id=1580126]
+-Signed-off-by: Giulio Benetti <giulio.benetti@benettiengineering.com>
+----
+- nss/lib/freebl/gcm-aarch64.c | 3 ++-
+- 1 file changed, 2 insertions(+), 1 deletion(-)
+-
+-diff --git a/nss/lib/freebl/gcm-aarch64.c b/nss/lib/freebl/gcm-aarch64.c
+-index 65ea9fb5f..3f3c046d7 100644
+---- a/nss/lib/freebl/gcm-aarch64.c
+-+++ b/nss/lib/freebl/gcm-aarch64.c
+-@@ -9,7 +9,8 @@
+- #include "secerr.h"
+- 
+- /* old gcc doesn't support some poly64x2_t intrinsic */
+--#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ > 6)
+-+#if defined(__aarch64__) && defined(IS_LITTLE_ENDIAN) && \
+-+    (defined(__clang__) || defined(__GNUC__) && __GNUC__ > 6)
+- 
+- #include <arm_neon.h>
+- 
+--- 
+-2.17.1
+-
+diff --git a/package/libnss/0003-Bug-1590676-Fix-build-if-arm-doesn-t-support-NEON.patch b/package/libnss/0003-Bug-1590676-Fix-build-if-arm-doesn-t-support-NEON.patch
+new file mode 100644
+index 0000000000..467a1dc474
+--- /dev/null
++++ b/package/libnss/0003-Bug-1590676-Fix-build-if-arm-doesn-t-support-NEON.patch
+@@ -0,0 +1,50 @@
++From c915be634cbfb90eb7880ec9efbdba9b98c6d4c1 Mon Sep 17 00:00:00 2001
++From: Giulio Benetti <giulio.benetti@benettiengineering.com>
++Date: Wed, 23 Oct 2019 11:47:03 +0200
++Subject: [PATCH] Bug 1590676 - Fix build if arm doesn't support NEON
++
++At the moment NSS assumes that ARM supports NEON extension but this is
++not true and leads to build failure on ARM without NEON extension.
++Add check to assure USE_HW_AES is not defined if ARM without NEON
++extension is used.
++
++Signed-off-by: Giulio Benetti <giulio.benetti@benettiengineering.com>
++---
++ nss/lib/freebl/aes-armv8.c | 5 +++--
++ nss/lib/freebl/rijndael.c  | 3 ++-
++ 2 files changed, 5 insertions(+), 3 deletions(-)
++
++diff --git a/nss/lib/freebl/aes-armv8.c b/nss/lib/freebl/aes-armv8.c
++index 40d5e2d34..057d1aed3 100644
++--- a/nss/lib/freebl/aes-armv8.c
+++++ b/nss/lib/freebl/aes-armv8.c
++@@ -5,9 +5,10 @@
++ #include "secerr.h"
++ #include "rijndael.h"
++ 
++-#if (defined(__clang__) ||                            \
+++#if ((defined(__clang__) ||                            \
++      (defined(__GNUC__) && defined(__GNUC_MINOR__) && \
++-      (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ > 8))))
+++      (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ > 8)))) && \
+++      (defined(__ARM_NEON) || defined(__ARM_NEON__)))
++ 
++ #ifndef __ARM_FEATURE_CRYPTO
++ #error "Compiler option is invalid"
++diff --git a/nss/lib/freebl/rijndael.c b/nss/lib/freebl/rijndael.c
++index 26bd58ee0..6d77d942d 100644
++--- a/nss/lib/freebl/rijndael.c
+++++ b/nss/lib/freebl/rijndael.c
++@@ -20,7 +20,8 @@
++ #include "gcm.h"
++ #include "mpi.h"
++ 
++-#if !defined(IS_LITTLE_ENDIAN) && !defined(NSS_X86_OR_X64)
+++#if (!defined(IS_LITTLE_ENDIAN) && !defined(NSS_X86_OR_X64)) || \
+++    (defined(__arm__) && !defined(__ARM_NEON) && !defined(__ARM_NEON__))
++ // not test yet on big endian platform of arm
++ #undef USE_HW_AES
++ #endif
++-- 
++2.20.1
++
+diff --git a/package/libnss/libnss.hash b/package/libnss/libnss.hash
+index 678f39b090..92d6fd3908 100644
+--- a/package/libnss/libnss.hash
++++ b/package/libnss/libnss.hash
+@@ -1,4 +1,4 @@
+-# From https://ftp.mozilla.org/pub/security/nss/releases/NSS_3_42_1_RTM/src/SHA256SUMS
+-sha256	6b699649d285602ba258a4b0957cb841eafc94eff5735a9da8da0adbb9a10cef  nss-3.46.tar.gz
++# From https://ftp.mozilla.org/pub/security/nss/releases/NSS_3_46_1_RTM/src/SHA256SUMS
++sha256	6cd0c4438b616bdacc0b5f25ff1506b0d07ee97ea6c95d514c5487200a155fa7  nss-3.47.tar.gz
+ # Locally calculated
+ sha256	a20c1a32d1f8102432360b42e932869f7c11c7cdbacf9cac554c422132af47f4  nss/COPYING
+diff --git a/package/libnss/libnss.mk b/package/libnss/libnss.mk
+index 0366f3cfd6..b1c30cf07f 100644
+--- a/package/libnss/libnss.mk
++++ b/package/libnss/libnss.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBNSS_VERSION = 3.46
++LIBNSS_VERSION = 3.47
+ LIBNSS_SOURCE = nss-$(LIBNSS_VERSION).tar.gz
+ LIBNSS_SITE = https://ftp.mozilla.org/pub/mozilla.org/security/nss/releases/NSS_$(subst .,_,$(LIBNSS_VERSION))_RTM/src
+ LIBNSS_DISTDIR = dist
+@@ -44,7 +44,6 @@ LIBNSS_BUILD_VARS = \
+ 	NS_USE_GCC=1 \
+ 	NSS_DISABLE_GTESTS=1 \
+ 	NSS_USE_SYSTEM_SQLITE=1 \
+-	NSS_ENABLE_ECC=1 \
+ 	NATIVE_CC="$(HOSTCC)" \
+ 	OS_ARCH="Linux" \
+ 	OS_RELEASE="2.6" \
+@@ -115,7 +114,6 @@ HOST_LIBNSS_BUILD_VARS = \
+ 	NSS_USE_SYSTEM_SQLITE=1 \
+ 	SQLITE_INCLUDE_DIR=$(HOST_DIR)/include \
+ 	ZLIB_INCLUDE_DIR=$(HOST_DIR)/include \
+-	NSS_ENABLE_ECC=1 \
+ 	NSS_ENABLE_WERROR=0
+ 
+ HOST_LIBNSS_DEPENDENCIES = host-libnspr host-sqlite host-zlib
+diff --git a/package/libopenssl/libopenssl.mk b/package/libopenssl/libopenssl.mk
+index 4a430bcb4d..a1bbf9a900 100644
+--- a/package/libopenssl/libopenssl.mk
++++ b/package/libopenssl/libopenssl.mk
+@@ -12,7 +12,9 @@ LIBOPENSSL_LICENSE_FILES = LICENSE
+ LIBOPENSSL_INSTALL_STAGING = YES
+ LIBOPENSSL_DEPENDENCIES = zlib
+ HOST_LIBOPENSSL_DEPENDENCIES = host-zlib
+-LIBOPENSSL_TARGET_ARCH = linux-generic32
++# no-asm is needed with generic architectures such as linux-generic32, see
++# https://github.com/openssl/openssl/issues/9839
++LIBOPENSSL_TARGET_ARCH = linux-generic32 no-asm
+ LIBOPENSSL_CFLAGS = $(TARGET_CFLAGS)
+ LIBOPENSSL_PROVIDES = openssl
+ 
+@@ -55,7 +57,9 @@ endif
+ 
+ ifeq ($(BR2_STATIC_LIBS),y)
+ # Use "gcc" minimalistic target to disable DSO
+-LIBOPENSSL_TARGET_ARCH = gcc
++# no-asm is needed with generic architectures such as gcc, see
++# https://github.com/openssl/openssl/issues/9839
++LIBOPENSSL_TARGET_ARCH = gcc no-asm
+ else
+ # Some architectures are optimized in OpenSSL
+ # Doesn't work for thumb-only (Cortex-M?)
+diff --git a/package/libpcap/0001-pcap-usb-linux.c-add-missing-limits.h-for-musl-systems.patch b/package/libpcap/0001-pcap-usb-linux.c-add-missing-limits.h-for-musl-systems.patch
+deleted file mode 100644
+index aabaef3383..0000000000
+--- a/package/libpcap/0001-pcap-usb-linux.c-add-missing-limits.h-for-musl-systems.patch
++++ /dev/null
+@@ -1,26 +0,0 @@
+-From aafa3512b7b742f5e66a5543e41974cc5e7eebfa Mon Sep 17 00:00:00 2001
+-From: maxice8 <thinkabit.ukim@gmail.com>
+-Date: Sun, 22 Jul 2018 18:54:17 -0300
+-Subject: [PATCH] pcap-usb-linux.c: add missing limits.h for musl systems.
+-
+-fix compilation on musl libc systems like Void Linux and Alpine.
+-
+-Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
+-[Retrieved from:
+-https://github.com/the-tcpdump-group/libpcap/commit/aafa3512b7b742f5e66a5543e41974cc5e7eebfa]
+----
+- pcap-usb-linux.c | 1 +
+- 1 file changed, 1 insertion(+)
+-
+-diff --git a/pcap-usb-linux.c b/pcap-usb-linux.c
+-index 6f8adf65e..b92c05ea1 100644
+---- a/pcap-usb-linux.c
+-+++ b/pcap-usb-linux.c
+-@@ -50,6 +50,7 @@
+- #include <stdlib.h>
+- #include <unistd.h>
+- #include <fcntl.h>
+-+#include <limits.h>
+- #include <string.h>
+- #include <dirent.h>
+- #include <byteswap.h>
+diff --git a/package/libpcap/libpcap.hash b/package/libpcap/libpcap.hash
+index 19ce2adbe1..a24fba24de 100644
+--- a/package/libpcap/libpcap.hash
++++ b/package/libpcap/libpcap.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated after checking pgp signature
+-sha256	2edb88808e5913fdaa8e9c1fcaf272e19b2485338742b5074b9fe44d68f37019	libpcap-1.9.0.tar.gz
++sha256	635237637c5b619bcceba91900666b64d56ecb7be63f298f601ec786ce087094	libpcap-1.9.1.tar.gz
+ 
+ # Hash for license file:
+ sha256	8a54594d257e14a5260ac770f1633516cb51e3fc28c40136ce2697014eda7afd	LICENSE
+diff --git a/package/libpcap/libpcap.mk b/package/libpcap/libpcap.mk
+index ebceca5273..476183555a 100644
+--- a/package/libpcap/libpcap.mk
++++ b/package/libpcap/libpcap.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBPCAP_VERSION = 1.9.0
++LIBPCAP_VERSION = 1.9.1
+ LIBPCAP_SITE = http://www.tcpdump.org/release
+ LIBPCAP_LICENSE = BSD-3-Clause
+ LIBPCAP_LICENSE_FILES = LICENSE
+diff --git a/package/libpciaccess/0001-pciaccess.pc.in-add-Libs.Private.patch b/package/libpciaccess/0001-pciaccess.pc.in-add-Libs.Private.patch
+new file mode 100644
+index 0000000000..e520dd03d8
+--- /dev/null
++++ b/package/libpciaccess/0001-pciaccess.pc.in-add-Libs.Private.patch
+@@ -0,0 +1,28 @@
++From e1f9fc0a11559c1200005c4bfe34cd217ec117b4 Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Fri, 25 Oct 2019 19:03:32 +0200
++Subject: [PATCH] pciaccess.pc.in: add Libs.Private
++
++Add Libs.Private in pciaccess.pc.in so applications that wants to link
++statically with pciaccess will know that they have to link with its
++dependencies such as -lz
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Upstream status:
++https://gitlab.freedesktop.org/xorg/lib/libpciaccess/merge_requests/10]
++---
++ pciaccess.pc.in | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/pciaccess.pc.in b/pciaccess.pc.in
++index 706c5f7..c2da3d9 100644
++--- a/pciaccess.pc.in
+++++ b/pciaccess.pc.in
++@@ -8,3 +8,4 @@ Description: Library providing generic access to the PCI bus and devices.
++ Version: @PACKAGE_VERSION@
++ Cflags: -I${includedir}
++ Libs: -L${libdir} -lpciaccess
+++Libs.Private: @PCIACCESS_LIBS@
++-- 
++2.23.0
++
+diff --git a/package/librsvg/librsvg.mk b/package/librsvg/librsvg.mk
+index 4f563ce6db..470910d94c 100644
+--- a/package/librsvg/librsvg.mk
++++ b/package/librsvg/librsvg.mk
+@@ -9,10 +9,12 @@ LIBRSVG_VERSION = $(LIBRSVG_VERSION_MAJOR).20
+ LIBRSVG_SITE = http://ftp.gnome.org/pub/gnome/sources/librsvg/$(LIBRSVG_VERSION_MAJOR)
+ LIBRSVG_SOURCE = librsvg-$(LIBRSVG_VERSION).tar.xz
+ LIBRSVG_INSTALL_STAGING = YES
++LIBRSVG_CONF_ENV = LIBS=$(TARGET_NLS_LIBS)
+ LIBRSVG_CONF_OPTS = --disable-pixbuf-loader --disable-tools --enable-introspection=no
+ HOST_LIBRSVG_CONF_OPTS = --enable-introspection=no
+ LIBRSVG_DEPENDENCIES = cairo host-gdk-pixbuf gdk-pixbuf libcroco libglib2 libxml2 pango \
+-	$(if $(BR2_PACKAGE_LIBGTK3),libgtk3)
++	$(if $(BR2_PACKAGE_LIBGTK3),libgtk3) \
++	$(TARGET_NLS_DEPENDENCIES)
+ HOST_LIBRSVG_DEPENDENCIES = host-cairo host-gdk-pixbuf host-libcroco host-libglib2 host-libxml2 host-pango
+ LIBRSVG_LICENSE = LGPL-2.0+
+ LIBRSVG_LICENSE_FILES = COPYING.LIB
+diff --git a/package/libseccomp/0002-Circumvent-bug-in-uClibc-ng-syscall-on-x86_64-system.patch b/package/libseccomp/0002-Circumvent-bug-in-uClibc-ng-syscall-on-x86_64-system.patch
+new file mode 100644
+index 0000000000..6ac9b08a76
+--- /dev/null
++++ b/package/libseccomp/0002-Circumvent-bug-in-uClibc-ng-syscall-on-x86_64-system.patch
+@@ -0,0 +1,80 @@
++From 613e601bb4b50dc359b41f162a5b629449e4bbea Mon Sep 17 00:00:00 2001
++From: Carlos Santos <casantos@redhat.com>
++Date: Fri, 18 Oct 2019 22:02:49 -0300
++Subject: [PATCH] Circumvent bug in uClibc-ng syscall() on x86_64 systems
++
++On uClibc at least up to v1.0.32, syscall() for x86_64 is defined in
++libc/sysdeps/linux/x86_64/syscall.S as
++
++syscall:
++        movq %rdi, %rax         /* Syscall number -> rax.  */
++        movq %rsi, %rdi         /* shift arg1 - arg5.  */
++        movq %rdx, %rsi
++        movq %rcx, %rdx
++        movq %r8, %r10
++        movq %r9, %r8
++        movq 8(%rsp),%r9        /* arg6 is on the stack.  */
++        syscall                 /* Do the system call.  */
++        cmpq $-4095, %rax       /* Check %rax for error.  */
++        jae __syscall_error     /* Branch forward if it failed.  */
++        ret                     /* Return to caller.  */
++
++And __syscall_error is defined in
++libc/sysdeps/linux/x86_64/__syscall_error.c as
++
++int __syscall_error(void) attribute_hidden;
++int __syscall_error(void)
++{
++	register int err_no __asm__ ("%rcx");
++	__asm__ ("mov %rax, %rcx\n\t"
++	         "neg %rcx");
++	__set_errno(err_no);
++	return -1;
++}
++
++Notice that __syscall_error returns -1 as a 32-bit int in %rax, a 64-bit
++register i.e. 0x00000000ffffffff (decimal 4294967295). When this value
++is compared to -1 in _sys_chk_seccomp_flag_kernel() the result is false,
++leading the function to always return 0.
++
++Prevent the error by coercing the return value of syscall() to int in a
++temporary variable before comparing it to -1. We could use just an (int)
++cast but the variable makes the code more readable and the machine code
++generated by the compiler is the same in both cases.
++
++All other syscall() invocations were inspected and they either already
++coerce the result to int or do not compare it to -1.
++
++The same problem probably occurs on other 64-bit systems but so far only
++x86_64 was tested.
++
++A bug report is being submitted to uClibc.
++
++Signed-off-by: Carlos Santos <casantos@redhat.com>
++---
++ src/system.c | 8 +++++---
++ 1 file changed, 5 insertions(+), 3 deletions(-)
++
++diff --git a/src/system.c b/src/system.c
++index 8e5aafc..811b401 100644
++--- a/src/system.c
+++++ b/src/system.c
++@@ -215,10 +215,12 @@ static int _sys_chk_seccomp_flag_kernel(int flag)
++ 	/* this is an invalid seccomp(2) call because the last argument
++ 	 * is NULL, but depending on the errno value of EFAULT we can
++ 	 * guess if the filter flag is supported or not */
++-	if (sys_chk_seccomp_syscall() == 1 &&
++-	    syscall(_nr_seccomp, SECCOMP_SET_MODE_FILTER, flag, NULL) == -1 &&
++-	    errno == EFAULT)
+++	int rc;
+++	if (sys_chk_seccomp_syscall() == 1) {
+++	    rc = syscall(_nr_seccomp, SECCOMP_SET_MODE_FILTER, flag, NULL);
+++	    if (rc == -1 && errno == EFAULT)
++ 		return 1;
+++	}
++ 
++ 	return 0;
++ }
++-- 
++2.18.1
++
+diff --git a/package/libseccomp/libseccomp.hash b/package/libseccomp/libseccomp.hash
+index 0823903c36..39c5f8aa38 100644
+--- a/package/libseccomp/libseccomp.hash
++++ b/package/libseccomp/libseccomp.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256 b7ee0299157fb7a6a81c99f2e0d7e64429b7d7c0eae43c3a6ef91e87eeed2868 libseccomp-v2.4.0.tar.gz
++sha256 36aa502c0461ae9efc6c93ec2430d6badd9bf91ecbe73806baf7b7c6f687ab4f libseccomp-2.4.1.tar.gz
+ sha256 102900208eef27b766380135906d431dba87edaa7ec6aa72e6ebd3dd67f3a97b LICENSE
+diff --git a/package/libseccomp/libseccomp.mk b/package/libseccomp/libseccomp.mk
+index 90b981f042..491e51b375 100644
+--- a/package/libseccomp/libseccomp.mk
++++ b/package/libseccomp/libseccomp.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-LIBSECCOMP_VERSION = v2.4.0
+-LIBSECCOMP_SITE = $(call github,seccomp,libseccomp,$(LIBSECCOMP_VERSION))
++LIBSECCOMP_VERSION = 2.4.1
++LIBSECCOMP_SITE = $(call github,seccomp,libseccomp,v$(LIBSECCOMP_VERSION))
+ LIBSECCOMP_LICENSE = LGPL-2.1
+ LIBSECCOMP_LICENSE_FILES = LICENSE
+ LIBSECCOMP_INSTALL_STAGING = YES
+diff --git a/package/libsigrok/libsigrok.hash b/package/libsigrok/libsigrok.hash
+index 7a52c6ca1b..e5ab5d9736 100644
+--- a/package/libsigrok/libsigrok.hash
++++ b/package/libsigrok/libsigrok.hash
+@@ -1,2 +1,3 @@
+ # Locally computed
+ sha256	e40fde7af98d29e922e9d3cbe0a6c0569889153fc31e47b8b1afe4d846292b9c	libsigrok-0.5.1.tar.gz
++sha256	8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903	COPYING
+diff --git a/package/libsigrok/libsigrok.mk b/package/libsigrok/libsigrok.mk
+index 5bca9ad518..aa79191e94 100644
+--- a/package/libsigrok/libsigrok.mk
++++ b/package/libsigrok/libsigrok.mk
+@@ -10,27 +10,27 @@ LIBSIGROK_LICENSE = GPL-3.0+
+ LIBSIGROK_LICENSE_FILES = COPYING
+ LIBSIGROK_INSTALL_STAGING = YES
+ LIBSIGROK_DEPENDENCIES = libglib2 libzip host-pkgconf
+-LIBSIGROK_CONF_OPTS = --disable-glibtest --disable-java --disable-python
++LIBSIGROK_CONF_OPTS = --disable-java --disable-python
+ 
+ ifeq ($(BR2_PACKAGE_LIBSERIALPORT),y)
+-LIBSIGROK_CONF_OPTS += --enable-libserialport
++LIBSIGROK_CONF_OPTS += --with-libserialport
+ LIBSIGROK_DEPENDENCIES += libserialport
+ else
+-LIBSIGROK_CONF_OPTS += --disable-libserialport
++LIBSIGROK_CONF_OPTS += --without-libserialport
+ endif
+ 
+-ifeq ($(BR2_PACKAGE_LIBFTDI),y)
+-LIBSIGROK_CONF_OPTS += --enable-libftdi
+-LIBSIGROK_DEPENDENCIES += libftdi
++ifeq ($(BR2_PACKAGE_LIBFTDI1),y)
++LIBSIGROK_CONF_OPTS += --with-libftdi
++LIBSIGROK_DEPENDENCIES += libftdi1
+ else
+-LIBSIGROK_CONF_OPTS += --disable-libftdi
++LIBSIGROK_CONF_OPTS += --without-libftdi
+ endif
+ 
+ ifeq ($(BR2_PACKAGE_LIBUSB),y)
+-LIBSIGROK_CONF_OPTS += --enable-libusb
++LIBSIGROK_CONF_OPTS += --with-libusb
+ LIBSIGROK_DEPENDENCIES += libusb
+ else
+-LIBSIGROK_CONF_OPTS += --disable-libusb
++LIBSIGROK_CONF_OPTS += --without-libusb
+ endif
+ 
+ ifeq ($(BR2_PACKAGE_GLIBMM),y)
+diff --git a/package/libtorrent/0001-libtorrent.pc.in-add-Libs.Private.patch b/package/libtorrent/0001-libtorrent.pc.in-add-Libs.Private.patch
+new file mode 100644
+index 0000000000..7d363d2939
+--- /dev/null
++++ b/package/libtorrent/0001-libtorrent.pc.in-add-Libs.Private.patch
+@@ -0,0 +1,30 @@
++From a86219e725441eb87321fa3e24531dafa54ee674 Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Sun, 20 Oct 2019 20:23:19 +0200
++Subject: [PATCH] libtorrent.pc.in: add Libs.Private
++
++Add Libs.Private: -lz so applications that want to link statically with
++libtorrent (such as rtorrent) will know that they must link with -lz
++
++Fixes:
++ - http://autobuild.buildroot.org/results/075598e1699c2ac20a4dfbcb5695bbb7343f9a86
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Upstream status: https://github.com/rakshasa/libtorrent/pull/202]
++---
++ libtorrent.pc.in | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/libtorrent.pc.in b/libtorrent.pc.in
++index cf6612bc..6108f7e9 100644
++--- a/libtorrent.pc.in
+++++ b/libtorrent.pc.in
++@@ -7,4 +7,5 @@ Name: libtorrent
++ Description: A BitTorrent library
++ Version: @VERSION@
++ Libs: -L${libdir} -ltorrent
+++Libs.Private: -lz
++ Cflags: -I${includedir}
++-- 
++2.23.0
++
+diff --git a/package/libunwind/libunwind.mk b/package/libunwind/libunwind.mk
+index 7adf318962..7469b789e3 100644
+--- a/package/libunwind/libunwind.mk
++++ b/package/libunwind/libunwind.mk
+@@ -11,7 +11,9 @@ LIBUNWIND_LICENSE_FILES = COPYING
+ LIBUNWIND_LICENSE = MIT
+ LIBUNWIND_AUTORECONF = YES
+ 
+-LIBUNWIND_CONF_OPTS = --disable-tests
++LIBUNWIND_CONF_OPTS = \
++	--disable-tests \
++	$(if $(BR2_INSTALL_LIBSTDCPP),--enable-cxx-exceptions,--disable-cxx-exceptions)
+ 
+ ifeq ($(BR2_PACKAGE_LIBATOMIC_OPS),y)
+ LIBUNWIND_DEPENDENCIES = libatomic_ops
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index 3f469b672f..d581e5916c 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -287,10 +287,10 @@ endchoice
+ 
+ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+-	default "4.4.194"	if BR2_KERNEL_HEADERS_4_4
+-	default "4.9.194"	if BR2_KERNEL_HEADERS_4_9
+-	default "4.14.146"	if BR2_KERNEL_HEADERS_4_14
+-	default "4.19.76"	if BR2_KERNEL_HEADERS_4_19
++	default "4.4.198"	if BR2_KERNEL_HEADERS_4_4
++	default "4.9.198"	if BR2_KERNEL_HEADERS_4_9
++	default "4.14.151"	if BR2_KERNEL_HEADERS_4_14
++	default "4.19.81"	if BR2_KERNEL_HEADERS_4_19
+ 	default "4.20.17"	if BR2_KERNEL_HEADERS_4_20
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+ 	default "custom"	if BR2_KERNEL_HEADERS_CUSTOM_TARBALL
+diff --git a/package/linux-tools/Config.in b/package/linux-tools/Config.in
+index 1c660f76f5..ab8cc3891c 100644
+--- a/package/linux-tools/Config.in
++++ b/package/linux-tools/Config.in
+@@ -82,6 +82,7 @@ config BR2_PACKAGE_LINUX_TOOLS_SELFTESTS
+ 	bool"selftests"
+ 	depends on BR2_PACKAGE_BUSYBOX_SHOW_OTHERS # bash
+ 	depends on BR2_USE_MMU  # bash
++	depends on !BR2_STATIC_LIBS
+ 	select BR2_PACKAGE_LINUX_TOOLS
+ 	select BR2_PACKAGE_BASH # runtime
+ 	select BR2_PACKAGE_NCURSES
+@@ -103,9 +104,9 @@ config BR2_PACKAGE_LINUX_TOOLS_SELFTESTS
+ 	  This is very much a use at your risk option and may not work
+ 	  for every setup or every architecture.
+ 
+-comment "selftests needs BR2_PACKAGE_BUSYBOX_SHOW_OTHERS"
++comment "selftests needs BR2_PACKAGE_BUSYBOX_SHOW_OTHERS and a toolchain w/ dynamic library"
+ 	depends on BR2_USE_MMU
+-	depends on !BR2_PACKAGE_BUSYBOX_SHOW_OTHERS
++	depends on !BR2_PACKAGE_BUSYBOX_SHOW_OTHERS || BR2_STATIC_LIBS
+ 
+ config BR2_PACKAGE_LINUX_TOOLS_TMON
+ 	bool "tmon"
+diff --git a/package/lua-sdl2/lua-sdl2.mk b/package/lua-sdl2/lua-sdl2.mk
+index 31375997b3..ef3ede9ccc 100644
+--- a/package/lua-sdl2/lua-sdl2.mk
++++ b/package/lua-sdl2/lua-sdl2.mk
+@@ -10,7 +10,15 @@ LUA_SDL2_LICENSE = ISC
+ LUA_SDL2_LICENSE_FILES = LICENSE
+ LUA_SDL2_DEPENDENCIES = luainterpreter sdl2
+ 
+-LUA_SDL2_CONF_OPTS += -DWITH_LUAVER=user -DLUA_INCLUDE_DIR=$(STAGING_DIR)/usr/include
++ifeq ($(BR2_PACKAGE_LUAJIT),y)
++LUA_SDL2_LUAVER = JIT
++else ifeq ($(BR2_PACKAGE_LUA_5_3),y)
++LUA_SDL2_LUAVER = 53
++else
++LUA_SDL2_LUAVER = 51
++endif
++
++LUA_SDL2_CONF_OPTS += -DWITH_LUAVER=$(LUA_SDL2_LUAVER) -DLUA_INCLUDE_DIR=$(STAGING_DIR)/usr/include
+ 
+ ifeq ($(BR2_PACKAGE_SDL2_IMAGE),y)
+ LUA_SDL2_DEPENDENCIES += sdl2_image
+diff --git a/package/lxc/0001-syscall_wrappers-rename-internal-memfd_create-to-mem.patch b/package/lxc/0001-syscall_wrappers-rename-internal-memfd_create-to-mem.patch
+new file mode 100644
+index 0000000000..6210591c09
+--- /dev/null
++++ b/package/lxc/0001-syscall_wrappers-rename-internal-memfd_create-to-mem.patch
+@@ -0,0 +1,43 @@
++From 2b23a1313f501423aecbe4ad4a988a9f6f832f1f Mon Sep 17 00:00:00 2001
++From: Patrick Havelange <patrick.havelange@essensium.com>
++Date: Tue, 22 Oct 2019 12:29:54 +0200
++Subject: [PATCH 1/1] syscall_wrappers: rename internal memfd_create to
++ memfd_create_lxc
++
++In case the internal memfd_create has to be used, make sure we don't
++clash with the already existing memfd_create function from glibc.
++
++This can happen if this glibc function is a stub. In this case, at
++./configure time, the test for this function will return false, however
++the declaration of that function is still available. This leads to
++compilation errors.
++
++Signed-off-by: Patrick Havelange <patrick.havelange@essensium.com>
++---
++ src/lxc/syscall_wrappers.h | 3 ++-
++ 1 file changed, 2 insertions(+), 1 deletion(-)
++
++diff --git a/src/lxc/syscall_wrappers.h b/src/lxc/syscall_wrappers.h
++index 42d94db..bddf01b 100644
++--- a/src/lxc/syscall_wrappers.h
+++++ b/src/lxc/syscall_wrappers.h
++@@ -59,7 +59,7 @@ static inline long __keyctl(int cmd, unsigned long arg2, unsigned long arg3,
++ #endif
++ 
++ #ifndef HAVE_MEMFD_CREATE
++-static inline int memfd_create(const char *name, unsigned int flags) {
+++static inline int memfd_create_lxc(const char *name, unsigned int flags) {
++ 	#ifndef __NR_memfd_create
++ 		#if defined __i386__
++ 			#define __NR_memfd_create 356
++@@ -98,6 +98,7 @@ static inline int memfd_create(const char *name, unsigned int flags) {
++ 	return -1;
++ 	#endif
++ }
+++#define memfd_create memfd_create_lxc
++ #else
++ extern int memfd_create(const char *name, unsigned int flags);
++ #endif
++-- 
++2.20.1
++
+diff --git a/package/minizip/Config.in b/package/minizip/Config.in
+index 5a0c52b3bb..e4d185d9d7 100644
+--- a/package/minizip/Config.in
++++ b/package/minizip/Config.in
+@@ -1,6 +1,7 @@
+ config BR2_PACKAGE_MINIZIP
+ 	bool "minizip"
+ 	depends on BR2_USE_WCHAR
++	select BR2_PACKAGE_LIBICONV if !BR2_ENABLE_LOCALE
+ 	help
+ 	  Enables to extract files from a .zip archive file.
+ 	  It is compatible with PKZip 2.04g, WinZip, InfoZip,
+diff --git a/package/mjpegtools/0001-PROGRAM_NOPIC-apparently-causes-problems-on-some-x86_64-systems.patch b/package/mjpegtools/0001-PROGRAM_NOPIC-apparently-causes-problems-on-some-x86_64-systems.patch
+new file mode 100644
+index 0000000000..f5de8ee969
+--- /dev/null
++++ b/package/mjpegtools/0001-PROGRAM_NOPIC-apparently-causes-problems-on-some-x86_64-systems.patch
+@@ -0,0 +1,73 @@
++From e69557bea18eb7c3069c9527cc30f7cd91be27b7 Mon Sep 17 00:00:00 2001
++From: sms00 <sms00@3be20b7b-d6de-45d7-9b51-1db703c412de>
++Date: Thu, 28 Nov 2013 22:39:41 +0000
++Subject: [PATCH] PROGRAM_NOPIC apparently causes problems on some x86_64
++ systems, has little to no performance effect on x86_64 systems and even on
++ x86 systems most programs are I/O bound anyhow.  So remove the 4 uses of the
++ flag
++
++git-svn-id: https://svn.code.sf.net/p/mjpeg/Code/trunk/mjpeg_play@3359 3be20b7b-d6de-45d7-9b51-1db703c412de
++
++[Retrieved (and backported by removing INSTALL updates) from:
++https://github.com/jaystevens/mjpegtools/commit/e69557bea18eb7c3069c9527cc30f7cd91be27b7]
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++---
++ y4mdenoise/Makefile.am |   4 +-
++ y4munsharp/Makefile.am |   2 +-
++ y4mutils/Makefile.am   |   2 +-
++ yuvscaler/Makefile.am  |   2 +-
++ 5 files changed, 26 insertions(+), 94 deletions(-)
++
++diff --git a/y4mdenoise/Makefile.am b/y4mdenoise/Makefile.am
++index dee9064f..d7fa76e2 100644
++--- a/y4mdenoise/Makefile.am
+++++ b/y4mdenoise/Makefile.am
++@@ -4,8 +4,8 @@ MAINTAINERCLEANFILES = Makefile.in
++ 
++ EXTRA_DIST = implementation.html
++ 
++-AM_CFLAGS = -DNDEBUG -finline-functions @PROGRAM_NOPIC@
++-AM_CXXFLAGS = -DNDEBUG -finline-functions @PROGRAM_NOPIC@
+++AM_CFLAGS = -DNDEBUG -finline-functions
+++AM_CXXFLAGS = -DNDEBUG -finline-functions
++ 
++ INCLUDES =  -I$(top_srcdir) -I$(top_srcdir)/utils
++ 
++diff --git a/y4munsharp/Makefile.am b/y4munsharp/Makefile.am
++index a7f98acc..f99ff5cf 100644
++--- a/y4munsharp/Makefile.am
+++++ b/y4munsharp/Makefile.am
++@@ -4,7 +4,7 @@ MAINTAINERCLEANFILES = Makefile.in
++ 
++ INCLUDES = -I $(top_srcdir)/utils -I $(top_srcdir)
++ 
++-y4munharp_CFLAGS=@PROGRAM_NOPIC@
+++y4munharp_CFLAGS=
++ 
++ bin_PROGRAMS = y4munsharp
++ 
++diff --git a/y4mutils/Makefile.am b/y4mutils/Makefile.am
++index f3b0a671..7b8b1881 100644
++--- a/y4mutils/Makefile.am
+++++ b/y4mutils/Makefile.am
++@@ -2,7 +2,7 @@
++ 
++ MAINTAINERCLEANFILES = Makefile.in
++ 
++-AM_CFLAGS   = @PROGRAM_NOPIC@
+++AM_CFLAGS   =
++ AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/utils
++ 
++ LIBMJPEGUTILS = $(top_builddir)/utils/libmjpegutils.la
++diff --git a/yuvscaler/Makefile.am b/yuvscaler/Makefile.am
++index 1fe4d757..6d2adaca 100644
++--- a/yuvscaler/Makefile.am
+++++ b/yuvscaler/Makefile.am
++@@ -18,6 +18,6 @@ noinst_HEADERS = \
++ 
++ EXTRA_DIST = yuvscaler_implementation.txt
++ 
++-yuvscaler_CFLAGS=@PROGRAM_NOPIC@
+++yuvscaler_CFLAGS=
++ yuvscaler_SOURCES = yuvscaler.c yuvscaler_resample.c yuvscaler_bicubic.c
++ yuvscaler_LDADD = $(LIBMJPEGUTILS) $(LIBM_LIBS)
+diff --git a/package/mjpegtools/mjpegtools.mk b/package/mjpegtools/mjpegtools.mk
+index 14713c868e..f028afc82d 100644
+--- a/package/mjpegtools/mjpegtools.mk
++++ b/package/mjpegtools/mjpegtools.mk
+@@ -9,6 +9,8 @@ MJPEGTOOLS_SITE = http://sourceforge.net/projects/mjpeg/files/mjpegtools/$(MJPEG
+ MJPEGTOOLS_DEPENDENCIES = host-pkgconf jpeg
+ MJPEGTOOLS_LICENSE = GPL-2.0+
+ MJPEGTOOLS_LICENSE_FILES = COPYING
++# We're patching Makefile.am
++MJPEGTOOLS_AUTORECONF = YES
+ 
+ ifeq ($(BR2_PACKAGE_MJPEGTOOLS_SIMD_SUPPORT),y)
+ MJPEGTOOLS_CONF_OPTS += --enable-simd-accel
+diff --git a/package/mongoose/mongoose.hash b/package/mongoose/mongoose.hash
+index 92f35a7113..d380131631 100644
+--- a/package/mongoose/mongoose.hash
++++ b/package/mongoose/mongoose.hash
+@@ -1,3 +1,3 @@
+ # Locally computed:
+-sha256	ed9b44690f9660d25562e45472d486c086bcc916bf49f39f22e0a90444d44454  mongoose-6.15.tar.gz
++sha256	1f20f2781862560ddf3203dfb0e6fcf248a68bf92aefbeafb9d2a629c4767c02  mongoose-6.16.tar.gz
+ sha256	fdc34eeea97327d75c83492abd34f1a3200c53dec04422ecda8071dc60a36d10  LICENSE
+diff --git a/package/mongoose/mongoose.mk b/package/mongoose/mongoose.mk
+index c4a703d3cf..bb40de261e 100644
+--- a/package/mongoose/mongoose.mk
++++ b/package/mongoose/mongoose.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-MONGOOSE_VERSION = 6.15
++MONGOOSE_VERSION = 6.16
+ MONGOOSE_SITE = $(call github,cesanta,mongoose,$(MONGOOSE_VERSION))
+ MONGOOSE_LICENSE = GPL-2.0
+ MONGOOSE_LICENSE_FILES = LICENSE
+diff --git a/package/numactl/Config.in b/package/numactl/Config.in
+index 95057d3c33..8ea07bb856 100644
+--- a/package/numactl/Config.in
++++ b/package/numactl/Config.in
+@@ -9,4 +9,4 @@ config BR2_PACKAGE_NUMACTL
+ 	  and memory nodes. It does this by supplying a NUMA memory
+ 	  policy to the operating system before running your program.
+ 
+-	  http://oss.sgi.com/projects/libnuma/
++	  https://github.com/numactl/numactl
+diff --git a/package/php/php.hash b/package/php/php.hash
+index 2afcb2cd77..debc14c64e 100644
+--- a/package/php/php.hash
++++ b/package/php/php.hash
+@@ -1,5 +1,5 @@
+ # From http://php.net/downloads.php
+-sha256 42f00a15419e05771734b7159c8d39d639b8a5a6770413adfa2615f6f923d906  php-7.3.10.tar.xz
++sha256 657cf6464bac28e9490c59c07a2cf7bb76c200f09cfadf6e44ea64e95fa01021  php-7.3.11.tar.xz
+ 
+ # License file
+ sha256 f689b8fa63bea7950ce6a21bf52ed88ea0d77673ee76e6de12f51191174d91b8  LICENSE
+diff --git a/package/php/php.mk b/package/php/php.mk
+index a132258c1a..fe7cea8880 100644
+--- a/package/php/php.mk
++++ b/package/php/php.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-PHP_VERSION = 7.3.10
++PHP_VERSION = 7.3.11
+ PHP_SITE = http://www.php.net/distributions
+ PHP_SOURCE = php-$(PHP_VERSION).tar.xz
+ PHP_INSTALL_STAGING = YES
+diff --git a/package/pkg-generic.mk b/package/pkg-generic.mk
+index 21778f448f..3cb13176ed 100644
+--- a/package/pkg-generic.mk
++++ b/package/pkg-generic.mk
+@@ -521,7 +521,7 @@ $(2)_ALL_DOWNLOADS = \
+ 	$$(if $$($(2)_SOURCE),$$($(2)_SITE_METHOD)+$$($(2)_SITE)/$$($(2)_SOURCE)) \
+ 	$$(foreach p,$$($(2)_PATCH) $$($(2)_EXTRA_DOWNLOADS),\
+ 		$$(if $$(findstring ://,$$(p)),$$(p),\
+-			$$($(2)_SITE)/$$(p)))
++			$$($(2)_SITE_METHOD)+$$($(2)_SITE)/$$(p)))
+ 
+ ifndef $(2)_SITE
+  ifdef $(3)_SITE
+diff --git a/package/python-pysnmp-apps/python-pysnmp-apps.mk b/package/python-pysnmp-apps/python-pysnmp-apps.mk
+index 79c436fa73..ac43fda193 100644
+--- a/package/python-pysnmp-apps/python-pysnmp-apps.mk
++++ b/package/python-pysnmp-apps/python-pysnmp-apps.mk
+@@ -8,7 +8,7 @@ PYTHON_PYSNMP_APPS_VERSION = 0.4.1
+ PYTHON_PYSNMP_APPS_SOURCE = pysnmp-apps-$(PYTHON_PYSNMP_APPS_VERSION).tar.gz
+ PYTHON_PYSNMP_APPS_SITE = https://pypi.python.org/packages/source/p/pysnmp-apps
+ PYTHON_PYSNMP_APPS_SETUP_TYPE = setuptools
+-PYTHON_PYSNMP_APPS_LICENSE = BSD-3-Clause
++PYTHON_PYSNMP_APPS_LICENSE = BSD-2-Clause
+ PYTHON_PYSNMP_APPS_LICENSE_FILES = LICENSE.txt
+ 
+ PYTHON_PYSNMP_APPS_DEPENDENCIES = python-pysnmp
+diff --git a/package/python/0002-Fix-get_python_inc-for-cross-compilation.patch b/package/python/0002-Fix-get_python_inc-for-cross-compilation.patch
+index b28ef2440e..1fa4e92788 100644
+--- a/package/python/0002-Fix-get_python_inc-for-cross-compilation.patch
++++ b/package/python/0002-Fix-get_python_inc-for-cross-compilation.patch
+@@ -24,23 +24,25 @@ This patch allows to fix the
+ incorrectly added to the header paths.
+ 
+ Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
++[Asaf: update for 2.7.17]
++Signed-off-by: Asaf Kahlon <asafka7@gmail.com>
+ ---
+  Lib/distutils/sysconfig.py | 2 +-
+  1 file changed, 1 insertion(+), 1 deletion(-)
+ 
+ diff --git a/Lib/distutils/sysconfig.py b/Lib/distutils/sysconfig.py
+-index de7da1d..d72b6e5 100644
++index 1a4b792644..14c7d81c48 100644
+ --- a/Lib/distutils/sysconfig.py
+ +++ b/Lib/distutils/sysconfig.py
+-@@ -79,7 +79,7 @@ def get_python_inc(plat_specific=0, prefix=None):
+- 
++@@ -85,7 +85,7 @@ def get_python_inc(plat_specific=0, prefix=None):
+      if os.name == "posix":
+          if python_build:
+--            buildir = os.path.dirname(sys.executable)
+-+            buildir = project_base
+-             if plat_specific:
+-                 # python.h is located in the buildir
+-                 inc_dir = buildir
++             if sys.executable:
++-                buildir = os.path.dirname(sys.executable)
+++                buildir = project_base
++             else:
++                 # sys.executable can be empty if argv[0] has been changed
++                 # and Python is unable to retrieve the real program name
+ -- 
+-2.7.4
++2.20.1
+ 
+diff --git a/package/python/0035-bpo-35907-CVE-2019-9948-urllib-rejects-local_file-sc.patch b/package/python/0035-bpo-35907-CVE-2019-9948-urllib-rejects-local_file-sc.patch
+deleted file mode 100644
+index 5ca1433465..0000000000
+--- a/package/python/0035-bpo-35907-CVE-2019-9948-urllib-rejects-local_file-sc.patch
++++ /dev/null
+@@ -1,59 +0,0 @@
+-From b15bde8058e821b383d81fcae68b335a752083ca Mon Sep 17 00:00:00 2001
+-From: SH <push0ebp@gmail.com>
+-Date: Wed, 22 May 2019 06:12:23 +0900
+-Subject: [PATCH] bpo-35907, CVE-2019-9948: urllib rejects local_file:// scheme
+-  (GH-11842)
+-
+- CVE-2019-9948: Avoid file reading as disallowing the unnecessary URL scheme in urllib.urlopen().
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- Lib/test/test_urllib.py                                           | 7 +++++++
+- Lib/urllib.py                                                     | 4 +++-
+- Misc/NEWS.d/next/Library/2019-02-13-17-21-10.bpo-35907.ckk2zg.rst | 1 +
+- 3 files changed, 11 insertions(+), 1 deletion(-)
+- create mode 100644 Misc/NEWS.d/next/Library/2019-02-13-17-21-10.bpo-35907.ckk2zg.rst
+-
+-diff --git a/Lib/test/test_urllib.py b/Lib/test/test_urllib.py
+-index d7778d4194..ae1f6c0b29 100644
+---- a/Lib/test/test_urllib.py
+-+++ b/Lib/test/test_urllib.py
+-@@ -1048,6 +1048,13 @@ class URLopener_Tests(unittest.TestCase):
+-             "spam://c:|windows%/:=&?~#+!$,;'@()*[]|/path/"),
+-             "//c:|windows%/:=&?~#+!$,;'@()*[]|/path/")
+- 
+-+    def test_local_file_open(self):
+-+        class DummyURLopener(urllib.URLopener):
+-+            def open_local_file(self, url):
+-+                return url
+-+        for url in ('local_file://example', 'local-file://example'):
+-+            self.assertRaises(IOError, DummyURLopener().open, url)
+-+            self.assertRaises(IOError, urllib.urlopen, url)
+- 
+- # Just commented them out.
+- # Can't really tell why keep failing in windows and sparc.
+-diff --git a/Lib/urllib.py b/Lib/urllib.py
+-index d85504a5cb..156879dd0a 100644
+---- a/Lib/urllib.py
+-+++ b/Lib/urllib.py
+-@@ -203,7 +203,9 @@ class URLopener:
+-         name = 'open_' + urltype
+-         self.type = urltype
+-         name = name.replace('-', '_')
+--        if not hasattr(self, name):
+-+
+-+        # bpo-35907: disallow the file reading with the type not allowed
+-+        if not hasattr(self, name) or name == 'open_local_file':
+-             if proxy:
+-                 return self.open_unknown_proxy(proxy, fullurl, data)
+-             else:
+-diff --git a/Misc/NEWS.d/next/Library/2019-02-13-17-21-10.bpo-35907.ckk2zg.rst b/Misc/NEWS.d/next/Library/2019-02-13-17-21-10.bpo-35907.ckk2zg.rst
+-new file mode 100644
+-index 0000000000..bb187d8d65
+---- /dev/null
+-+++ b/Misc/NEWS.d/next/Library/2019-02-13-17-21-10.bpo-35907.ckk2zg.rst
+-@@ -0,0 +1 @@
+-+CVE-2019-9948: Avoid file reading as disallowing the unnecessary URL scheme in urllib.urlopen
+--- 
+-2.11.0
+-
+diff --git a/package/python/0036-bpo-36216-Add-check-for-characters-in-netloc-that-no.patch b/package/python/0036-bpo-36216-Add-check-for-characters-in-netloc-that-no.patch
+deleted file mode 100644
+index 3b61144713..0000000000
+--- a/package/python/0036-bpo-36216-Add-check-for-characters-in-netloc-that-no.patch
++++ /dev/null
+@@ -1,159 +0,0 @@
+-From e37ef41289b77e0f0bb9a6aedb0360664c55bdd5 Mon Sep 17 00:00:00 2001
+-From: Steve Dower <steve.dower@microsoft.com>
+-Date: Thu, 7 Mar 2019 09:08:45 -0800
+-Subject: [PATCH] bpo-36216: Add check for characters in netloc that normalize
+- to separators (GH-12201)
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- Doc/library/urlparse.rst                           | 20 ++++++++++++++++++
+- Lib/test/test_urlparse.py                          | 24 ++++++++++++++++++++++
+- Lib/urlparse.py                                    | 17 +++++++++++++++
+- .../2019-03-06-09-38-40.bpo-36216.6q1m4a.rst       |  3 +++
+- 4 files changed, 64 insertions(+)
+- create mode 100644 Misc/NEWS.d/next/Security/2019-03-06-09-38-40.bpo-36216.6q1m4a.rst
+-
+-diff --git a/Doc/library/urlparse.rst b/Doc/library/urlparse.rst
+-index 22249da54f..0989c88c30 100644
+---- a/Doc/library/urlparse.rst
+-+++ b/Doc/library/urlparse.rst
+-@@ -119,12 +119,22 @@ The :mod:`urlparse` module defines the following functions:
+-    See section :ref:`urlparse-result-object` for more information on the result
+-    object.
+- 
+-+   Characters in the :attr:`netloc` attribute that decompose under NFKC
+-+   normalization (as used by the IDNA encoding) into any of ``/``, ``?``,
+-+   ``#``, ``@``, or ``:`` will raise a :exc:`ValueError`. If the URL is
+-+   decomposed before parsing, or is not a Unicode string, no error will be
+-+   raised.
+-+
+-    .. versionchanged:: 2.5
+-       Added attributes to return value.
+- 
+-    .. versionchanged:: 2.7
+-       Added IPv6 URL parsing capabilities.
+- 
+-+   .. versionchanged:: 2.7.17
+-+      Characters that affect netloc parsing under NFKC normalization will
+-+      now raise :exc:`ValueError`.
+-+
+- 
+- .. function:: parse_qs(qs[, keep_blank_values[, strict_parsing[, max_num_fields]]])
+- 
+-@@ -232,11 +242,21 @@ The :mod:`urlparse` module defines the following functions:
+-    See section :ref:`urlparse-result-object` for more information on the result
+-    object.
+- 
+-+   Characters in the :attr:`netloc` attribute that decompose under NFKC
+-+   normalization (as used by the IDNA encoding) into any of ``/``, ``?``,
+-+   ``#``, ``@``, or ``:`` will raise a :exc:`ValueError`. If the URL is
+-+   decomposed before parsing, or is not a Unicode string, no error will be
+-+   raised.
+-+
+-    .. versionadded:: 2.2
+- 
+-    .. versionchanged:: 2.5
+-       Added attributes to return value.
+- 
+-+   .. versionchanged:: 2.7.17
+-+      Characters that affect netloc parsing under NFKC normalization will
+-+      now raise :exc:`ValueError`.
+-+
+- 
+- .. function:: urlunsplit(parts)
+- 
+-diff --git a/Lib/test/test_urlparse.py b/Lib/test/test_urlparse.py
+-index 4e1ded73c2..73b0228ea8 100644
+---- a/Lib/test/test_urlparse.py
+-+++ b/Lib/test/test_urlparse.py
+-@@ -1,4 +1,6 @@
+- from test import test_support
+-+import sys
+-+import unicodedata
+- import unittest
+- import urlparse
+- 
+-@@ -624,6 +626,28 @@ class UrlParseTestCase(unittest.TestCase):
+-         self.assertEqual(urlparse.urlparse("http://www.python.org:80"),
+-                 ('http','www.python.org:80','','','',''))
+- 
+-+    def test_urlsplit_normalization(self):
+-+        # Certain characters should never occur in the netloc,
+-+        # including under normalization.
+-+        # Ensure that ALL of them are detected and cause an error
+-+        illegal_chars = u'/:#?@'
+-+        hex_chars = {'{:04X}'.format(ord(c)) for c in illegal_chars}
+-+        denorm_chars = [
+-+            c for c in map(unichr, range(128, sys.maxunicode))
+-+            if (hex_chars & set(unicodedata.decomposition(c).split()))
+-+            and c not in illegal_chars
+-+        ]
+-+        # Sanity check that we found at least one such character
+-+        self.assertIn(u'\u2100', denorm_chars)
+-+        self.assertIn(u'\uFF03', denorm_chars)
+-+
+-+        for scheme in [u"http", u"https", u"ftp"]:
+-+            for c in denorm_chars:
+-+                url = u"{}://netloc{}false.netloc/path".format(scheme, c)
+-+                print "Checking %r" % url
+-+                with self.assertRaises(ValueError):
+-+                    urlparse.urlsplit(url)
+-+
+- def test_main():
+-     test_support.run_unittest(UrlParseTestCase)
+- 
+-diff --git a/Lib/urlparse.py b/Lib/urlparse.py
+-index f7c2b032b0..54eda08651 100644
+---- a/Lib/urlparse.py
+-+++ b/Lib/urlparse.py
+-@@ -165,6 +165,21 @@ def _splitnetloc(url, start=0):
+-             delim = min(delim, wdelim)     # use earliest delim position
+-     return url[start:delim], url[delim:]   # return (domain, rest)
+- 
+-+def _checknetloc(netloc):
+-+    if not netloc or not isinstance(netloc, unicode):
+-+        return
+-+    # looking for characters like \u2100 that expand to 'a/c'
+-+    # IDNA uses NFKC equivalence, so normalize for this check
+-+    import unicodedata
+-+    netloc2 = unicodedata.normalize('NFKC', netloc)
+-+    if netloc == netloc2:
+-+        return
+-+    _, _, netloc = netloc.rpartition('@') # anything to the left of '@' is okay
+-+    for c in '/?#@:':
+-+        if c in netloc2:
+-+            raise ValueError("netloc '" + netloc2 + "' contains invalid " +
+-+                             "characters under NFKC normalization")
+-+
+- def urlsplit(url, scheme='', allow_fragments=True):
+-     """Parse a URL into 5 components:
+-     <scheme>://<netloc>/<path>?<query>#<fragment>
+-@@ -193,6 +208,7 @@ def urlsplit(url, scheme='', allow_fragments=True):
+-                 url, fragment = url.split('#', 1)
+-             if '?' in url:
+-                 url, query = url.split('?', 1)
+-+            _checknetloc(netloc)
+-             v = SplitResult(scheme, netloc, url, query, fragment)
+-             _parse_cache[key] = v
+-             return v
+-@@ -216,6 +232,7 @@ def urlsplit(url, scheme='', allow_fragments=True):
+-         url, fragment = url.split('#', 1)
+-     if '?' in url:
+-         url, query = url.split('?', 1)
+-+    _checknetloc(netloc)
+-     v = SplitResult(scheme, netloc, url, query, fragment)
+-     _parse_cache[key] = v
+-     return v
+-diff --git a/Misc/NEWS.d/next/Security/2019-03-06-09-38-40.bpo-36216.6q1m4a.rst b/Misc/NEWS.d/next/Security/2019-03-06-09-38-40.bpo-36216.6q1m4a.rst
+-new file mode 100644
+-index 0000000000..1e1ad92c6f
+---- /dev/null
+-+++ b/Misc/NEWS.d/next/Security/2019-03-06-09-38-40.bpo-36216.6q1m4a.rst
+-@@ -0,0 +1,3 @@
+-+Changes urlsplit() to raise ValueError when the URL contains characters that
+-+decompose under IDNA encoding (NFKC-normalization) into characters that
+-+affect how the URL is parsed.
+-\ No newline at end of file
+--- 
+-2.11.0
+-
+diff --git a/package/python/0037-3.7-bpo-36216-Only-print-test-messages-when-verbose-.patch b/package/python/0037-3.7-bpo-36216-Only-print-test-messages-when-verbose-.patch
+deleted file mode 100644
+index 7e61fceb80..0000000000
+--- a/package/python/0037-3.7-bpo-36216-Only-print-test-messages-when-verbose-.patch
++++ /dev/null
+@@ -1,28 +0,0 @@
+-From 507bd8cde60ced74d13a1ffa883bb9b0e73c38be Mon Sep 17 00:00:00 2001
+-From: Steve Dower <steve.dower@microsoft.com>
+-Date: Tue, 12 Mar 2019 13:51:58 -0700
+-Subject: [PATCH] [3.7] bpo-36216: Only print test messages when verbose
+- (GH-12291)
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- Lib/test/test_urlparse.py | 3 ++-
+- 1 file changed, 2 insertions(+), 1 deletion(-)
+-
+-diff --git a/Lib/test/test_urlparse.py b/Lib/test/test_urlparse.py
+-index 73b0228ea8..1830d0b286 100644
+---- a/Lib/test/test_urlparse.py
+-+++ b/Lib/test/test_urlparse.py
+-@@ -644,7 +644,8 @@ class UrlParseTestCase(unittest.TestCase):
+-         for scheme in [u"http", u"https", u"ftp"]:
+-             for c in denorm_chars:
+-                 url = u"{}://netloc{}false.netloc/path".format(scheme, c)
+--                print "Checking %r" % url
+-+                if test_support.verbose:
+-+                    print "Checking %r" % url
+-                 with self.assertRaises(ValueError):
+-                     urlparse.urlsplit(url)
+- 
+--- 
+-2.11.0
+-
+diff --git a/package/python/0038-bpo-36742-Fixes-handling-of-pre-normalization-charac.patch b/package/python/0038-bpo-36742-Fixes-handling-of-pre-normalization-charac.patch
+deleted file mode 100644
+index a5fadf8bb0..0000000000
+--- a/package/python/0038-bpo-36742-Fixes-handling-of-pre-normalization-charac.patch
++++ /dev/null
+@@ -1,66 +0,0 @@
+-From 98a4dcefbbc3bce5ab07e7c0830a183157250259 Mon Sep 17 00:00:00 2001
+-From: Steve Dower <steve.dower@python.org>
+-Date: Wed, 1 May 2019 15:00:27 +0000
+-Subject: [PATCH] bpo-36742: Fixes handling of pre-normalization characters in
+- urlsplit() (GH-13017)
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- Lib/test/test_urlparse.py                                     |  6 ++++++
+- Lib/urlparse.py                                               | 11 +++++++----
+- .../next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst    |  1 +
+- 3 files changed, 14 insertions(+), 4 deletions(-)
+- create mode 100644 Misc/NEWS.d/next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst
+-
+-diff --git a/Lib/test/test_urlparse.py b/Lib/test/test_urlparse.py
+-index 1830d0b286..6fd1071bf7 100644
+---- a/Lib/test/test_urlparse.py
+-+++ b/Lib/test/test_urlparse.py
+-@@ -641,6 +641,12 @@ class UrlParseTestCase(unittest.TestCase):
+-         self.assertIn(u'\u2100', denorm_chars)
+-         self.assertIn(u'\uFF03', denorm_chars)
+- 
+-+        # bpo-36742: Verify port separators are ignored when they
+-+        # existed prior to decomposition
+-+        urlparse.urlsplit(u'http://\u30d5\u309a:80')
+-+        with self.assertRaises(ValueError):
+-+            urlparse.urlsplit(u'http://\u30d5\u309a\ufe1380')
+-+
+-         for scheme in [u"http", u"https", u"ftp"]:
+-             for c in denorm_chars:
+-                 url = u"{}://netloc{}false.netloc/path".format(scheme, c)
+-diff --git a/Lib/urlparse.py b/Lib/urlparse.py
+-index 54eda08651..f08e0fe584 100644
+---- a/Lib/urlparse.py
+-+++ b/Lib/urlparse.py
+-@@ -171,13 +171,16 @@ def _checknetloc(netloc):
+-     # looking for characters like \u2100 that expand to 'a/c'
+-     # IDNA uses NFKC equivalence, so normalize for this check
+-     import unicodedata
+--    netloc2 = unicodedata.normalize('NFKC', netloc)
+--    if netloc == netloc2:
+-+    n = netloc.rpartition('@')[2] # ignore anything to the left of '@'
+-+    n = n.replace(':', '')        # ignore characters already included
+-+    n = n.replace('#', '')        # but not the surrounding text
+-+    n = n.replace('?', '')
+-+    netloc2 = unicodedata.normalize('NFKC', n)
+-+    if n == netloc2:
+-         return
+--    _, _, netloc = netloc.rpartition('@') # anything to the left of '@' is okay
+-     for c in '/?#@:':
+-         if c in netloc2:
+--            raise ValueError("netloc '" + netloc2 + "' contains invalid " +
+-+            raise ValueError("netloc '" + netloc + "' contains invalid " +
+-                              "characters under NFKC normalization")
+- 
+- def urlsplit(url, scheme='', allow_fragments=True):
+-diff --git a/Misc/NEWS.d/next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst b/Misc/NEWS.d/next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst
+-new file mode 100644
+-index 0000000000..d729ed2f3c
+---- /dev/null
+-+++ b/Misc/NEWS.d/next/Security/2019-04-29-15-34-59.bpo-36742.QCUY0i.rst
+-@@ -0,0 +1 @@
+-+Fixes mishandling of pre-normalization characters in urlsplit().
+--- 
+-2.11.0
+-
+diff --git a/package/python/0039-bpo-36742-Corrects-fix-to-handle-decomposition-in-us.patch b/package/python/0039-bpo-36742-Corrects-fix-to-handle-decomposition-in-us.patch
+deleted file mode 100644
+index c74bf73a80..0000000000
+--- a/package/python/0039-bpo-36742-Corrects-fix-to-handle-decomposition-in-us.patch
++++ /dev/null
+@@ -1,67 +0,0 @@
+-From f61599b050c621386a3fc6bc480359e2d3bb93de Mon Sep 17 00:00:00 2001
+-From: Steve Dower <steve.dower@python.org>
+-Date: Tue, 4 Jun 2019 09:40:16 -0700
+-Subject: [PATCH] bpo-36742: Corrects fix to handle decomposition in usernames
+- (GH-13812)
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- Lib/test/test_urlparse.py | 13 +++++++------
+- Lib/urlparse.py           | 12 ++++++------
+- 2 files changed, 13 insertions(+), 12 deletions(-)
+-
+-diff --git a/Lib/test/test_urlparse.py b/Lib/test/test_urlparse.py
+-index 6fd1071bf7..857ed96d92 100644
+---- a/Lib/test/test_urlparse.py
+-+++ b/Lib/test/test_urlparse.py
+-@@ -648,12 +648,13 @@ class UrlParseTestCase(unittest.TestCase):
+-             urlparse.urlsplit(u'http://\u30d5\u309a\ufe1380')
+- 
+-         for scheme in [u"http", u"https", u"ftp"]:
+--            for c in denorm_chars:
+--                url = u"{}://netloc{}false.netloc/path".format(scheme, c)
+--                if test_support.verbose:
+--                    print "Checking %r" % url
+--                with self.assertRaises(ValueError):
+--                    urlparse.urlsplit(url)
+-+            for netloc in [u"netloc{}false.netloc", u"n{}user@netloc"]:
+-+                for c in denorm_chars:
+-+                    url = u"{}://{}/path".format(scheme, netloc.format(c))
+-+                    if test_support.verbose:
+-+                        print "Checking %r" % url
+-+                    with self.assertRaises(ValueError):
+-+                        urlparse.urlsplit(url)
+- 
+- def test_main():
+-     test_support.run_unittest(UrlParseTestCase)
+-diff --git a/Lib/urlparse.py b/Lib/urlparse.py
+-index f08e0fe584..6834f3c179 100644
+---- a/Lib/urlparse.py
+-+++ b/Lib/urlparse.py
+-@@ -171,17 +171,17 @@ def _checknetloc(netloc):
+-     # looking for characters like \u2100 that expand to 'a/c'
+-     # IDNA uses NFKC equivalence, so normalize for this check
+-     import unicodedata
+--    n = netloc.rpartition('@')[2] # ignore anything to the left of '@'
+--    n = n.replace(':', '')        # ignore characters already included
+--    n = n.replace('#', '')        # but not the surrounding text
+--    n = n.replace('?', '')
+-+    n = netloc.replace(u'@', u'') # ignore characters already included
+-+    n = n.replace(u':', u'')      # but not the surrounding text
+-+    n = n.replace(u'#', u'')
+-+    n = n.replace(u'?', u'')
+-     netloc2 = unicodedata.normalize('NFKC', n)
+-     if n == netloc2:
+-         return
+-     for c in '/?#@:':
+-         if c in netloc2:
+--            raise ValueError("netloc '" + netloc + "' contains invalid " +
+--                             "characters under NFKC normalization")
+-+            raise ValueError(u"netloc '" + netloc + u"' contains invalid " +
+-+                             u"characters under NFKC normalization")
+- 
+- def urlsplit(url, scheme='', allow_fragments=True):
+-     """Parse a URL into 5 components:
+--- 
+-2.11.0
+-
+diff --git a/package/python/0040-2.7-bpo-36742-Fix-urlparse.urlsplit-error-message-fo.patch b/package/python/0040-2.7-bpo-36742-Fix-urlparse.urlsplit-error-message-fo.patch
+deleted file mode 100644
+index 8bb9028267..0000000000
+--- a/package/python/0040-2.7-bpo-36742-Fix-urlparse.urlsplit-error-message-fo.patch
++++ /dev/null
+@@ -1,67 +0,0 @@
+-From 2b578479b96aa3deeeb8bac313a02b5cf3cb1aff Mon Sep 17 00:00:00 2001
+-From: Victor Stinner <vstinner@redhat.com>
+-Date: Tue, 11 Jun 2019 12:45:35 +0200
+-Subject: [PATCH] [2.7] bpo-36742: Fix urlparse.urlsplit() error message for
+- Unicode URL (GH-13937)
+-
+-If urlparse.urlsplit() detects an invalid netloc according to NFKC
+-normalization, the error message type is now str rather than unicode,
+-and use repr() to format the URL, to prevent <exception str() failed>
+-when display the error message.
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- Lib/test/test_urlparse.py                                        | 9 +++++++++
+- Lib/urlparse.py                                                  | 5 +++--
+- .../NEWS.d/next/Library/2019-06-10-12-02-45.bpo-36742.UEdHXJ.rst | 3 +++
+- 3 files changed, 15 insertions(+), 2 deletions(-)
+- create mode 100644 Misc/NEWS.d/next/Library/2019-06-10-12-02-45.bpo-36742.UEdHXJ.rst
+-
+-diff --git a/Lib/test/test_urlparse.py b/Lib/test/test_urlparse.py
+-index 857ed96d92..86c4a0595c 100644
+---- a/Lib/test/test_urlparse.py
+-+++ b/Lib/test/test_urlparse.py
+-@@ -656,6 +656,15 @@ class UrlParseTestCase(unittest.TestCase):
+-                     with self.assertRaises(ValueError):
+-                         urlparse.urlsplit(url)
+- 
+-+        # check error message: invalid netloc must be formated with repr()
+-+        # to get an ASCII error message
+-+        with self.assertRaises(ValueError) as cm:
+-+            urlparse.urlsplit(u'http://example.com\uFF03@bing.com')
+-+        self.assertEqual(str(cm.exception),
+-+                         "netloc u'example.com\\uff03@bing.com' contains invalid characters "
+-+                         "under NFKC normalization")
+-+        self.assertIsInstance(cm.exception.args[0], str)
+-+
+- def test_main():
+-     test_support.run_unittest(UrlParseTestCase)
+- 
+-diff --git a/Lib/urlparse.py b/Lib/urlparse.py
+-index 6834f3c179..798b467b60 100644
+---- a/Lib/urlparse.py
+-+++ b/Lib/urlparse.py
+-@@ -180,8 +180,9 @@ def _checknetloc(netloc):
+-         return
+-     for c in '/?#@:':
+-         if c in netloc2:
+--            raise ValueError(u"netloc '" + netloc + u"' contains invalid " +
+--                             u"characters under NFKC normalization")
+-+            raise ValueError("netloc %r contains invalid characters "
+-+                             "under NFKC normalization"
+-+                             % netloc)
+- 
+- def urlsplit(url, scheme='', allow_fragments=True):
+-     """Parse a URL into 5 components:
+-diff --git a/Misc/NEWS.d/next/Library/2019-06-10-12-02-45.bpo-36742.UEdHXJ.rst b/Misc/NEWS.d/next/Library/2019-06-10-12-02-45.bpo-36742.UEdHXJ.rst
+-new file mode 100644
+-index 0000000000..3ba774056f
+---- /dev/null
+-+++ b/Misc/NEWS.d/next/Library/2019-06-10-12-02-45.bpo-36742.UEdHXJ.rst
+-@@ -0,0 +1,3 @@
+-+:func:`urlparse.urlsplit` error message for invalid ``netloc`` according to
+-+NFKC normalization is now a :class:`str` string, rather than a
+-+:class:`unicode` string, to prevent error when displaying the error.
+--- 
+-2.11.0
+-
+diff --git a/package/python/0041-bpo-30458-Disallow-control-chars-in-http-URLs-GH-127.patch b/package/python/0041-bpo-30458-Disallow-control-chars-in-http-URLs-GH-127.patch
+deleted file mode 100644
+index 587f9a6406..0000000000
+--- a/package/python/0041-bpo-30458-Disallow-control-chars-in-http-URLs-GH-127.patch
++++ /dev/null
+@@ -1,216 +0,0 @@
+-From bb8071a4cae5ab3fe321481dd3d73662ffb26052 Mon Sep 17 00:00:00 2001
+-From: Victor Stinner <victor.stinner@gmail.com>
+-Date: Tue, 21 May 2019 15:12:33 +0200
+-Subject: [PATCH] bpo-30458: Disallow control chars in http URLs (GH-12755)
+- (GH-13154) (GH-13315)
+-MIME-Version: 1.0
+-Content-Type: text/plain; charset=UTF-8
+-Content-Transfer-Encoding: 8bit
+-
+-Disallow control chars in http URLs in urllib2.urlopen.  This
+-addresses a potential security problem for applications that do not
+-sanity check their URLs where http request headers could be injected.
+-
+-Disable https related urllib tests on a build without ssl (GH-13032)
+-These tests require an SSL enabled build. Skip these tests when
+-python is built without SSL to fix test failures.
+-
+-Use httplib.InvalidURL instead of ValueError as the new error case's
+-exception. (GH-13044)
+-
+-Backport Co-Authored-By: Miro Hrončok <miro@hroncok.cz>
+-
+-(cherry picked from commit 7e200e0763f5b71c199aaf98bd5588f291585619)
+-
+-Notes on backport to Python 2.7:
+-
+-* test_urllib tests urllib.urlopen() which quotes the URL and so is
+-  not vulerable to HTTP Header Injection.
+-* Add tests to test_urllib2 on urllib2.urlopen().
+-* Reject non-ASCII characters: range 0x80-0xff.
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- Lib/httplib.py                                     | 16 +++++++
+- Lib/test/test_urllib.py                            | 25 +++++++++++
+- Lib/test/test_urllib2.py                           | 51 +++++++++++++++++++++-
+- Lib/test/test_xmlrpc.py                            |  8 +++-
+- .../2019-04-10-08-53-30.bpo-30458.51E-DA.rst       |  1 +
+- 5 files changed, 99 insertions(+), 2 deletions(-)
+- create mode 100644 Misc/NEWS.d/next/Security/2019-04-10-08-53-30.bpo-30458.51E-DA.rst
+-
+-diff --git a/Lib/httplib.py b/Lib/httplib.py
+-index 60a8fb4e35..1b41c346e0 100644
+---- a/Lib/httplib.py
+-+++ b/Lib/httplib.py
+-@@ -247,6 +247,16 @@ _MAXHEADERS = 100
+- _is_legal_header_name = re.compile(r'\A[^:\s][^:\r\n]*\Z').match
+- _is_illegal_header_value = re.compile(r'\n(?![ \t])|\r(?![ \t\n])').search
+- 
+-+# These characters are not allowed within HTTP URL paths.
+-+#  See https://tools.ietf.org/html/rfc3986#section-3.3 and the
+-+#  https://tools.ietf.org/html/rfc3986#appendix-A pchar definition.
+-+# Prevents CVE-2019-9740.  Includes control characters such as \r\n.
+-+# Restrict non-ASCII characters above \x7f (0x80-0xff).
+-+_contains_disallowed_url_pchar_re = re.compile('[\x00-\x20\x7f-\xff]')
+-+# Arguably only these _should_ allowed:
+-+#  _is_allowed_url_pchars_re = re.compile(r"^[/!$&'()*+,;=:@%a-zA-Z0-9._~-]+$")
+-+# We are more lenient for assumed real world compatibility purposes.
+-+
+- # We always set the Content-Length header for these methods because some
+- # servers will otherwise respond with a 411
+- _METHODS_EXPECTING_BODY = {'PATCH', 'POST', 'PUT'}
+-@@ -927,6 +937,12 @@ class HTTPConnection:
+-         self._method = method
+-         if not url:
+-             url = '/'
+-+        # Prevent CVE-2019-9740.
+-+        match = _contains_disallowed_url_pchar_re.search(url)
+-+        if match:
+-+            raise InvalidURL("URL can't contain control characters. %r "
+-+                             "(found at least %r)"
+-+                             % (url, match.group()))
+-         hdr = '%s %s %s' % (method, url, self._http_vsn_str)
+- 
+-         self._output(hdr)
+-diff --git a/Lib/test/test_urllib.py b/Lib/test/test_urllib.py
+-index 1ce9201c06..d7778d4194 100644
+---- a/Lib/test/test_urllib.py
+-+++ b/Lib/test/test_urllib.py
+-@@ -257,6 +257,31 @@ class urlopen_HttpTests(unittest.TestCase, FakeHTTPMixin):
+-         finally:
+-             self.unfakehttp()
+- 
+-+    def test_url_with_control_char_rejected(self):
+-+        for char_no in range(0, 0x21) + range(0x7f, 0x100):
+-+            char = chr(char_no)
+-+            schemeless_url = "//localhost:7777/test%s/" % char
+-+            self.fakehttp(b"HTTP/1.1 200 OK\r\n\r\nHello.")
+-+            try:
+-+                # urllib quotes the URL so there is no injection.
+-+                resp = urllib.urlopen("http:" + schemeless_url)
+-+                self.assertNotIn(char, resp.geturl())
+-+            finally:
+-+                self.unfakehttp()
+-+
+-+    def test_url_with_newline_header_injection_rejected(self):
+-+        self.fakehttp(b"HTTP/1.1 200 OK\r\n\r\nHello.")
+-+        host = "localhost:7777?a=1 HTTP/1.1\r\nX-injected: header\r\nTEST: 123"
+-+        schemeless_url = "//" + host + ":8080/test/?test=a"
+-+        try:
+-+            # urllib quotes the URL so there is no injection.
+-+            resp = urllib.urlopen("http:" + schemeless_url)
+-+            self.assertNotIn(' ', resp.geturl())
+-+            self.assertNotIn('\r', resp.geturl())
+-+            self.assertNotIn('\n', resp.geturl())
+-+        finally:
+-+            self.unfakehttp()
+-+
+-     def test_read_bogus(self):
+-         # urlopen() should raise IOError for many error codes.
+-         self.fakehttp('''HTTP/1.1 401 Authentication Required
+-diff --git a/Lib/test/test_urllib2.py b/Lib/test/test_urllib2.py
+-index 6d24d5ddf8..9531818e16 100644
+---- a/Lib/test/test_urllib2.py
+-+++ b/Lib/test/test_urllib2.py
+-@@ -15,6 +15,9 @@ try:
+- except ImportError:
+-     ssl = None
+- 
+-+from test.test_urllib import FakeHTTPMixin
+-+
+-+
+- # XXX
+- # Request
+- # CacheFTPHandler (hard to write)
+-@@ -1262,7 +1265,7 @@ class HandlerTests(unittest.TestCase):
+-         self.assertEqual(len(http_handler.requests), 1)
+-         self.assertFalse(http_handler.requests[0].has_header(auth_header))
+- 
+--class MiscTests(unittest.TestCase):
+-+class MiscTests(unittest.TestCase, FakeHTTPMixin):
+- 
+-     def test_build_opener(self):
+-         class MyHTTPHandler(urllib2.HTTPHandler): pass
+-@@ -1317,6 +1320,52 @@ class MiscTests(unittest.TestCase):
+-             "Unsupported digest authentication algorithm 'invalid'"
+-         )
+- 
+-+    @unittest.skipUnless(ssl, "ssl module required")
+-+    def test_url_with_control_char_rejected(self):
+-+        for char_no in range(0, 0x21) + range(0x7f, 0x100):
+-+            char = chr(char_no)
+-+            schemeless_url = "//localhost:7777/test%s/" % char
+-+            self.fakehttp(b"HTTP/1.1 200 OK\r\n\r\nHello.")
+-+            try:
+-+                # We explicitly test urllib.request.urlopen() instead of the top
+-+                # level 'def urlopen()' function defined in this... (quite ugly)
+-+                # test suite.  They use different url opening codepaths.  Plain
+-+                # urlopen uses FancyURLOpener which goes via a codepath that
+-+                # calls urllib.parse.quote() on the URL which makes all of the
+-+                # above attempts at injection within the url _path_ safe.
+-+                escaped_char_repr = repr(char).replace('\\', r'\\')
+-+                InvalidURL = httplib.InvalidURL
+-+                with self.assertRaisesRegexp(
+-+                    InvalidURL, "contain control.*" + escaped_char_repr):
+-+                    urllib2.urlopen("http:" + schemeless_url)
+-+                with self.assertRaisesRegexp(
+-+                    InvalidURL, "contain control.*" + escaped_char_repr):
+-+                    urllib2.urlopen("https:" + schemeless_url)
+-+            finally:
+-+                self.unfakehttp()
+-+
+-+    @unittest.skipUnless(ssl, "ssl module required")
+-+    def test_url_with_newline_header_injection_rejected(self):
+-+        self.fakehttp(b"HTTP/1.1 200 OK\r\n\r\nHello.")
+-+        host = "localhost:7777?a=1 HTTP/1.1\r\nX-injected: header\r\nTEST: 123"
+-+        schemeless_url = "//" + host + ":8080/test/?test=a"
+-+        try:
+-+            # We explicitly test urllib2.urlopen() instead of the top
+-+            # level 'def urlopen()' function defined in this... (quite ugly)
+-+            # test suite.  They use different url opening codepaths.  Plain
+-+            # urlopen uses FancyURLOpener which goes via a codepath that
+-+            # calls urllib.parse.quote() on the URL which makes all of the
+-+            # above attempts at injection within the url _path_ safe.
+-+            InvalidURL = httplib.InvalidURL
+-+            with self.assertRaisesRegexp(
+-+                InvalidURL, r"contain control.*\\r.*(found at least . .)"):
+-+                urllib2.urlopen("http:" + schemeless_url)
+-+            with self.assertRaisesRegexp(InvalidURL, r"contain control.*\\n"):
+-+                urllib2.urlopen("https:" + schemeless_url)
+-+        finally:
+-+            self.unfakehttp()
+-+
+-+
+- 
+- class RequestTests(unittest.TestCase):
+- 
+-diff --git a/Lib/test/test_xmlrpc.py b/Lib/test/test_xmlrpc.py
+-index 36b3be67fd..90ccb30716 100644
+---- a/Lib/test/test_xmlrpc.py
+-+++ b/Lib/test/test_xmlrpc.py
+-@@ -659,7 +659,13 @@ class SimpleServerTestCase(BaseServerTestCase):
+-     def test_partial_post(self):
+-         # Check that a partial POST doesn't make the server loop: issue #14001.
+-         conn = httplib.HTTPConnection(ADDR, PORT)
+--        conn.request('POST', '/RPC2 HTTP/1.0\r\nContent-Length: 100\r\n\r\nbye')
+-+        conn.send('POST /RPC2 HTTP/1.0\r\n'
+-+                  'Content-Length: 100\r\n\r\n'
+-+                  'bye HTTP/1.1\r\n'
+-+                  'Host: %s:%s\r\n'
+-+                  'Accept-Encoding: identity\r\n'
+-+                  'Content-Length: 0\r\n\r\n'
+-+                  % (ADDR, PORT))
+-         conn.close()
+- 
+- class SimpleServerEncodingTestCase(BaseServerTestCase):
+-diff --git a/Misc/NEWS.d/next/Security/2019-04-10-08-53-30.bpo-30458.51E-DA.rst b/Misc/NEWS.d/next/Security/2019-04-10-08-53-30.bpo-30458.51E-DA.rst
+-new file mode 100644
+-index 0000000000..47cb899df1
+---- /dev/null
+-+++ b/Misc/NEWS.d/next/Security/2019-04-10-08-53-30.bpo-30458.51E-DA.rst
+-@@ -0,0 +1 @@
+-+Address CVE-2019-9740 by disallowing URL paths with embedded whitespace or control characters through into the underlying http client request.  Such potentially malicious header injection URLs now cause an httplib.InvalidURL exception to be raised.
+--- 
+-2.11.0
+-
+diff --git a/package/python/python.hash b/package/python/python.hash
+index 52b9984b0c..aa809b9a61 100644
+--- a/package/python/python.hash
++++ b/package/python/python.hash
+@@ -1,5 +1,5 @@
+-# From https://www.python.org/downloads/release/python-2716/
+-md5 30157d85a2c0479c09ea2cbe61f2aaf5 Python-2.7.16.tar.xz
++# From https://www.python.org/downloads/release/python-2717/
++md5 b3b6d2c92f42a60667814358ab9f0cfd Python-2.7.17.tar.xz
+ # Locally calculated
+-sha256 f222ef602647eecb6853681156d32de4450a2c39f4de93bd5b20235f2e660ed7  Python-2.7.16.tar.xz
++sha256 4d43f033cdbd0aa7b7023c81b0e986fd11e653b5248dac9144d508f11812ba41  Python-2.7.17.tar.xz
+ sha256 a77d71d6be6f9032e6b6e5d2cf6da68f9eeab9036edfbc043633c8979cd5e82c  LICENSE
+diff --git a/package/python/python.mk b/package/python/python.mk
+index d1e70a015a..4b82cdcce3 100644
+--- a/package/python/python.mk
++++ b/package/python/python.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ PYTHON_VERSION_MAJOR = 2.7
+-PYTHON_VERSION = $(PYTHON_VERSION_MAJOR).16
++PYTHON_VERSION = $(PYTHON_VERSION_MAJOR).17
+ PYTHON_SOURCE = Python-$(PYTHON_VERSION).tar.xz
+ PYTHON_SITE = https://python.org/ftp/python/$(PYTHON_VERSION)
+ PYTHON_LICENSE = Python-2.0, others
+diff --git a/package/python3/python3.hash b/package/python3/python3.hash
+index 4a82e1dd9c..a138724ff8 100644
+--- a/package/python3/python3.hash
++++ b/package/python3/python3.hash
+@@ -1,5 +1,5 @@
+-# From https://www.python.org/downloads/release/python-374/
+-md5		d33e4aae66097051c2eca45ee3604803 Python-3.7.4.tar.xz
++# From https://www.python.org/downloads/release/python-375/
++md5 08ed8030b1183107c48f2092e79a87e2 Python-3.7.5.tar.xz
+ # Locally computed
+-sha256 fb799134b868199930b75f26678f18932214042639cd52b16da7fd134cd9b13f Python-3.7.4.tar.xz
++sha256 e85a76ea9f3d6c485ec1780fca4e500725a4a7bbc63c78ebc44170de9b619d94 Python-3.7.5.tar.xz
+ sha256 a77d71d6be6f9032e6b6e5d2cf6da68f9eeab9036edfbc043633c8979cd5e82c LICENSE
+diff --git a/package/python3/python3.mk b/package/python3/python3.mk
+index 8e6a0296ed..8d042954df 100644
+--- a/package/python3/python3.mk
++++ b/package/python3/python3.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ PYTHON3_VERSION_MAJOR = 3.7
+-PYTHON3_VERSION = $(PYTHON3_VERSION_MAJOR).4
++PYTHON3_VERSION = $(PYTHON3_VERSION_MAJOR).5
+ PYTHON3_SOURCE = Python-$(PYTHON3_VERSION).tar.xz
+ PYTHON3_SITE = https://python.org/ftp/python/$(PYTHON3_VERSION)
+ PYTHON3_LICENSE = Python-2.0, others
+diff --git a/package/qemu/0001-user-exec-fix-usage-of-mcontext-structure-on-ARM-uCl.patch b/package/qemu/3.1.1.1/0001-user-exec-fix-usage-of-mcontext-structure-on-ARM-uCl.patch
+similarity index 100%
+rename from package/qemu/0001-user-exec-fix-usage-of-mcontext-structure-on-ARM-uCl.patch
+rename to package/qemu/3.1.1.1/0001-user-exec-fix-usage-of-mcontext-structure-on-ARM-uCl.patch
+diff --git a/package/qemu/3.1.1.1/0002-linux-user-fix-to-handle-variably-sized-SIOCGSTAMP-with-new-kernels.patch b/package/qemu/3.1.1.1/0002-linux-user-fix-to-handle-variably-sized-SIOCGSTAMP-with-new-kernels.patch
+new file mode 100644
+index 0000000000..a757d1f1ae
+--- /dev/null
++++ b/package/qemu/3.1.1.1/0002-linux-user-fix-to-handle-variably-sized-SIOCGSTAMP-with-new-kernels.patch
+@@ -0,0 +1,337 @@
++From 6d5d5dde9adb5acb32e6b8e3dfbf47fff0f308d2 Mon Sep 17 00:00:00 2001
++From: =?UTF-8?q?Daniel=20P=2E=20Berrang=C3=A9?= <berrange@redhat.com>
++Date: Thu, 18 Jul 2019 15:06:41 +0200
++Subject: [PATCH] linux-user: fix to handle variably sized SIOCGSTAMP with new
++ kernels
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++The SIOCGSTAMP symbol was previously defined in the
++asm-generic/sockios.h header file. QEMU sees that header
++indirectly via sys/socket.h
++
++In linux kernel commit 0768e17073dc527ccd18ed5f96ce85f9985e9115
++the asm-generic/sockios.h header no longer defines SIOCGSTAMP.
++Instead it provides only SIOCGSTAMP_OLD, which only uses a
++32-bit time_t on 32-bit architectures.
++
++The linux/sockios.h header then defines SIOCGSTAMP using
++either SIOCGSTAMP_OLD or SIOCGSTAMP_NEW as appropriate. If
++SIOCGSTAMP_NEW is used, then the tv_sec field is 64-bit even
++on 32-bit architectures
++
++To cope with this we must now convert the old and new type from
++the target to the host one.
++
++Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
++Signed-off-by: Laurent Vivier <laurent@vivier.eu>
++Reviewed-by: Arnd Bergmann <arnd@arndb.de>
++Message-Id: <20190718130641.15294-1-laurent@vivier.eu>
++Signed-off-by: Laurent Vivier <laurent@vivier.eu>
++
++[Retrieved (and backported to 3.1.0) from:
++https://github.com/qemu/qemu/commit/6d5d5dde9adb5acb32e6b8e3dfbf47fff0f308d2]
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++---
++ linux-user/ioctls.h        |  21 +++++-
++ linux-user/syscall.c       | 140 +++++++++++++++++++++++++++++--------
++ linux-user/syscall_defs.h  |  30 +++++++-
++ linux-user/syscall_types.h |   6 --
++ 4 files changed, 159 insertions(+), 38 deletions(-)
++
++diff --git a/linux-user/ioctls.h b/linux-user/ioctls.h
++index 5e84dc7c3a7..3281c97ca26 100644
++--- a/linux-user/ioctls.h
+++++ b/linux-user/ioctls.h
++@@ -222,8 +222,25 @@
++   IOCTL(SIOCGIWNAME, IOC_W | IOC_R, MK_PTR(MK_STRUCT(STRUCT_char_ifreq)))
++   IOCTL(SIOCSPGRP, IOC_W, MK_PTR(TYPE_INT)) /* pid_t */
++   IOCTL(SIOCGPGRP, IOC_R, MK_PTR(TYPE_INT)) /* pid_t */
++-  IOCTL(SIOCGSTAMP, IOC_R, MK_PTR(MK_STRUCT(STRUCT_timeval)))
++-  IOCTL(SIOCGSTAMPNS, IOC_R, MK_PTR(MK_STRUCT(STRUCT_timespec)))
+++
+++  /*
+++   * We can't use IOCTL_SPECIAL() because it will set
+++   * host_cmd to XXX_OLD and XXX_NEW and these macros
+++   * are not defined with kernel prior to 5.2.
+++   * We must set host_cmd to the same value as in target_cmd
+++   * otherwise the consistency check in syscall_init()
+++   * will trigger an error.
+++   * host_cmd is ignored by the do_ioctl_XXX() helpers.
+++   * FIXME: create a macro to define this kind of entry
+++   */
+++  { TARGET_SIOCGSTAMP_OLD, TARGET_SIOCGSTAMP_OLD,
+++    "SIOCGSTAMP_OLD", IOC_R, do_ioctl_SIOCGSTAMP },
+++  { TARGET_SIOCGSTAMPNS_OLD, TARGET_SIOCGSTAMPNS_OLD,
+++    "SIOCGSTAMPNS_OLD", IOC_R, do_ioctl_SIOCGSTAMPNS },
+++  { TARGET_SIOCGSTAMP_NEW, TARGET_SIOCGSTAMP_NEW,
+++    "SIOCGSTAMP_NEW", IOC_R, do_ioctl_SIOCGSTAMP },
+++  { TARGET_SIOCGSTAMPNS_NEW, TARGET_SIOCGSTAMPNS_NEW,
+++    "SIOCGSTAMPNS_NEW", IOC_R, do_ioctl_SIOCGSTAMPNS },
++ 
++   IOCTL(RNDGETENTCNT, IOC_R, MK_PTR(TYPE_INT))
++   IOCTL(RNDADDTOENTCNT, IOC_W, MK_PTR(TYPE_INT))
++diff --git a/linux-user/syscall.c b/linux-user/syscall.c
++index 39a37496fed..8367cb138df 100644
++--- a/linux-user/syscall.c
+++++ b/linux-user/syscall.c
++@@ -37,6 +37,7 @@
++ #include <sched.h>
++ #include <sys/timex.h>
++ #include <sys/socket.h>
+++#include <linux/sockios.h>
++ #include <sys/un.h>
++ #include <sys/uio.h>
++ #include <poll.h>
++@@ -1126,8 +1127,9 @@ static inline abi_long copy_from_user_timeval(struct timeval *tv,
++ {
++     struct target_timeval *target_tv;
++ 
++-    if (!lock_user_struct(VERIFY_READ, target_tv, target_tv_addr, 1))
+++    if (!lock_user_struct(VERIFY_READ, target_tv, target_tv_addr, 1)) {
++         return -TARGET_EFAULT;
+++    }
++ 
++     __get_user(tv->tv_sec, &target_tv->tv_sec);
++     __get_user(tv->tv_usec, &target_tv->tv_usec);
++@@ -1142,8 +1144,26 @@ static inline abi_long copy_to_user_timeval(abi_ulong target_tv_addr,
++ {
++     struct target_timeval *target_tv;
++ 
++-    if (!lock_user_struct(VERIFY_WRITE, target_tv, target_tv_addr, 0))
+++    if (!lock_user_struct(VERIFY_WRITE, target_tv, target_tv_addr, 0)) {
+++        return -TARGET_EFAULT;
+++    }
+++
+++    __put_user(tv->tv_sec, &target_tv->tv_sec);
+++    __put_user(tv->tv_usec, &target_tv->tv_usec);
+++
+++    unlock_user_struct(target_tv, target_tv_addr, 1);
+++
+++    return 0;
+++}
+++
+++static inline abi_long copy_to_user_timeval64(abi_ulong target_tv_addr,
+++                                             const struct timeval *tv)
+++{
+++    struct target__kernel_sock_timeval *target_tv;
+++
+++    if (!lock_user_struct(VERIFY_WRITE, target_tv, target_tv_addr, 0)) {
++         return -TARGET_EFAULT;
+++    }
++ 
++     __put_user(tv->tv_sec, &target_tv->tv_sec);
++     __put_user(tv->tv_usec, &target_tv->tv_usec);
++@@ -1153,6 +1173,48 @@ static inline abi_long copy_to_user_timeval(abi_ulong target_tv_addr,
++     return 0;
++ }
++ 
+++static inline abi_long target_to_host_timespec(struct timespec *host_ts,
+++                                               abi_ulong target_addr)
+++{
+++    struct target_timespec *target_ts;
+++
+++    if (!lock_user_struct(VERIFY_READ, target_ts, target_addr, 1)) {
+++        return -TARGET_EFAULT;
+++    }
+++    __get_user(host_ts->tv_sec, &target_ts->tv_sec);
+++    __get_user(host_ts->tv_nsec, &target_ts->tv_nsec);
+++    unlock_user_struct(target_ts, target_addr, 0);
+++    return 0;
+++}
+++
+++static inline abi_long host_to_target_timespec(abi_ulong target_addr,
+++                                               struct timespec *host_ts)
+++{
+++    struct target_timespec *target_ts;
+++
+++    if (!lock_user_struct(VERIFY_WRITE, target_ts, target_addr, 0)) {
+++        return -TARGET_EFAULT;
+++    }
+++    __put_user(host_ts->tv_sec, &target_ts->tv_sec);
+++    __put_user(host_ts->tv_nsec, &target_ts->tv_nsec);
+++    unlock_user_struct(target_ts, target_addr, 1);
+++    return 0;
+++}
+++
+++static inline abi_long host_to_target_timespec64(abi_ulong target_addr,
+++                                                 struct timespec *host_ts)
+++{
+++    struct target__kernel_timespec *target_ts;
+++
+++    if (!lock_user_struct(VERIFY_WRITE, target_ts, target_addr, 0)) {
+++        return -TARGET_EFAULT;
+++    }
+++    __put_user(host_ts->tv_sec, &target_ts->tv_sec);
+++    __put_user(host_ts->tv_nsec, &target_ts->tv_nsec);
+++    unlock_user_struct(target_ts, target_addr, 1);
+++    return 0;
+++}
+++
++ static inline abi_long copy_from_user_timezone(struct timezone *tz,
++                                                abi_ulong target_tz_addr)
++ {
++@@ -4899,6 +4961,54 @@ static abi_long do_ioctl_kdsigaccept(const IOCTLEntry *ie, uint8_t *buf_temp,
++     return get_errno(safe_ioctl(fd, ie->host_cmd, sig));
++ }
++ 
+++static abi_long do_ioctl_SIOCGSTAMP(const IOCTLEntry *ie, uint8_t *buf_temp,
+++                                    int fd, int cmd, abi_long arg)
+++{
+++    struct timeval tv;
+++    abi_long ret;
+++
+++    ret = get_errno(safe_ioctl(fd, SIOCGSTAMP, &tv));
+++    if (is_error(ret)) {
+++        return ret;
+++    }
+++
+++    if (cmd == (int)TARGET_SIOCGSTAMP_OLD) {
+++        if (copy_to_user_timeval(arg, &tv)) {
+++            return -TARGET_EFAULT;
+++        }
+++    } else {
+++        if (copy_to_user_timeval64(arg, &tv)) {
+++            return -TARGET_EFAULT;
+++        }
+++    }
+++
+++    return ret;
+++}
+++
+++static abi_long do_ioctl_SIOCGSTAMPNS(const IOCTLEntry *ie, uint8_t *buf_temp,
+++                                      int fd, int cmd, abi_long arg)
+++{
+++    struct timespec ts;
+++    abi_long ret;
+++
+++    ret = get_errno(safe_ioctl(fd, SIOCGSTAMPNS, &ts));
+++    if (is_error(ret)) {
+++        return ret;
+++    }
+++
+++    if (cmd == (int)TARGET_SIOCGSTAMPNS_OLD) {
+++        if (host_to_target_timespec(arg, &ts)) {
+++            return -TARGET_EFAULT;
+++        }
+++    } else{
+++        if (host_to_target_timespec64(arg, &ts)) {
+++            return -TARGET_EFAULT;
+++        }
+++    }
+++
+++    return ret;
+++}
+++
++ #ifdef TIOCGPTPEER
++ static abi_long do_ioctl_tiocgptpeer(const IOCTLEntry *ie, uint8_t *buf_temp,
++                                      int fd, int cmd, abi_long arg)
++@@ -6271,32 +6381,6 @@ static inline abi_long target_ftruncate64(void *cpu_env, abi_long arg1,
++ }
++ #endif
++ 
++-static inline abi_long target_to_host_timespec(struct timespec *host_ts,
++-                                               abi_ulong target_addr)
++-{
++-    struct target_timespec *target_ts;
++-
++-    if (!lock_user_struct(VERIFY_READ, target_ts, target_addr, 1))
++-        return -TARGET_EFAULT;
++-    __get_user(host_ts->tv_sec, &target_ts->tv_sec);
++-    __get_user(host_ts->tv_nsec, &target_ts->tv_nsec);
++-    unlock_user_struct(target_ts, target_addr, 0);
++-    return 0;
++-}
++-
++-static inline abi_long host_to_target_timespec(abi_ulong target_addr,
++-                                               struct timespec *host_ts)
++-{
++-    struct target_timespec *target_ts;
++-
++-    if (!lock_user_struct(VERIFY_WRITE, target_ts, target_addr, 0))
++-        return -TARGET_EFAULT;
++-    __put_user(host_ts->tv_sec, &target_ts->tv_sec);
++-    __put_user(host_ts->tv_nsec, &target_ts->tv_nsec);
++-    unlock_user_struct(target_ts, target_addr, 1);
++-    return 0;
++-}
++-
++ static inline abi_long target_to_host_itimerspec(struct itimerspec *host_itspec,
++                                                  abi_ulong target_addr)
++ {
++diff --git a/linux-user/syscall_defs.h b/linux-user/syscall_defs.h
++index fffa89f2564..06622703008 100644
++--- a/linux-user/syscall_defs.h
+++++ b/linux-user/syscall_defs.h
++@@ -209,16 +209,34 @@ struct target_linger {
++     abi_int l_linger;       /* How long to linger for       */
++ };
++ 
+++#if defined(TARGET_SPARC64) && !defined(TARGET_ABI32)
+++struct target_timeval {
+++    abi_long tv_sec;
+++    abi_int tv_usec;
+++};
+++#define target__kernel_sock_timeval target_timeval
+++#else
++ struct target_timeval {
++     abi_long tv_sec;
++     abi_long tv_usec;
++ };
++ 
+++struct target__kernel_sock_timeval {
+++    abi_llong tv_sec;
+++    abi_llong tv_usec;
+++};
+++#endif
+++
++ struct target_timespec {
++     abi_long tv_sec;
++     abi_long tv_nsec;
++ };
++ 
+++struct target__kernel_timespec {
+++    abi_llong tv_sec;
+++    abi_llong tv_nsec;
+++};
+++
++ struct target_timezone {
++     abi_int tz_minuteswest;
++     abi_int tz_dsttime;
++@@ -749,8 +767,16 @@ struct target_pollfd {
++ #define TARGET_SIOCATMARK      0x8905
++ #define TARGET_SIOCGPGRP       0x8904
++ #endif
++-#define TARGET_SIOCGSTAMP      0x8906          /* Get stamp (timeval) */
++-#define TARGET_SIOCGSTAMPNS    0x8907          /* Get stamp (timespec) */
+++#if defined(TARGET_SH4)
+++#define TARGET_SIOCGSTAMP_OLD   TARGET_IOR('s', 100, struct target_timeval)
+++#define TARGET_SIOCGSTAMPNS_OLD TARGET_IOR('s', 101, struct target_timespec)
+++#else
+++#define TARGET_SIOCGSTAMP_OLD   0x8906
+++#define TARGET_SIOCGSTAMPNS_OLD 0x8907
+++#endif
+++
+++#define TARGET_SIOCGSTAMP_NEW   TARGET_IOR(0x89, 0x06, abi_llong[2])
+++#define TARGET_SIOCGSTAMPNS_NEW TARGET_IOR(0x89, 0x07, abi_llong[2])
++ 
++ /* Networking ioctls */
++ #define TARGET_SIOCADDRT       0x890B          /* add routing table entry */
++diff --git a/linux-user/syscall_types.h b/linux-user/syscall_types.h
++index b98a23b0f1b..4e369838262 100644
++--- a/linux-user/syscall_types.h
+++++ b/linux-user/syscall_types.h
++@@ -14,12 +14,6 @@ STRUCT(serial_icounter_struct,
++ STRUCT(sockaddr,
++        TYPE_SHORT, MK_ARRAY(TYPE_CHAR, 14))
++ 
++-STRUCT(timeval,
++-       MK_ARRAY(TYPE_LONG, 2))
++-
++-STRUCT(timespec,
++-       MK_ARRAY(TYPE_LONG, 2))
++-
++ STRUCT(rtentry,
++        TYPE_ULONG, MK_STRUCT(STRUCT_sockaddr), MK_STRUCT(STRUCT_sockaddr), MK_STRUCT(STRUCT_sockaddr),
++        TYPE_SHORT, TYPE_SHORT, TYPE_ULONG, TYPE_PTRVOID, TYPE_SHORT, TYPE_PTRVOID,
+diff --git a/package/qemu/3.1.1.1/0003-util-cacheinfo-fix-crash-when-compiling-with-uClibc.patch b/package/qemu/3.1.1.1/0003-util-cacheinfo-fix-crash-when-compiling-with-uClibc.patch
+new file mode 100644
+index 0000000000..d1b9e35709
+--- /dev/null
++++ b/package/qemu/3.1.1.1/0003-util-cacheinfo-fix-crash-when-compiling-with-uClibc.patch
+@@ -0,0 +1,43 @@
++From d82b8540ecaf3cb09a033e4971d8645d3343211e Mon Sep 17 00:00:00 2001
++From: Carlos Santos <casantos@redhat.com>
++Date: Wed, 16 Oct 2019 22:27:30 -0300
++Subject: [PATCH] util/cacheinfo: fix crash when compiling with uClibc
++
++uClibc defines _SC_LEVEL1_ICACHE_LINESIZE and _SC_LEVEL1_DCACHE_LINESIZE
++but the corresponding sysconf calls returns -1, which is a valid result,
++meaning that the limit is indeterminate.
++
++Handle this situation using the fallback values instead of crashing due
++to an assertion failure.
++
++Signed-off-by: Carlos Santos <casantos@redhat.com>
++---
++ util/cacheinfo.c | 10 ++++++++--
++ 1 file changed, 8 insertions(+), 2 deletions(-)
++
++diff --git a/util/cacheinfo.c b/util/cacheinfo.c
++index ea6f3e99bf..d94dc6adc8 100644
++--- a/util/cacheinfo.c
+++++ b/util/cacheinfo.c
++@@ -93,10 +93,16 @@ static void sys_cache_info(int *isize, int *dsize)
++ static void sys_cache_info(int *isize, int *dsize)
++ {
++ # ifdef _SC_LEVEL1_ICACHE_LINESIZE
++-    *isize = sysconf(_SC_LEVEL1_ICACHE_LINESIZE);
+++    int tmp_isize = (int) sysconf(_SC_LEVEL1_ICACHE_LINESIZE);
+++    if (tmp_isize > 0) {
+++        *isize = tmp_isize;
+++    }
++ # endif
++ # ifdef _SC_LEVEL1_DCACHE_LINESIZE
++-    *dsize = sysconf(_SC_LEVEL1_DCACHE_LINESIZE);
+++    int tmp_dsize = (int) sysconf(_SC_LEVEL1_DCACHE_LINESIZE);
+++    if (tmp_dsize > 0) {
+++        *dsize = tmp_dsize;
+++    }
++ # endif
++ }
++ #endif /* sys_cache_info */
++-- 
++2.18.1
++
+diff --git a/package/qemu/3.1.1.1/0004-linux-user-assume-__NR_gettid-always-exists.patch b/package/qemu/3.1.1.1/0004-linux-user-assume-__NR_gettid-always-exists.patch
+new file mode 100644
+index 0000000000..3475ad5b13
+--- /dev/null
++++ b/package/qemu/3.1.1.1/0004-linux-user-assume-__NR_gettid-always-exists.patch
+@@ -0,0 +1,44 @@
++From 184943d827ce09375284e6fbb9fd5eeb9e369529 Mon Sep 17 00:00:00 2001
++From: =?UTF-8?q?Daniel=20P=2E=20Berrang=C3=A9?= <berrange@redhat.com>
++Date: Wed, 20 Mar 2019 16:18:41 +0000
++Subject: [PATCH] linux-user: assume __NR_gettid always exists
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++The gettid syscall was introduced in Linux 2.4.11. This is old enough
++that we can assume it always exists and thus not bother with the
++conditional backcompat logic.
++
++Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
++Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
++Reviewed-by: Laurent Vivier <laurent@vivier.eu>
++Message-Id: <20190320161842.13908-2-berrange@redhat.com>
++Signed-off-by: Laurent Vivier <laurent@vivier.eu>
++---
++ linux-user/syscall.c | 8 --------
++ 1 file changed, 8 deletions(-)
++
++diff --git a/linux-user/syscall.c b/linux-user/syscall.c
++index 208fd1813d..11729f382c 100644
++--- a/linux-user/syscall.c
+++++ b/linux-user/syscall.c
++@@ -249,15 +249,7 @@ static type name (type1 arg1,type2 arg2,type3 arg3,type4 arg4,type5 arg5,	\
++ #define TARGET_NR__llseek TARGET_NR_llseek
++ #endif
++ 
++-#ifdef __NR_gettid
++ _syscall0(int, gettid)
++-#else
++-/* This is a replacement for the host gettid() and must return a host
++-   errno. */
++-static int gettid(void) {
++-    return -ENOSYS;
++-}
++-#endif
++ 
++ /* For the 64-bit guest on 32-bit host case we must emulate
++  * getdents using getdents64, because otherwise the host
++-- 
++2.23.0
++
+diff --git a/package/qemu/3.1.1.1/0005-linux-user-rename-gettid-to-sys_gettid-to-avoid-clas.patch b/package/qemu/3.1.1.1/0005-linux-user-rename-gettid-to-sys_gettid-to-avoid-clas.patch
+new file mode 100644
+index 0000000000..8e49bc0c99
+--- /dev/null
++++ b/package/qemu/3.1.1.1/0005-linux-user-rename-gettid-to-sys_gettid-to-avoid-clas.patch
+@@ -0,0 +1,91 @@
++From 71ba74f67eaca21b0cc9d96f534ad3b9a7161400 Mon Sep 17 00:00:00 2001
++From: =?UTF-8?q?Daniel=20P=2E=20Berrang=C3=A9?= <berrange@redhat.com>
++Date: Wed, 20 Mar 2019 16:18:42 +0000
++Subject: [PATCH] linux-user: rename gettid() to sys_gettid() to avoid clash
++ with glibc
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++The glibc-2.29.9000-6.fc31.x86_64 package finally includes the gettid()
++function as part of unistd.h when __USE_GNU is defined. This clashes
++with linux-user code which unconditionally defines this function name
++itself.
++
++/home/berrange/src/virt/qemu/linux-user/syscall.c:253:16: error: static declaration of ‘gettid’ follows non-static declaration
++  253 | _syscall0(int, gettid)
++      |                ^~~~~~
++/home/berrange/src/virt/qemu/linux-user/syscall.c:184:13: note: in definition of macro ‘_syscall0’
++  184 | static type name (void)   \
++      |             ^~~~
++In file included from /usr/include/unistd.h:1170,
++                 from /home/berrange/src/virt/qemu/include/qemu/osdep.h:107,
++                 from /home/berrange/src/virt/qemu/linux-user/syscall.c:20:
++/usr/include/bits/unistd_ext.h:34:16: note: previous declaration of ‘gettid’ was here
++   34 | extern __pid_t gettid (void) __THROW;
++      |                ^~~~~~
++  CC      aarch64-linux-user/linux-user/signal.o
++make[1]: *** [/home/berrange/src/virt/qemu/rules.mak:69: linux-user/syscall.o] Error 1
++make[1]: *** Waiting for unfinished jobs....
++make: *** [Makefile:449: subdir-aarch64-linux-user] Error 2
++
++While we could make our definition conditional and rely on glibc's impl,
++this patch simply renames our definition to sys_gettid() which is a
++common pattern in this file.
++
++Signed-off-by: Daniel P. Berrangé <berrange@redhat.com>
++Reviewed-by: Richard Henderson <richard.henderson@linaro.org>
++Reviewed-by: Laurent Vivier <laurent@vivier.eu>
++Message-Id: <20190320161842.13908-3-berrange@redhat.com>
++Signed-off-by: Laurent Vivier <laurent@vivier.eu>
++---
++ linux-user/syscall.c | 11 ++++++-----
++ 1 file changed, 6 insertions(+), 5 deletions(-)
++
++diff --git a/linux-user/syscall.c b/linux-user/syscall.c
++index 11729f382c..96cd4bf86d 100644
++--- a/linux-user/syscall.c
+++++ b/linux-user/syscall.c
++@@ -249,7 +249,8 @@ static type name (type1 arg1,type2 arg2,type3 arg3,type4 arg4,type5 arg5,	\
++ #define TARGET_NR__llseek TARGET_NR_llseek
++ #endif
++ 
++-_syscall0(int, gettid)
+++#define __NR_sys_gettid __NR_gettid
+++_syscall0(int, sys_gettid)
++ 
++ /* For the 64-bit guest on 32-bit host case we must emulate
++  * getdents using getdents64, because otherwise the host
++@@ -5434,7 +5435,7 @@ static void *clone_func(void *arg)
++     cpu = ENV_GET_CPU(env);
++     thread_cpu = cpu;
++     ts = (TaskState *)cpu->opaque;
++-    info->tid = gettid();
+++    info->tid = sys_gettid();
++     task_settid(ts);
++     if (info->child_tidptr)
++         put_user_u32(info->tid, info->child_tidptr);
++@@ -5579,9 +5580,9 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
++                mapping.  We can't repeat the spinlock hack used above because
++                the child process gets its own copy of the lock.  */
++             if (flags & CLONE_CHILD_SETTID)
++-                put_user_u32(gettid(), child_tidptr);
+++                put_user_u32(sys_gettid(), child_tidptr);
++             if (flags & CLONE_PARENT_SETTID)
++-                put_user_u32(gettid(), parent_tidptr);
+++                put_user_u32(sys_gettid(), parent_tidptr);
++             ts = (TaskState *)cpu->opaque;
++             if (flags & CLONE_SETTLS)
++                 cpu_set_tls (env, newtls);
++@@ -10621,7 +10622,7 @@ static abi_long do_syscall1(void *cpu_env, int num, abi_long arg1,
++         return TARGET_PAGE_SIZE;
++ #endif
++     case TARGET_NR_gettid:
++-        return get_errno(gettid());
+++        return get_errno(sys_gettid());
++ #ifdef TARGET_NR_readahead
++     case TARGET_NR_readahead:
++ #if TARGET_ABI_BITS == 32
++-- 
++2.23.0
++
+diff --git a/package/qemu/qemu.hash b/package/qemu/qemu.hash
+index 6ab6521934..ada80bf617 100644
+--- a/package/qemu/qemu.hash
++++ b/package/qemu/qemu.hash
+@@ -1,4 +1,4 @@
+ # Locally computed, tarball verified with GPG signature
+-sha256 d7c69fef3fb4bfbac99e3f2ac9fb8d6409db4faadf2e37337d544e3fdb4fde3a  qemu-3.1.1.tar.xz
++sha256 b148fc3c7382c5addd915db433383160ca7b840bc6ea90bb0d35c6b253526d56  qemu-3.1.1.1.tar.xz
+ sha256 6f04ae8364d0079a192b14635f4b1da294ce18724c034c39a6a41d1b09df6100  COPYING
+ sha256 48ffe9fc7f1d5462dbd19340bc4dd1d8a9e37c61ed535813e614cbe4a5f0d4df  COPYING.LIB
+diff --git a/package/qemu/qemu.mk b/package/qemu/qemu.mk
+index 9b94b2c61d..6960b8ab5f 100644
+--- a/package/qemu/qemu.mk
++++ b/package/qemu/qemu.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-QEMU_VERSION = 3.1.1
++QEMU_VERSION = 3.1.1.1
+ QEMU_SOURCE = qemu-$(QEMU_VERSION).tar.xz
+ QEMU_SITE = http://download.qemu.org
+ QEMU_LICENSE = GPL-2.0, LGPL-2.1, MIT, BSD-3-Clause, BSD-2-Clause, Others/BSD-1c
+diff --git a/package/qt5/qt5base/5.6.3/0004-fix-icu-build-for-qt5webkit.patch b/package/qt5/qt5base/5.6.3/0004-fix-icu-build-for-qt5webkit.patch
+new file mode 100644
+index 0000000000..0d166b848a
+--- /dev/null
++++ b/package/qt5/qt5base/5.6.3/0004-fix-icu-build-for-qt5webkit.patch
+@@ -0,0 +1,74 @@
++From: Arfrever Frehtes Taifersar Arahesis <Arfrever@Apache.Org>
++Date: Mon, 23 Nov 2015 03:54:00 +0000
++Subject: [PATCH 1/1] When UChar is defined as char16_t in ICU, then qtbase fails to detect ICU.
++
++Build fails with following error:
++
++ICU auto-detection... ()
++x86_64-pc-linux-gnu-g++ -c -march=core2 -O2 -fno-ident \
++ -frecord-gcc-switches -pipe -Wall -O2 -Wall -W -fPIC  -I. \
++ -I/var/tmp/portage/dev-qt/qtcore-5.5.1/work/qtbase-opensource-src-5.5.1/mkspecs/linux-g++ -o icu.o icu.cpp
++In file included from /usr/include/unicode/utypes.h:36:0,
++                 from icu.cpp:34:
++/usr/include/unicode/umachine.h:306:13: error: 'char16_t' does not name a type
++     typedef char16_t UChar;
++             ^
++In file included from /usr/include/unicode/utypes.h:37:0,
++                 from icu.cpp:34:
++/usr/include/unicode/uversion.h:165:55: error: 'UChar' does not name a type
++ u_versionFromUString(UVersionInfo versionArray, const UChar *versionString);
++                                                       ^
++...
++Makefile:177: recipe for target 'icu.o' failed
++gmake: *** [icu.o] Error 1
++ICU disabled.
++The ICU library support cannot be enabled.
++
++This change isn't needed for new Qt versions, because c++11 is mandatory since 5.7.
++Upstream desided not to merge this change into old branches, like 5.6.
++Original patch was slightly modified to apply cleanly on Qt 5.6.3.
++
++Fetch from: https://bugreports.qt.io/secure/attachment/52478/qtbase-5.5.1-icu.patch
++Signed-off-by: Arfrever Frehtes Taifersar Arahesis <Arfrever@Apache.Org>
++Signed-off-by: Andrey Skvortsov <andrej.skvortzov@gmail.com>
++
++---
++diff -purN qt5base-5.6.3.orig/config.tests/unix/compile.test qt5base-5.6.3/config.tests/unix/compile.test
++--- qt5base-5.6.3.orig/config.tests/unix/compile.test	2019-08-11 00:35:33.181545706 +0300
+++++ qt5base-5.6.3/config.tests/unix/compile.test	2017-09-06 15:13:54.000000000 +0300
++@@ -47,7 +47,7 @@ while [ "$#" -gt 0 ]; do
++         INC=`echo $PARAM | sed -e 's/^-I//'`
++         INCLUDEPATH="$INCLUDEPATH \"$INC\""
++         ;;
++-    -f*|-D*)
+++    -f*|-D*|-std=*)
++         CFLAGS="$CFLAGS \"$PARAM\""
++         CXXFLAGS="$CXXFLAGS \"$PARAM\""
++         ;;
++diff -purN qt5base-5.6.3.orig/configure qt5base-5.6.3/configure
++--- qt5base-5.6.3.orig/configure	2019-08-11 00:57:45.488214036 +0300
+++++ qt5base-5.6.3/configure	2017-09-06 15:13:54.000000000 +0300
++@@ -5183,8 +5183,10 @@ fi
++ 
++ # auto-detect libicu support
++ if [ "$CFG_ICU" != "no" ]; then
++-    if compileTest unix/icu "ICU"; then
+++    QT_CXXFLAGS_ICU=`icu-config --cxxflags 2>/dev/null`
+++    if compileTest unix/icu "ICU" $QT_CXXFLAGS_ICU; then
++         [ "$CFG_ICU" = "auto" ] && CFG_ICU=yes
+++        QMakeVar set QT_CXXFLAGS_ICU "$QT_CXXFLAGS_ICU"
++     else
++         if [ "$CFG_ICU" = "auto" ]; then
++             CFG_ICU=no
++diff -purN qt5base-5.6.3.orig/doc/Makefile qt5base-5.6.3/doc/Makefile
++diff -purN qt5base-5.6.3.orig/src/corelib/tools/tools.pri qt5base-5.6.3/src/corelib/tools/tools.pri
++--- qt5base-5.6.3.orig/src/corelib/tools/tools.pri	2019-08-11 00:45:45.073818635 +0300
+++++ qt5base-5.6.3/src/corelib/tools/tools.pri	2017-09-06 15:13:54.000000000 +0300
++@@ -169,6 +169,7 @@ contains(QT_CONFIG,icu) {
++                tools/qcollator_icu.cpp \
++                tools/qtimezoneprivate_icu.cpp
++     DEFINES += QT_USE_ICU
+++    QMAKE_CXXFLAGS += $$QT_CXXFLAGS_ICU
++ } else: win32 {
++     SOURCES += tools/qcollator_win.cpp
++ } else: macx {
+diff --git a/package/ruby/ruby.hash b/package/ruby/ruby.hash
+index fa9eddc279..d0aac63872 100644
+--- a/package/ruby/ruby.hash
++++ b/package/ruby/ruby.hash
+@@ -1,5 +1,5 @@
+-# https://www.ruby-lang.org/en/news/2019/04/01/ruby-2-4-6-released/
+-sha256 25da31b9815bfa9bba9f9b793c055a40a35c43c6adfb1fdbd81a09099f9b529c  ruby-2.4.6.tar.xz
++# https://www.ruby-lang.org/en/news/2019/10/02/ruby-2-4-9-released/
++sha256 0c4e000253ef7187feeb940a01a1c7594f28d63aa16f978e892a0e2864f58614  ruby-2.4.9.tar.xz
+ # License files, Locally calculated
+ sha256 609292a6d848ab223073944fc2d844449391a5ba2055a8b5baf1726bc13b39cb  LEGAL
+ sha256 f5eb1b2956d5f7a67b2e5722a3749bc2fe86f9c580f2e3f5a08519cf073b5864  COPYING
+diff --git a/package/ruby/ruby.mk b/package/ruby/ruby.mk
+index 10424020a9..1899d14797 100644
+--- a/package/ruby/ruby.mk
++++ b/package/ruby/ruby.mk
+@@ -5,17 +5,17 @@
+ ################################################################################
+ 
+ RUBY_VERSION_MAJOR = 2.4
+-RUBY_VERSION = $(RUBY_VERSION_MAJOR).6
++RUBY_VERSION = $(RUBY_VERSION_MAJOR).9
+ RUBY_VERSION_EXT = 2.4.0
+ RUBY_SITE = http://cache.ruby-lang.org/pub/ruby/$(RUBY_VERSION_MAJOR)
+ RUBY_SOURCE = ruby-$(RUBY_VERSION).tar.xz
+ RUBY_DEPENDENCIES = host-pkgconf host-ruby
+-HOST_RUBY_DEPENDENCIES = host-pkgconf
++HOST_RUBY_DEPENDENCIES = host-pkgconf host-openssl
+ RUBY_MAKE_ENV = $(TARGET_MAKE_ENV)
+ RUBY_CONF_OPTS = --disable-install-doc --disable-rpath --disable-rubygems
+ HOST_RUBY_CONF_OPTS = \
+ 	--disable-install-doc \
+-	--with-out-ext=curses,openssl,readline \
++	--with-out-ext=curses,readline \
+ 	--without-gmp
+ RUBY_LICENSE = Ruby or BSD-2-Clause, BSD-3-Clause, others
+ RUBY_LICENSE_FILES = LEGAL COPYING BSDL
+diff --git a/package/safeclib/0003-Define-_GNU_SOURCE-when-needed.patch b/package/safeclib/0003-Define-_GNU_SOURCE-when-needed.patch
+new file mode 100644
+index 0000000000..cc9e580793
+--- /dev/null
++++ b/package/safeclib/0003-Define-_GNU_SOURCE-when-needed.patch
+@@ -0,0 +1,115 @@
++From 94c7b765202fe50894425364834beca79e52b255 Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Mon, 28 Oct 2019 17:09:43 +0100
++Subject: [PATCH] Define _GNU_SOURCE when needed
++
++Define _GNU_SOURCE to fix build with musl otherwise we'll got the
++following build failures due to localtime_r, strnlen, gmtime_r and
++asctime_r being undefined:
++
++os/localtime_s.c:124:12: error: implicit declaration of function 'localtime_r'; did you mean 'localtime_s'? [-Werror=implicit-function-declaration]
++     dest = localtime_r(timer, dest);
++            ^~~~~~~~~~~
++
++io/gets_s.c:144:32: error: implicit declaration of function 'strnlen'; did you mean 'strlen'? [-Werror=implicit-function-declaration]
++         rsize_t len = (rsize_t)strnlen(dest, dmax);
++                                ^~~~~~~
++                                strlen
++
++An other option would be to define AC_GNU_SOURCE in the configure.ac but
++it seems that there is some handling of _GNU_SOURCE in
++safeclib_private.h
++
++Fixes:
++ - http://autobuild.buildroot.net/results/31a4b647ec0dcd9f517f313ec6c7c8f56da1ee47
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Retrieved from:
++https://github.com/rurban/safeclib/commit/94c7b765202fe50894425364834beca79e52b255]
++---
++ src/extmem/memzero_s.c | 2 ++
++ src/io/gets_s.c        | 2 ++
++ src/os/asctime_s.c     | 2 ++
++ src/os/ctime_s.c       | 2 ++
++ src/os/gmtime_s.c      | 2 ++
++ src/os/localtime_s.c   | 2 ++
++ 6 files changed, 12 insertions(+)
++
++diff --git a/src/extmem/memzero_s.c b/src/extmem/memzero_s.c
++index 75107215..20cb2784 100644
++--- a/src/extmem/memzero_s.c
+++++ b/src/extmem/memzero_s.c
++@@ -31,6 +31,8 @@
++  *------------------------------------------------------------------
++  */
++ 
+++#define _GNU_SOURCE
+++
++ #ifdef FOR_DOXYGEN
++ #include "safe_mem_lib.h"
++ #else
++diff --git a/src/io/gets_s.c b/src/io/gets_s.c
++index 09350b3d..be875a1c 100644
++--- a/src/io/gets_s.c
+++++ b/src/io/gets_s.c
++@@ -29,6 +29,8 @@
++  *------------------------------------------------------------------
++  */
++ 
+++#define _GNU_SOURCE
+++
++ #ifdef FOR_DOXYGEN
++ #include "safe_lib.h"
++ #else
++diff --git a/src/os/asctime_s.c b/src/os/asctime_s.c
++index 42669844..01cefd8f 100644
++--- a/src/os/asctime_s.c
+++++ b/src/os/asctime_s.c
++@@ -29,6 +29,8 @@
++  *------------------------------------------------------------------
++  */
++ 
+++#define _GNU_SOURCE
+++
++ #ifdef FOR_DOXYGEN
++ #include "safe_lib.h"
++ #else
++diff --git a/src/os/ctime_s.c b/src/os/ctime_s.c
++index 01b31f63..7a1a138c 100644
++--- a/src/os/ctime_s.c
+++++ b/src/os/ctime_s.c
++@@ -29,6 +29,8 @@
++  *------------------------------------------------------------------
++  */
++ 
+++#define _GNU_SOURCE
+++
++ #ifdef FOR_DOXYGEN
++ #include "safe_lib.h"
++ #else
++diff --git a/src/os/gmtime_s.c b/src/os/gmtime_s.c
++index ff9a0e24..cd8f064f 100644
++--- a/src/os/gmtime_s.c
+++++ b/src/os/gmtime_s.c
++@@ -29,6 +29,8 @@
++  *------------------------------------------------------------------
++  */
++ 
+++#define _GNU_SOURCE
+++
++ #ifdef FOR_DOXYGEN
++ #include "safe_lib.h"
++ #else
++diff --git a/src/os/localtime_s.c b/src/os/localtime_s.c
++index 0ce3324b..92ea21b9 100644
++--- a/src/os/localtime_s.c
+++++ b/src/os/localtime_s.c
++@@ -29,6 +29,8 @@
++  *------------------------------------------------------------------
++  */
++ 
+++#define _GNU_SOURCE
+++
++ #ifdef FOR_DOXYGEN
++ #include "safe_lib.h"
++ #else
+diff --git a/package/samba4/samba4.hash b/package/samba4/samba4.hash
+index d225112cb0..e0ea49a6f1 100644
+--- a/package/samba4/samba4.hash
++++ b/package/samba4/samba4.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated after checking pgp signature
+-# https://download.samba.org/pub/samba/stable/samba-4.9.13.tar.asc
+-sha256 ab18331e37766b13dbb07d1f115bda3d794917baf502d0ca2b2b8fff014b88f2  samba-4.9.13.tar.gz
++# https://download.samba.org/pub/samba/stable/samba-4.9.15.tar.asc
++sha256 377102b80b97941bf0d131b828cae8415190e5bdd2928c2e2c954e29f1904496  samba-4.9.15.tar.gz
+ sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  COPYING
+diff --git a/package/samba4/samba4.mk b/package/samba4/samba4.mk
+index 0e3c66e178..3f30efac60 100644
+--- a/package/samba4/samba4.mk
++++ b/package/samba4/samba4.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SAMBA4_VERSION = 4.9.13
++SAMBA4_VERSION = 4.9.15
+ SAMBA4_SITE = https://download.samba.org/pub/samba/stable
+ SAMBA4_SOURCE = samba-$(SAMBA4_VERSION).tar.gz
+ SAMBA4_INSTALL_STAGING = YES
+diff --git a/package/sdl_mixer/sdl_mixer.mk b/package/sdl_mixer/sdl_mixer.mk
+index 1c6912accf..9183a4aa8c 100644
+--- a/package/sdl_mixer/sdl_mixer.mk
++++ b/package/sdl_mixer/sdl_mixer.mk
+@@ -10,6 +10,9 @@ SDL_MIXER_SITE = http://www.libsdl.org/projects/SDL_mixer/release
+ SDL_MIXER_LICENSE = Zlib
+ SDL_MIXER_LICENSE_FILES = COPYING
+ 
++# Package does not build in parallel due to improper make rules
++SDL_MIXER_MAKE = $(MAKE1)
++
+ SDL_MIXER_INSTALL_STAGING = YES
+ SDL_MIXER_DEPENDENCIES = sdl
+ 
+diff --git a/package/sox/sox.mk b/package/sox/sox.mk
+index 0b3dc136d8..013ccbbcf4 100644
+--- a/package/sox/sox.mk
++++ b/package/sox/sox.mk
+@@ -8,16 +8,14 @@ SOX_VERSION = 14.4.2
+ SOX_SITE = http://downloads.sourceforge.net/project/sox/sox/$(SOX_VERSION)
+ SOX_SOURCE = sox-$(SOX_VERSION).tar.bz2
+ SOX_DEPENDENCIES = host-pkgconf
+-SOX_CONF_OPTS = --with-distro="Buildroot" --without-ffmpeg --disable-gomp \
+-	$(if $(BR2_TOOLCHAIN_HAS_SSP),,--disable-stack-protector)
+ SOX_LICENSE = GPL-2.0+ (sox binary), LGPL-2.1+ (libraries)
+ SOX_LICENSE_FILES = LICENSE.GPL LICENSE.LGPL
+ 
+-# MIPS Codescape toolchains don't support stack-smashing protection
+-# despite of using glibc.
+-ifeq ($(BR2_TOOLCHAIN_EXTERNAL_CODESCAPE_IMG_MIPS)$(BR2_TOOLCHAIN_EXTERNAL_CODESCAPE_MTI_MIPS),y)
+-SOX_CONF_OPTS += --disable-stack-protector
+-endif
++SOX_CONF_OPTS = \
++	--with-distro="Buildroot" \
++	--without-ffmpeg \
++	--disable-gomp \
++	--disable-stack-protector
+ 
+ ifeq ($(BR2_PACKAGE_ALSA_LIB_PCM),y)
+ SOX_DEPENDENCIES += alsa-lib
+diff --git a/package/sudo/sudo.hash b/package/sudo/sudo.hash
+index 3f20ccb15e..1795952988 100644
+--- a/package/sudo/sudo.hash
++++ b/package/sudo/sudo.hash
+@@ -1,4 +1,4 @@
+ # From: http://www.sudo.ws/download.html
+-sha256 d863d29b6fc87bc784a3223350e2b28a2ff2c4738f0fb8f1c92bb38c3017e679  sudo-1.8.23.tar.gz
++sha256 9129fa745a08caff0ce2042d2162b38eb9bf73bf43fcb248ac8b3a750c1f13a1  sudo-1.8.28.tar.gz
+ # Locally calculated
+-sha256 b6625a7b58e9469a7adfd1732960579a19fe84b3508030f9a31641283e2250b8  doc/LICENSE
++sha256 e0e7990185834e9f08f3e922905d7bfaf998d13be668c6026d2586b1718210ba  doc/LICENSE
+diff --git a/package/sudo/sudo.mk b/package/sudo/sudo.mk
+index 136b6c6915..cf8b63b1db 100644
+--- a/package/sudo/sudo.mk
++++ b/package/sudo/sudo.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SUDO_VERSION = 1.8.23
++SUDO_VERSION = 1.8.28
+ SUDO_SITE = https://www.sudo.ws/sudo/dist
+ SUDO_LICENSE = ISC, BSD-3-Clause
+ SUDO_LICENSE_FILES = doc/LICENSE
+diff --git a/package/systemd/Config.in b/package/systemd/Config.in
+index 920b65db44..aa763cd12f 100644
+--- a/package/systemd/Config.in
++++ b/package/systemd/Config.in
+@@ -140,6 +140,7 @@ config BR2_PACKAGE_SYSTEMD_HOSTNAMED
+ config BR2_PACKAGE_SYSTEMD_HWDB
+ 	bool "enable hwdb installation"
+ 	default y
++	select BR2_PACKAGE_HOST_EUDEV # for udevadm, during target-finalize
+ 	help
+ 	  Enables hardware database installation to /usr/lib/udev/hwdb.d
+ 
+diff --git a/package/tcpdump/tcpdump.hash b/package/tcpdump/tcpdump.hash
+index 0eb56e695f..da5c9aa749 100644
+--- a/package/tcpdump/tcpdump.hash
++++ b/package/tcpdump/tcpdump.hash
+@@ -1,3 +1,5 @@
+-# Locally calculated after checking pgp signature at http://www.tcpdump.org/release/tcpdump-4.9.2.tar.gz.sig
+-sha256 798b3536a29832ce0cbb07fafb1ce5097c95e308a6f592d14052e1ef1505fe79  tcpdump-4.9.2.tar.gz
++# Locally calculated after checking pgp signature at
++# http://www.tcpdump.org/release/tcpdump-4.9.3.tar.gz.sig
++# using key 1F166A5742ABB9E0249A8D30E089DEF1D9C15D0D
++sha256 2cd47cb3d460b6ff75f4a9940f594317ad456cfbf2bd2c8e5151e16559db6410  tcpdump-4.9.3.tar.gz
+ sha256 9b03d5d13e66d6de02a4bb2d0dd1cb9f41808d045962cdcc42350d5291b141a1  LICENSE
+diff --git a/package/tcpdump/tcpdump.mk b/package/tcpdump/tcpdump.mk
+index 2a6d095c2f..72bf6f8704 100644
+--- a/package/tcpdump/tcpdump.mk
++++ b/package/tcpdump/tcpdump.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-TCPDUMP_VERSION = 4.9.2
++TCPDUMP_VERSION = 4.9.3
+ TCPDUMP_SITE = http://www.tcpdump.org/release
+ TCPDUMP_LICENSE = BSD-3-Clause
+ TCPDUMP_LICENSE_FILES = LICENSE
+diff --git a/package/unscd/unscd.hash b/package/unscd/unscd.hash
+index ab8ffdc0cf..671149fda2 100644
+--- a/package/unscd/unscd.hash
++++ b/package/unscd/unscd.hash
+@@ -1,2 +1,2 @@
+ # Locally computed:
+-sha256	4c1f83dcd120469fceef749050cb29fa666fa4666bd308dfe92e933a4c200d55	nscd-0.52.c
++sha256  9078255b2b9c344d9a0c3333ce23dda9d745f158dde0ea2244a8c56ba93f7a40  nscd-0.53.c
+diff --git a/package/unscd/unscd.mk b/package/unscd/unscd.mk
+index 36f2de271b..c79ec44000 100644
+--- a/package/unscd/unscd.mk
++++ b/package/unscd/unscd.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-UNSCD_VERSION = 0.52
++UNSCD_VERSION = 0.53
+ UNSCD_SOURCE = nscd-$(UNSCD_VERSION).c
+ UNSCD_SITE = http://busybox.net/~vda/unscd
+ UNSCD_LICENSE = GPL-2.0
+diff --git a/package/util-linux/util-linux.mk b/package/util-linux/util-linux.mk
+index 96b72625e9..b17c0e9b7c 100644
+--- a/package/util-linux/util-linux.mk
++++ b/package/util-linux/util-linux.mk
+@@ -11,7 +11,7 @@ UTIL_LINUX_SITE = $(BR2_KERNEL_MIRROR)/linux/utils/util-linux/v$(UTIL_LINUX_VERS
+ 
+ # README.licensing claims that some files are GPL-2.0 only, but this is not true.
+ # Some files are GPL-3.0+ but only in tests. rfkill uses an ISC-style license.
+-UTIL_LINUX_LICENSE = GPL-2.0+, BSD-4-Clause, LGPL-2.1+ (libblkid, libfdisk, libmount), BSD-3-Clause (libuuid) ISC (rfkill)
++UTIL_LINUX_LICENSE = GPL-2.0+, BSD-4-Clause, LGPL-2.1+ (libblkid, libfdisk, libmount), BSD-3-Clause (libuuid), ISC (rfkill)
+ UTIL_LINUX_LICENSE_FILES = README.licensing \
+ 	Documentation/licenses/COPYING.BSD-3-Clause \
+ 	Documentation/licenses/COPYING.BSD-4-Clause-UC \
+diff --git a/package/vtun/vtun.mk b/package/vtun/vtun.mk
+index 86d452c0c2..35b0ddedbb 100644
+--- a/package/vtun/vtun.mk
++++ b/package/vtun/vtun.mk
+@@ -8,7 +8,7 @@ VTUN_VERSION = 3.0.4
+ VTUN_SITE = http://downloads.sourceforge.net/project/vtun/vtun/$(VTUN_VERSION)
+ VTUN_LICENSE = GPL-2.0+ with OpenSSL exception
+ VTUN_LICENSE_FILES = README.OpenSSL
+-VTUN_DEPENDENCIES = host-bison host-flex zlib lzo openssl
++VTUN_DEPENDENCIES = host-bison host-flex host-pkgconf zlib lzo openssl
+ VTUN_AUTORECONF = YES
+ 
+ VTUN_CONF_OPTS = \
+@@ -19,4 +19,8 @@ VTUN_CONF_OPTS = \
+ # Assumes old-style gcc inline symbol visibility rules
+ VTUN_CONF_ENV = CFLAGS="$(TARGET_CFLAGS) -std=gnu89"
+ 
++# configure.in forgets to link to dependent libraries of openssl breaking static
++# linking
++VTUN_CONF_ENV += LIBS=`$(PKG_CONFIG_HOST_BINARY) --libs openssl`
++
+ $(eval $(autotools-package))
+diff --git a/package/xvisor/0001-x86-Fix-build-break-with-newer-GCC-7-x.patch b/package/xvisor/0001-x86-Fix-build-break-with-newer-GCC-7-x.patch
+new file mode 100644
+index 0000000000..668f9df71b
+--- /dev/null
++++ b/package/xvisor/0001-x86-Fix-build-break-with-newer-GCC-7-x.patch
+@@ -0,0 +1,34 @@
++From 48b056d958e0d9ae5758b9c927b48a2e1d98cbcd Mon Sep 17 00:00:00 2001
++From: Himanshu Chauhan <hchauhan@xvisor-x86.org>
++Date: Mon, 4 Dec 2017 18:29:09 +0530
++Subject: [PATCH] [x86] Fix build break with newer GCC (7.x)
++
++add -no-pie to C and LD flags. GCC 7.x for some reason
++doesn't like to mix 32-bit and 64-bit code and wants
++such code to be compiled with fPIC. Disable PIE from
++does the trick.
++
++Signed-off-by: Himanshu Chauhan <hchauhan@xvisor-x86.org>
++[Retrieved from:
++https://github.com/xvisor/xvisor/commit/48b056d958e0d9ae5758b9c927b48a2e1d98cbcd]
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++---
++ arch/x86/cpu/x86_64/objects.mk | 5 +++--
++ 1 file changed, 3 insertions(+), 2 deletions(-)
++
++diff --git a/arch/x86/cpu/x86_64/objects.mk b/arch/x86/cpu/x86_64/objects.mk
++index a3bed4641..1d6d5a2fb 100644
++--- a/arch/x86/cpu/x86_64/objects.mk
+++++ b/arch/x86/cpu/x86_64/objects.mk
++@@ -21,8 +21,9 @@
++ # @author Himanshu Chauhan (hschauhan@nulltrace.org)
++ # @brief list of x86_64 object files.
++ # */
++-cpu-cflags +=-finline-functions -O0 -mcmodel=large
++-cpu-cppflags +=-DCPU_TEXT_LMA=${CONFIG_VAPOOL_ALIGN_MB}
+++cpu-cflags +=-finline-functions -O0 -mcmodel=large -no-pie
+++cpu-cppflags +=-DCPU_TEXT_LMA=${CONFIG_VAPOOL_ALIGN_MB} -no-pie
+++cpu-ldflags += -no-pie
++ 
++ cpu-objs-y+= start.o
++ 
+diff --git a/package/yaffs2utils/yaffs2utils.mk b/package/yaffs2utils/yaffs2utils.mk
+index d3a8bdc9d2..bcd5d6d66f 100644
+--- a/package/yaffs2utils/yaffs2utils.mk
++++ b/package/yaffs2utils/yaffs2utils.mk
+@@ -6,7 +6,7 @@
+ 
+ YAFFS2UTILS_VERSION = 0.2.9
+ YAFFS2UTILS_SOURCE = $(YAFFS2UTILS_VERSION).tar.gz
+-YAFFS2UTILS_SITE = https://yaffs2utils.googlecode.com/files
++YAFFS2UTILS_SITE = https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/yaffs2utils
+ YAFFS2UTILS_LICENSE = GPL-2.0
+ YAFFS2UTILS_LICENSE_FILES = COPYING
+ 
+diff --git a/support/testing/infra/emulator.py b/support/testing/infra/emulator.py
+index 3d3e1750c6..093a643a8b 100644
+--- a/support/testing/infra/emulator.py
++++ b/support/testing/infra/emulator.py
+@@ -61,8 +61,12 @@ class Emulator(object):
+                     qemu_cmd += ["-M", "vexpress-a9"]
+                 elif arch == "armv5":
+                     kernel = infra.download(self.downloaddir,
+-                                            "kernel-versatile")
++                                            "kernel-versatile-4.19")
++                    dtb = infra.download(self.downloaddir,
++                                         "versatile-pb-4.19.dtb")
++                    qemu_cmd += ["-dtb", dtb]
+                     qemu_cmd += ["-M", "versatilepb"]
++                    qemu_cmd += ["-device", "virtio-rng-pci"]
+ 
+             qemu_cmd += ["-kernel", kernel]
+ 
+diff --git a/support/testing/tests/package/test_lua.py b/support/testing/tests/package/test_lua.py
+index 77358ba138..66ae85c999 100644
+--- a/support/testing/tests/package/test_lua.py
++++ b/support/testing/tests/package/test_lua.py
+@@ -12,7 +12,7 @@ class TestLuaBase(infra.basetest.BRTest):
+ 
+     def login(self):
+         cpio_file = os.path.join(self.builddir, "images", "rootfs.cpio")
+-        self.emulator.boot(arch="armv7",
++        self.emulator.boot(arch="armv5",
+                            kernel="builtin",
+                            options=["-initrd", cpio_file])
+         self.emulator.login()
+diff --git a/support/testing/tests/package/test_perl.py b/support/testing/tests/package/test_perl.py
+index 033b7cf347..37e7390a4b 100644
+--- a/support/testing/tests/package/test_perl.py
++++ b/support/testing/tests/package/test_perl.py
+@@ -12,7 +12,7 @@ class TestPerlBase(infra.basetest.BRTest):
+ 
+     def login(self):
+         cpio_file = os.path.join(self.builddir, "images", "rootfs.cpio")
+-        self.emulator.boot(arch="armv7",
++        self.emulator.boot(arch="armv5",
+                            kernel="builtin",
+                            options=["-initrd", cpio_file])
+         self.emulator.login()
+diff --git a/toolchain/Config.in b/toolchain/Config.in
+index 87d7bc30bb..c4f333d599 100644
+--- a/toolchain/Config.in
++++ b/toolchain/Config.in
+@@ -124,6 +124,12 @@ config BR2_TOOLCHAIN_HAS_GCC_BUG_64735
+ 	default y if !BR2_TOOLCHAIN_SUPPORTS_ALWAYS_LOCKFREE_ATOMIC_INTS && \
+ 		!BR2_TOOLCHAIN_GCC_AT_LEAST_7
+ 
++# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=68485. This bug still
++# exists in gcc 9.x
++config BR2_TOOLCHAIN_HAS_GCC_BUG_68485
++	bool
++	default y if BR2_microblaze
++
+ # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=85180. This bug no
+ # longer exists in gcc 8.x.
+ config BR2_TOOLCHAIN_HAS_GCC_BUG_85180
+diff --git a/toolchain/toolchain-external/pkg-toolchain-external.mk b/toolchain/toolchain-external/pkg-toolchain-external.mk
+index 26c32e8872..df0b686772 100644
+--- a/toolchain/toolchain-external/pkg-toolchain-external.mk
++++ b/toolchain/toolchain-external/pkg-toolchain-external.mk
+@@ -114,6 +114,10 @@ endif
+ 
+ TOOLCHAIN_EXTERNAL_LIBS += ld*.so* libgcc_s.so.* libatomic.so.*
+ 
++ifneq ($(BR2_SSP_NONE),y)
++TOOLCHAIN_EXTERNAL_LIBS += libssp.so.*
++endif
++
+ ifeq ($(BR2_TOOLCHAIN_EXTERNAL_GLIBC)$(BR2_TOOLCHAIN_EXTERNAL_UCLIBC),y)
+ TOOLCHAIN_EXTERNAL_LIBS += libc.so.* libcrypt.so.* libdl.so.* libm.so.* libnsl.so.* libresolv.so.* librt.so.* libutil.so.*
+ ifeq ($(BR2_TOOLCHAIN_HAS_THREADS),y)
+diff --git a/utils/test-pkg b/utils/test-pkg
+index f3b34d5d0d..a317d8c17a 100755
+--- a/utils/test-pkg
++++ b/utils/test-pkg
+@@ -138,6 +138,8 @@ main() {
+ 
+     printf "%d builds, %d skipped, %d build failed, %d legal-info failed\n" \
+         ${nb} ${nb_skip} ${nb_fail} ${nb_legal}
++
++    return $((nb_fail + nb_legal))
+ }
+ 
+ build_one() {
