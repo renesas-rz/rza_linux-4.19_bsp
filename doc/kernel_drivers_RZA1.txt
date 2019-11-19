@@ -77,7 +77,7 @@ Low resolution tick timer. Selected automatically.
 
 SPIBSC (QSPI)
 ---------------------------------------------------
-SPI_SH_SPIBSC=y
+SPI_SPIBSC=y
 
 
 RSPI
