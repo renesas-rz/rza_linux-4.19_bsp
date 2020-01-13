@@ -1,0 +1,76 @@
+
+You must have:
+CONFIG_RTC_DRV_RZA2M=y
+CONFIG_RTC_HCTOSYS=y
+CONFIG_RTC_HCTOSYS_DEVICE="rtc0"
+
+
+To have /dev/rtc0 be created (needed to use hwclock):
+CONFIG_RTC_INTF_DEV=y
+
+
+
+$ hwclock
+Thu Jan  1 00:00:49 1970  0.000000 seconds
+$ date --set="2014-09-26 10:51"
+Fri Sep 26 10:51:00 UTC 2014
+$ hwclock -w
+$ hwclock
+Fri Sep 26 10:51:10 2014  0.000000 seconds
+
+
+/* SystemClock -> HardwareClock */
+
+# date
+Thu Jan  1 00:13:55 UTC 1970
+# hwclock
+Thu Jan  1 00:13:55 1970  0.000000 seconds
+# date --set="2013-12-22 22:22"
+Sun Dec 22 22:22:00 UTC 2013
+# hwclock -w
+# hwclock
+Sun Dec 22 22:22:02 UTC 2013
+
+
+
+/* HardwareClock -> SystemClock */
+# Show system clock and RTC are different. Then set system clock based on RTC.
+$ date
+Sun Dec 22 22:22:03 UTC 2013
+
+$ hwclock
+Fri Sep 26 08:54:37 2014  0.000000 seconds
+$ hwclock -s
+$ date
+Fri Sep 26 08:54:58 UTC 2014
+
+Notes: 
+1. Calendar count mode
+	Channel 0 is default for testing at above link.
+	To test channel 1, add 2 more options (-f /dev/rtc1) in hwclock command.
+	Example: $ hwclock -f /dev/rtc1
+2. Binary count mode
+	To enable Binary count mode, you must set 'binary_cntmd' in the Device Tree.
+	&rtc0 {
+		status = "okay";
+		binary_cntmd = <1>;	/* Operate in custom Binary Count mode */
+	};
+
+	hwclock only works with calendar count mode, to test RTC when it works with binary count mode, 
+	use mem app to test register value.
+	Example: 
+	Read value of register BCNT0:
+		$ mem r b 0xfcffd002 1
+	Read value of register BCNT1:
+		$ mem r b 0xfcffd004 1
+	Read value of register BCNT2:
+		$ mem r b 0xfcffd006 1
+	Read value of register BCNT3:
+		$ mem r b 0xfcffd008 1
+	
+	value of BCNT0 will increase 1 unit after 1 second from 0x00 -> 0xff -> 0x00 -> 0xff...
+	When value of BCNT0 changes from 0xff -> 0x00, value of BCNT1 will increase 1 unit until 0xff.
+	When value of BCNT1 changes from 0xff -> 0x00, value of BCNT2 will increase 1 unit until 0xff.
+	When value of BCNT2 changes from 0xff -> 0x00, value of BCNT3 will increase 1 unit until 0xff.
+
+

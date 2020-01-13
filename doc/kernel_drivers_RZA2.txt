@@ -122,6 +122,10 @@ CONFIG_CAN_RZA1=y
 		CONFIG_CAN=y
 		CONFIG_CAN_RAW=y
 
+RTC
+---------------------------------------------------
+CONFIG_RTC_DRV_RZA2M=y
+
 
 Audio
 ---------------------------------------------------
