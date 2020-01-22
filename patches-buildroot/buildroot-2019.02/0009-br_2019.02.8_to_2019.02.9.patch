@@ -1,0 +1,2936 @@
+diff --git a/CHANGES b/CHANGES
+index f952453790..a4d732bd2a 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,26 @@
++2019.02.9, released January 12th, 2020
++
++	Important / security related fixes.
++
++	pkg-python infrastructure: Ensure correct compiler and linker
++	flags are used for compiled code
++
++	utils/scanpypi: Remind users to update DEVELOPERS
++
++	Updated/fixed packages: busybox, cc-tool, cpio, cups, dante,
++	dillo, docker-cli, docker-containerd, docker-engine, easy-rsa,
++	ecryptfs-utils, efl, git, glibc, gnupg2, gst1-plugins-bad,
++	kf5-kcoreaddons, libarchive, libgit2, libkrb5, librsvg,
++	libssh, libtomcrypt, libuio, lirc-tools, lvm2,
++	matchbox-desktop, nodejs, ntp, opencv3, openpowerlink,
++	python-django, python-ecdsa, python-pyasn-modules,
++	python-pyqt5, python-subprocess32, python3, qpdf, runc, rygel,
++	samba4, sdl2, wavpack, xserver_xorg-server, zip
++
++	Issues resolved (http://bugs.uclibc.org):
++
++	#12121: PyQt5.QtSerialPort and other modules not being built
++
+ 2019.02.8, released December 7th, 2019
+ 
+ 	Important / security related fixes.
+diff --git a/Makefile b/Makefile
+index dfa62870c7..93d30ff145 100644
+--- a/Makefile
++++ b/Makefile
+@@ -92,9 +92,9 @@ all:
+ .PHONY: all
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2019.02.8
++export BR2_VERSION := 2019.02.9
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1575746000
++BR2_VERSION_EPOCH = 1578842000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+diff --git a/docs/manual/adding-packages-generic.txt b/docs/manual/adding-packages-generic.txt
+index 7be1754f54..1e2f08cec7 100644
+--- a/docs/manual/adding-packages-generic.txt
++++ b/docs/manual/adding-packages-generic.txt
+@@ -358,9 +358,11 @@ not and can not work as people would expect it should:
+ * +LIBFOO_DEPENDENCIES+ lists the dependencies (in terms of package
+   name) that are required for the current target package to
+   compile. These dependencies are guaranteed to be compiled and
+-  installed before the configuration of the current package starts. In
+-  a similar way, +HOST_LIBFOO_DEPENDENCIES+ lists the dependencies for
+-  the current host package.
++  installed before the configuration of the current package starts.
++  However, modifications to configuration of these dependencies will
++  not force a rebuild of the current package. In a similar way,
++  +HOST_LIBFOO_DEPENDENCIES+ lists the dependencies for the current
++  host package.
+ 
+ * +LIBFOO_EXTRACT_DEPENDENCIES+ lists the dependencies (in terms of
+   package name) that are required for the current target package to be
+diff --git a/docs/manual/rebuilding-packages.txt b/docs/manual/rebuilding-packages.txt
+index 8f4d40d4d6..06d3855148 100644
+--- a/docs/manual/rebuilding-packages.txt
++++ b/docs/manual/rebuilding-packages.txt
+@@ -65,6 +65,16 @@ can help you understand how to work with Buildroot:
+    there is no need for a full rebuild: a simple +make+ invocation
+    will take the changes into account.
+ 
++ * When a package listed in +FOO_DEPENDENCIES+ is rebuilt or removed,
++   the package +foo+ is not automatically rebuilt. For example, if a
++   package +bar+ is listed in +FOO_DEPENDENCIES+ with +FOO_DEPENDENCIES
++   = bar+ and the configuration of the +bar+ package is changed, the
++   configuration change would not result in a rebuild of package +foo+
++   automatically. In this scenario, you may need to either rebuild any
++   packages in your build which reference +bar+ in their +DEPENDENCIES+,
++   or perform a full rebuild to ensure any +bar+ dependent packages are
++   up to date.
++
+ Generally speaking, when you're facing a build error and you're unsure
+ of the potential consequences of the configuration changes you've
+ made, do a full rebuild. If you get the same build error, then you are
+diff --git a/linux/Config.in b/linux/Config.in
+index c5a3f9eda7..6c1d172be5 100644
+--- a/linux/Config.in
++++ b/linux/Config.in
+@@ -122,7 +122,7 @@ endif
+ 
+ config BR2_LINUX_KERNEL_VERSION
+ 	string
+-	default "4.19.88" if BR2_LINUX_KERNEL_LATEST_VERSION
++	default "4.19.94" if BR2_LINUX_KERNEL_LATEST_VERSION
+ 	default "v4.4.176-cip31" if BR2_LINUX_KERNEL_LATEST_CIP_VERSION
+ 	default BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE \
+ 		if BR2_LINUX_KERNEL_CUSTOM_VERSION
+diff --git a/linux/linux.hash b/linux/linux.hash
+index 9e5dc6a019..7d72e43573 100644
+--- a/linux/linux.hash
++++ b/linux/linux.hash
+@@ -1,6 +1,6 @@
+ # From https://www.kernel.org/pub/linux/kernel/v4.x/sha256sums.asc
+ sha256 d011245629b980d4c15febf080b54804aaf215167b514a3577feddb2495f8a3e  linux-4.20.17.tar.xz
+-sha256 5da5e16fe08fa506f8f74aa4f17be22b52c0f513e9a3f7e7ae22fc53597ad493  linux-4.4.206.tar.xz
+-sha256 1df27899a9bc4dd874f3830ab9e7b638f0026dffd67a2e230444e5d2805ccad6  linux-4.9.206.tar.xz
+-sha256 0d49ec72e273f6fc7462ad56849b2285f13fd5f4185e8f932a0074fc2eca1bb3  linux-4.14.158.tar.xz
+-sha256 c1923b6bd166e6dd07be860c15f59e8273aaa8692bc2a1fce1d31b826b9b3fbe  linux-4.19.88.tar.xz
++sha256 5899ff2a85e2b84607148349fd8e646f94399655caf0e4e55d1eb0567e48520e  linux-4.4.208.tar.xz
++sha256 b7ad1c9841d671d026c55a4c91c77205f8b488ca5f980f838591c68662e0525a  linux-4.9.208.tar.xz
++sha256 eb29cc9cfd54158789064b3d6e5b3eab108facec048b8d405a63e9863329b049  linux-4.14.163.tar.xz
++sha256 c62a10a75a7c4213e41287040e7c7509b7d42117d6830feb7dfe505949fa7467  linux-4.19.94.tar.xz
+diff --git a/package/busybox/busybox.mk b/package/busybox/busybox.mk
+index 179af6aea3..565488ce1a 100644
+--- a/package/busybox/busybox.mk
++++ b/package/busybox/busybox.mk
+@@ -262,7 +262,9 @@ endif
+ 
+ ifeq ($(BR2_INIT_BUSYBOX),y)
+ define BUSYBOX_INSTALL_INITTAB
+-	$(INSTALL) -D -m 0644 package/busybox/inittab $(TARGET_DIR)/etc/inittab
++	if test ! -e $(TARGET_DIR)/etc/inittab; then \
++		$(INSTALL) -D -m 0644 package/busybox/inittab $(TARGET_DIR)/etc/inittab; \
++	fi
+ endef
+ endif
+ 
+diff --git a/package/cc-tool/cc-tool.hash b/package/cc-tool/cc-tool.hash
+index 81844eec82..d778b44395 100644
+--- a/package/cc-tool/cc-tool.hash
++++ b/package/cc-tool/cc-tool.hash
+@@ -1,3 +1,6 @@
+ # From http://sourceforge.net/projects/cctool/files/
+ sha1 f313e55f019ea5338438633f5b5e689b699343e1  cc-tool-0.26-src.tgz
+ md5 26960676f3e6264e612c299fbf8ec5ea  cc-tool-0.26-src.tgz
++
++# Hash for license file
++sha256 231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c  COPYING
+diff --git a/package/cpio/0001-fix-CVE-2016-2037.patch b/package/cpio/0001-fix-CVE-2016-2037.patch
+deleted file mode 100644
+index aec2ccb8e5..0000000000
+--- a/package/cpio/0001-fix-CVE-2016-2037.patch
++++ /dev/null
+@@ -1,51 +0,0 @@
+-From: Pavel Raiskup
+-Subject: [Bug-cpio] [PATCH] fix 1-byte out-of-bounds write
+-Date: Tue, 26 Jan 2016 23:17:54 +0100
+-
+-Other calls to cpio_safer_name_suffix seem to be safe.
+-
+-* src/copyin.c (process_copy_in):  Make sure that file_hdr.c_name
+-has at least two bytes allocated.
+-* src/util.c (cpio_safer_name_suffix): Document that use of this
+-function requires to be careful.
+-
+-Signed-off-by: Gustavo Zacarias <gustavo@zacarias.com.ar>
+----
+-Patch status: fetched/submitted
+-URL: https://lists.gnu.org/archive/html/bug-cpio/2016-01/msg00005.html
+-
+- src/copyin.c | 2 ++
+- src/util.c   | 5 ++++-
+- 2 files changed, 6 insertions(+), 1 deletion(-)
+-
+-diff --git a/src/copyin.c b/src/copyin.c
+-index cde911e..032d35f 100644
+---- a/src/copyin.c
+-+++ b/src/copyin.c
+-@@ -1385,6 +1385,8 @@ process_copy_in ()
+-          break;
+-        }
+-
+-+      if (file_hdr.c_namesize <= 1)
+-+        file_hdr.c_name = xrealloc(file_hdr.c_name, 2);
+-       cpio_safer_name_suffix (file_hdr.c_name, false, !no_abs_paths_flag,
+-                              false);
+-
+-diff --git a/src/util.c b/src/util.c
+-index 6ff6032..2763ac1 100644
+---- a/src/util.c
+-+++ b/src/util.c
+-@@ -1411,7 +1411,10 @@ set_file_times (int fd,
+- }
+- 
+- /* Do we have to ignore absolute paths, and if so, does the filename
+--   have an absolute path?  */
+-+   have an absolute path?
+-+   Before calling this function make sure that the allocated NAME buffer has
+-+   capacity at least 2 bytes to allow us to store the "." string inside.  */
+-+
+- void
+- cpio_safer_name_suffix (char *name, bool link_target, bool absolute_names,
+-                        bool strip_leading_dots)
+---
+-2.5.0
+diff --git a/package/cpio/cpio.hash b/package/cpio/cpio.hash
+index 962a100cc4..a3a0d4b3f9 100644
+--- a/package/cpio/cpio.hash
++++ b/package/cpio/cpio.hash
+@@ -1,2 +1,7 @@
++# From https://lists.gnu.org/archive/html/info-gnu/2019-11/msg00002.html
++md5 f3438e672e3fa273a7dc26339dd1eed6  cpio-2.13.tar.bz2
++sha1 4dcefc0e1bc36b11506a354768d82b15e3fe6bb8  cpio-2.13.tar.bz2
+ # Locally calculated after checking pgp signature
+-sha256	08a35e92deb3c85d269a0059a27d4140a9667a6369459299d08c17f713a92e73	cpio-2.12.tar.gz
++sha256 eab5bdc5ae1df285c59f2a4f140a98fc33678a0bf61bdba67d9436ae26b46f6d  cpio-2.13.tar.bz2
++# Locally calculated
++sha256 fc82ca8b6fdb18d4e3e85cfd8ab58d1bcd3f1b29abe782895abd91d64763f8e7  COPYING
+diff --git a/package/cpio/cpio.mk b/package/cpio/cpio.mk
+index 9a09279572..76cd8659ad 100644
+--- a/package/cpio/cpio.mk
++++ b/package/cpio/cpio.mk
+@@ -4,7 +4,8 @@
+ #
+ ################################################################################
+ 
+-CPIO_VERSION = 2.12
++CPIO_VERSION = 2.13
++CPIO_SOURCE = cpio-$(CPIO_VERSION).tar.bz2
+ CPIO_SITE = $(BR2_GNU_MIRROR)/cpio
+ CPIO_CONF_OPTS = --bindir=/bin
+ CPIO_LICENSE = GPL-3.0+
+diff --git a/package/cups/cups.hash b/package/cups/cups.hash
+index d75387c405..676f664b72 100644
+--- a/package/cups/cups.hash
++++ b/package/cups/cups.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated:
+-sha256 0f61ab449e4748a24c6ab355b481ff7691247a140d327b2b7526fce34b7f9aa8  cups-2.2.12-source.tar.gz
++sha256 da375796e5e7ab6d31a853d0e5326486d41d10d42bbff9ec768b0cea85031b48  cups-2.2.13-source.tar.gz
+ sha256 6e0e0ffbde118aae709f7ef65590de9071e8b2cd322f84fd645c6b64f3cc452c  LICENSE.txt
+diff --git a/package/cups/cups.mk b/package/cups/cups.mk
+index 21e4c221fb..904a55f1e1 100644
+--- a/package/cups/cups.mk
++++ b/package/cups/cups.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-CUPS_VERSION = 2.2.12
++CUPS_VERSION = 2.2.13
+ CUPS_SOURCE = cups-$(CUPS_VERSION)-source.tar.gz
+ CUPS_SITE = https://github.com/apple/cups/releases/download/v$(CUPS_VERSION)
+ CUPS_LICENSE = GPL-2.0, LGPL-2.0
+diff --git a/package/dante/dante.mk b/package/dante/dante.mk
+index 0bd036d37e..0668042bd8 100644
+--- a/package/dante/dante.mk
++++ b/package/dante/dante.mk
+@@ -12,7 +12,7 @@ DANTE_LICENSE_FILES = LICENSE
+ # 0002-compiler.m4-do-not-remove-g-flag.patch touches a m4 file
+ DANTE_AUTORECONF = YES
+ 
+-DANTE_CONF_OPTS += --disable-client --disable-preload --without-pam
++DANTE_CONF_OPTS += --disable-client --disable-preload
+ 
+ ifeq ($(BR2_PACKAGE_LINUX_PAM),y)
+ DANTE_DEPENDENCIES += linux-pam
+diff --git a/package/dillo/0003-Fix-openssl-detection.patch b/package/dillo/0003-Fix-openssl-detection.patch
+new file mode 100644
+index 0000000000..6e5f1d021f
+--- /dev/null
++++ b/package/dillo/0003-Fix-openssl-detection.patch
+@@ -0,0 +1,29 @@
++From 96dde9dedf806256cdc6cbf5cacbd5c8d74e6288 Mon Sep 17 00:00:00 2001
++From: Jonathan Kimmitt <jrrk2@cam.ac.uk>
++Date: Thu, 9 Jan 2020 22:01:42 +0100
++Subject: [PATCH] Fix openssl detection
++
++SSL_library_init is now a define, use OPENSSL_init_ssl instead.
++
++Signed-off-by: Jonathan Kimmitt <jrrk2@cam.ac.uk>
++Signed-off-by: Peter Seiderer <ps.report@gmx.net>
++---
++ configure.ac | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/configure.ac b/configure.ac
++index 66b5e9f..206fd53 100644
++--- a/configure.ac
+++++ b/configure.ac
++@@ -276,7 +276,7 @@ if test "x$enable_ssl" = "xyes"; then
++ 
++   if test "x$ssl_ok" = "xyes"; then
++     old_libs="$LIBS"
++-    AC_CHECK_LIB(ssl, SSL_library_init, ssl_ok=yes, ssl_ok=no, -lcrypto)
+++    AC_CHECK_LIB(ssl, OPENSSL_init_ssl, ssl_ok=yes, ssl_ok=no, -lcrypto)
++     LIBS="$old_libs"
++   fi
++ 
++-- 
++2.24.1
++
+diff --git a/package/dillo/0004-Support-OpenSSL-1.1.0.patch b/package/dillo/0004-Support-OpenSSL-1.1.0.patch
+new file mode 100644
+index 0000000000..87b9d0dce3
+--- /dev/null
++++ b/package/dillo/0004-Support-OpenSSL-1.1.0.patch
+@@ -0,0 +1,33 @@
++From ff44d8b2d5211a502afdb3e612dae0e8133b5124 Mon Sep 17 00:00:00 2001
++From: Johannes Hofmann <Johannes.Hofmann@gmx.de>
++Date: Thu, 9 Jan 2020 22:07:15 +0100
++Subject: [PATCH] Support OpenSSL 1.1.0
++
++taken-from: pkgsrc (Ryo ONODERA)
++submitted-by: Jun Ebihara <jun@soum.co.jp>
++
++Upstream: https://hg.dillo.org/dillo/rev/b171b8610400
++Signed-off-by: Peter Seiderer <ps.report@gmx.net>
++---
++ dpi/https.c | 4 ++++
++ 1 file changed, 4 insertions(+)
++
++diff --git a/dpi/https.c b/dpi/https.c
++index 766b3af..025cfc4 100644
++--- a/dpi/https.c
+++++ b/dpi/https.c
++@@ -476,7 +476,11 @@ static int handle_certificate_problem(SSL * ssl_connection)
++       case X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT:
++          /*Either self signed and untrusted*/
++          /*Extract CN from certificate name information*/
+++#if OPENSSL_VERSION_NUMBER < 0x10100000L
++          if ((cn = strstr(remote_cert->name, "/CN=")) == NULL) {
+++#else
+++         if ((cn = strstr(X509_get_subject_name(remote_cert), "/CN=")) == NULL) {
+++#endif
++             strcpy(buf, "(no CN given)");
++          } else {
++             char *cn_end;
++-- 
++2.24.1
++
+diff --git a/package/docker-cli/docker-cli.hash b/package/docker-cli/docker-cli.hash
+index 061e611735..44f13c8bfc 100644
+--- a/package/docker-cli/docker-cli.hash
++++ b/package/docker-cli/docker-cli.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256  cef3f9e8615cde906619f7ab021655a8b974d1b497ce0e5787b1afccbeabb08d  docker-cli-18.09.9.tar.gz
++sha256	00d06baf4793794c0fd9ecad5b7e95aed6eb942f24c8b6e2d7c7f7564b9743ad  docker-cli-19.03.5.tar.gz
+ sha256	2d81ea060825006fc8f3fe28aa5dc0ffeb80faf325b612c955229157b8c10dc0  LICENSE
+diff --git a/package/docker-cli/docker-cli.mk b/package/docker-cli/docker-cli.mk
+index 201d782e1d..4ad30e0278 100644
+--- a/package/docker-cli/docker-cli.mk
++++ b/package/docker-cli/docker-cli.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-DOCKER_CLI_VERSION = 18.09.9
++DOCKER_CLI_VERSION = 19.03.5
+ DOCKER_CLI_SITE = $(call github,docker,cli,v$(DOCKER_CLI_VERSION))
+ DOCKER_CLI_WORKSPACE = gopath
+ 
+diff --git a/package/docker-containerd/docker-containerd.hash b/package/docker-containerd/docker-containerd.hash
+index 525191c651..aad74089e9 100644
+--- a/package/docker-containerd/docker-containerd.hash
++++ b/package/docker-containerd/docker-containerd.hash
+@@ -1,3 +1,3 @@
+ # Computed locally
+-sha256	f2d578b743fb9faa5b3477b7cf4b33d00501087043a53b27754f14bbe741f891  docker-containerd-v1.2.6.tar.gz
+-sha256  4bbe3b885e8cd1907ab4cf9a41e862e74e24b5422297a4f2fe524e6a30ada2b4	LICENSE
++sha256	6a4192fced10c390373adfa9fa9a4f12fe9f38bde580d90468a79ed6c8af75ee  docker-containerd-1.2.11.tar.gz
++sha256  4bbe3b885e8cd1907ab4cf9a41e862e74e24b5422297a4f2fe524e6a30ada2b4  LICENSE
+diff --git a/package/docker-containerd/docker-containerd.mk b/package/docker-containerd/docker-containerd.mk
+index c67b36e7dc..69068e44f8 100644
+--- a/package/docker-containerd/docker-containerd.mk
++++ b/package/docker-containerd/docker-containerd.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-DOCKER_CONTAINERD_VERSION = v1.2.6
+-DOCKER_CONTAINERD_SITE = $(call github,containerd,containerd,$(DOCKER_CONTAINERD_VERSION))
++DOCKER_CONTAINERD_VERSION = 1.2.11
++DOCKER_CONTAINERD_SITE = $(call github,containerd,containerd,v$(DOCKER_CONTAINERD_VERSION))
+ DOCKER_CONTAINERD_LICENSE = Apache-2.0
+ DOCKER_CONTAINERD_LICENSE_FILES = LICENSE
+ 
+diff --git a/package/docker-engine/0001-Fix-faulty-runc-version-commit-scrape.patch b/package/docker-engine/0001-Fix-faulty-runc-version-commit-scrape.patch
+deleted file mode 100644
+index dc47a8f9ef..0000000000
+--- a/package/docker-engine/0001-Fix-faulty-runc-version-commit-scrape.patch
++++ /dev/null
+@@ -1,45 +0,0 @@
+-From 324e7be4b252c13002bca6a9d82e7b2e43664634 Mon Sep 17 00:00:00 2001
+-From: Christian Stewart <christian@paral.in>
+-Date: Mon, 26 Nov 2018 22:59:32 -0800
+-Subject: [PATCH] Fix faulty runc version commit scrape
+-
+-This commit replaces faulty logic to determine the runc version commit hash.
+-
+-The original logic takes the second line of the output of "runc --version" and
+-does not work if there are a different number of lines printed from the command
+-than expected. The buildroot version of runc outputs two lines instead of the
+-expected three, causing the error:
+-
+-unknown output format: runc version commit: ...
+-
+-This patch replaces this logic with a simple scan of the "runc --version"
+-output, searching for the "runc version commit" prefixed line.
+-
+-Signed-off-by: Christian Stewart <christian@paral.in>
+----
+- daemon/info_unix.go | 9 +++++----
+- 1 file changed, 5 insertions(+), 4 deletions(-)
+-
+-diff --git a/daemon/info_unix.go b/daemon/info_unix.go
+-index 60b2f99870..688a510796 100644
+---- a/daemon/info_unix.go
+-+++ b/daemon/info_unix.go
+-@@ -32,10 +32,11 @@ func (daemon *Daemon) fillPlatformInfo(v *types.Info, sysInfo *sysinfo.SysInfo)
+- 	defaultRuntimeBinary := daemon.configStore.GetRuntime(v.DefaultRuntime).Path
+- 	if rv, err := exec.Command(defaultRuntimeBinary, "--version").Output(); err == nil {
+- 		parts := strings.Split(strings.TrimSpace(string(rv)), "\n")
+--		if len(parts) == 3 {
+--			parts = strings.Split(parts[1], ": ")
+--			if len(parts) == 2 {
+--				v.RuncCommit.ID = strings.TrimSpace(parts[1])
+-+		for _, pt := range parts {
+-+			ptKv := strings.Split(pt, ":")
+-+			if strings.HasSuffix(strings.TrimSpace(ptKv[0]), "commit") {
+-+				v.RuncCommit.ID = strings.TrimSpace(ptKv[1])
+-+				break
+- 			}
+- 		}
+- 
+--- 
+-2.18.1
+-
+diff --git a/package/docker-engine/docker-engine.hash b/package/docker-engine/docker-engine.hash
+index b89310f993..1f1643d377 100644
+--- a/package/docker-engine/docker-engine.hash
++++ b/package/docker-engine/docker-engine.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256	fa3a9e998627418d648495d06d168c4d26ed07859c9370d5fddbfd29c26d8592  docker-engine-18.09.9.tar.gz
+-sha256	2d81ea060825006fc8f3fe28aa5dc0ffeb80faf325b612c955229157b8c10dc0  LICENSE
++sha256	bc5d1ac503e44593be8003ed0ad9c75bf0da535db19837a9338429c438bd4637  docker-engine-19.03.5.tar.gz
++sha256	7c87873291f289713ac5df48b1f2010eb6963752bbd6b530416ab99fc37914a8  LICENSE
+diff --git a/package/docker-engine/docker-engine.mk b/package/docker-engine/docker-engine.mk
+index 6a225ee5f0..24022f7107 100644
+--- a/package/docker-engine/docker-engine.mk
++++ b/package/docker-engine/docker-engine.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-DOCKER_ENGINE_VERSION = 18.09.9
++DOCKER_ENGINE_VERSION = 19.03.5
+ DOCKER_ENGINE_SITE = $(call github,docker,engine,v$(DOCKER_ENGINE_VERSION))
+ 
+ DOCKER_ENGINE_LICENSE = Apache-2.0
+diff --git a/package/easy-rsa/Config.in b/package/easy-rsa/Config.in
+index 883d679e98..56db64a590 100644
+--- a/package/easy-rsa/Config.in
++++ b/package/easy-rsa/Config.in
+@@ -1,7 +1,8 @@
+ config BR2_PACKAGE_EASY_RSA
+ 	bool "easy-rsa"
+ 	select BR2_PACKAGE_OPENSSL # runtime
+-	select BR2_PACKAGE_OPENSSL_BIN
++	select BR2_PACKAGE_LIBOPENSSL_BIN if BR2_PACKAGE_LIBOPENSSL
++	select BR2_PACKAGE_LIBRESSL_BIN if BR2_PACKAGE_LIBRESSL
+ 	help
+ 	  Simple shell based CA utility
+ 
+diff --git a/package/ebtables/ebtables.mk b/package/ebtables/ebtables.mk
+index aae0c91a10..7b2264703c 100644
+--- a/package/ebtables/ebtables.mk
++++ b/package/ebtables/ebtables.mk
+@@ -19,19 +19,15 @@ endef
+ 
+ ifeq ($(BR2_STATIC_LIBS),y)
+ define EBTABLES_INSTALL_TARGET_CMDS
+-	$(INSTALL) -m 0755 -D $(@D)/$(EBTABLES_SUBDIR)/static \
+-		$(TARGET_DIR)/sbin/ebtables
++	$(INSTALL) -m 0755 -D $(@D)/static $(TARGET_DIR)/sbin/ebtables
+ endef
+ else
+ define EBTABLES_INSTALL_TARGET_CMDS
+-	for so in $(@D)/$(EBTABLES_SUBDIR)/*.so \
+-		$(@D)/$(EBTABLES_SUBDIR)/extensions/*.so; \
+-		do \
++	for so in $(@D)/*.so $(@D)/extensions/*.so; do \
+ 		$(INSTALL) -m 0755 -D $${so} \
+ 			$(TARGET_DIR)/lib/ebtables/`basename $${so}` || exit 1; \
+ 	done
+-	$(INSTALL) -m 0755 -D $(@D)/$(EBTABLES_SUBDIR)/ebtables \
+-		$(TARGET_DIR)/sbin/ebtables
++	$(INSTALL) -m 0755 -D $(@D)/ebtables $(TARGET_DIR)/sbin/ebtables
+ 	$(INSTALL) -m 0644 -D $(@D)/ethertypes $(TARGET_DIR)/etc/ethertypes
+ endef
+ endif
+diff --git a/package/ecryptfs-utils/0003-fix-parallel-build-issue.patch b/package/ecryptfs-utils/0003-fix-parallel-build-issue.patch
+new file mode 100644
+index 0000000000..e2aa740d55
+--- /dev/null
++++ b/package/ecryptfs-utils/0003-fix-parallel-build-issue.patch
+@@ -0,0 +1,61 @@
++fix parallel build issue
++
++Build randomly fails since December 2017 on buildroot
++(http://autobuild.buildroot.org/?reason=ecryptfs-utils-111):
++
++make[5]: Entering directory '/home/buildroot/autobuild/instance-2/output-1/build/ecryptfs-utils-111/src/utils'
++  /bin/mkdir -p '/home/buildroot/autobuild/instance-2/output-1/target/sbin'
++  /bin/bash ../../libtool   --mode=install /usr/bin/install -c mount.ecryptfs umount.ecryptfs mount.ecryptfs_private '/home/buildroot/autobuild/instance-2/output-1/target/sbin'
++libtool: install: /usr/bin/install -c mount.ecryptfs /home/buildroot/autobuild/instance-2/output-1/target/sbin/mount.ecryptfs
++/usr/bin/install: cannot create regular file '/home/buildroot/autobuild/instance-2/output-1/target/sbin/mount.ecryptfs': File exists
++Makefile:832: recipe for target 'install-rootsbinPROGRAMS' failed
++make[5]: *** [install-rootsbinPROGRAMS] Error 1
++
++As spotted by Thomas Petazzoni, build failure happens because of the
++following line in src/utils/Makefile.am:
++
++install-exec-hook:      install-rootsbinPROGRAMS
++        -rm -f "$(DESTDIR)/$(rootsbindir)/umount.ecryptfs_private"
++        $(LN_S) "mount.ecryptfs_private" "$(DESTDIR)/$(rootsbindir)/umount.ecryptfs_private"
++
++The install-exec-hook target should not have a dependency on
++install-rootsbinPROGRAMS.
++
++From https://www.gnu.org/software/automake/manual/html_node/Extending.html#Extending:
++
++"""
++In contrast, some rules also have a way to run another rule, called a
++hook; hooks are always executed after the main rule’s work is done. The
++hook is named after the principal target, with ‘-hook’ appended. The
++targets allowing hooks are install-data, install-exec, uninstall, dist,
++and distcheck.
++
++For instance, here is how to create a hard link to an installed program:
++
++install-exec-hook:
++        ln $(DESTDIR)$(bindir)/program$(EXEEXT) \
++           $(DESTDIR)$(bindir)/proglink$(EXEEXT)
++
++"""
++
++So, they explicitly say that these hooks are run after the main rule
++work is done, which means the dependency on install-rootsbinPROGRAMS is
++not needed. And the example they use to illustrate is *exactly* the
++situation of ecryptfs-utils: creating a link to a program that was
++installed.
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Upstream status: https://bugs.launchpad.net/ecryptfs/+bug/1857622]
++
++diff -Nuar ecryptfs-utils-111-orig/src/utils/Makefile.in ecryptfs-utils-111/src/utils/Makefile.in
++--- ecryptfs-utils-111-orig/src/utils/Makefile.in	2019-12-26 15:14:16.656146065 +0100
+++++ ecryptfs-utils-111/src/utils/Makefile.in	2019-12-26 17:36:07.108496164 +0100
++@@ -1522,7 +1522,7 @@
++ .PRECIOUS: Makefile
++ 
++ 
++-install-exec-hook:	install-rootsbinPROGRAMS
+++install-exec-hook:
++ 	-rm -f "$(DESTDIR)/$(rootsbindir)/umount.ecryptfs_private"
++ 	$(LN_S) "mount.ecryptfs_private" "$(DESTDIR)/$(rootsbindir)/umount.ecryptfs_private"
++ 
+diff --git a/package/ecryptfs-utils/Config.in b/package/ecryptfs-utils/Config.in
+index 6652d33e0e..eda884bd16 100644
+--- a/package/ecryptfs-utils/Config.in
++++ b/package/ecryptfs-utils/Config.in
+@@ -30,7 +30,7 @@ config BR2_PACKAGE_ECRYPTFS_UTILS
+ 
+ 	  http://ecryptfs.org
+ 
+-comment "ecryptfs-utils needs a toolchain w/ threads, wchar, dynami library"
++comment "ecryptfs-utils needs a toolchain w/ threads, wchar, dynamic library"
+ 	depends on !BR2_microblaze
+ 	depends on BR2_PACKAGE_LIBNSPR_ARCH_SUPPORT
+ 	depends on BR2_USE_MMU
+diff --git a/package/efl/Config.in b/package/efl/Config.in
+index 05be5aae56..2eb3a10733 100644
+--- a/package/efl/Config.in
++++ b/package/efl/Config.in
+@@ -168,7 +168,6 @@ config BR2_PACKAGE_EFL_X_XLIB
+ 	select BR2_PACKAGE_XLIB_LIBXCURSOR
+ 	select BR2_PACKAGE_XLIB_LIBXDAMAGE
+ 	select BR2_PACKAGE_XLIB_LIBXINERAMA
+-	select BR2_PACKAGE_XLIB_LIBXP
+ 	select BR2_PACKAGE_XLIB_LIBXRANDR
+ 	select BR2_PACKAGE_XLIB_LIBXRENDER
+ 	select BR2_PACKAGE_XLIB_LIBXSCRNSAVER
+diff --git a/package/freescale-imx/freescale-imx.mk b/package/freescale-imx/freescale-imx.mk
+index e8ca77f17b..84a1725cc1 100644
+--- a/package/freescale-imx/freescale-imx.mk
++++ b/package/freescale-imx/freescale-imx.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-FREESCALE_IMX_SITE = http://www.freescale.com/lgfiles/NMG/MAD/YOCTO
++FREESCALE_IMX_SITE = http://www.nxp.com/lgfiles/NMG/MAD/YOCTO
+ 
+ # Helper for self-extracting binaries distributed by Freescale.
+ #
+diff --git a/package/git/git.hash b/package/git/git.hash
+index 35c8774d75..c258abf3c4 100644
+--- a/package/git/git.hash
++++ b/package/git/git.hash
+@@ -1,4 +1,4 @@
+ # From: https://www.kernel.org/pub/software/scm/git/sha256sums.asc
+-sha256 dfb71b053cbc38a9c5b08c2fe8b5eae210b4e3b63892426923e10cfd6ba63862  git-2.16.5.tar.xz
++sha256 cd45502a4146d8e77f40cc64b3b484247e6165633bb024d7a9385a85f68e1d52  git-2.16.6.tar.xz
+ sha256 5b2198d1645f767585e8a88ac0499b04472164c0d2da22e75ecf97ef443ab32e  COPYING
+ sha256 1922f45d2c49e390032c9c0ba6d7cac904087f7cec51af30c2b2ad022ce0e76a  LGPL-2.1
+diff --git a/package/git/git.mk b/package/git/git.mk
+index b1434fb7be..8866909cc8 100644
+--- a/package/git/git.mk
++++ b/package/git/git.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-GIT_VERSION = 2.16.5
++GIT_VERSION = 2.16.6
+ GIT_SOURCE = git-$(GIT_VERSION).tar.xz
+ GIT_SITE = $(BR2_KERNEL_MIRROR)/software/scm/git
+ GIT_LICENSE = GPL-2.0, LGPL-2.1+
+diff --git a/package/glibc/glibc-2.28-110-g57922433fa038faa6e37798b9655f85a94978d89/glibc.hash b/package/glibc/glibc-2.28-133-g6578d89c170cc7b524b9bccafffd5b4207bf646f/glibc.hash
+similarity index 69%
+rename from package/glibc/glibc-2.28-110-g57922433fa038faa6e37798b9655f85a94978d89/glibc.hash
+rename to package/glibc/glibc-2.28-133-g6578d89c170cc7b524b9bccafffd5b4207bf646f/glibc.hash
+index 734621d9b1..0e2d05be33 100644
+--- a/package/glibc/glibc-2.28-110-g57922433fa038faa6e37798b9655f85a94978d89/glibc.hash
++++ b/package/glibc/glibc-2.28-133-g6578d89c170cc7b524b9bccafffd5b4207bf646f/glibc.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated (fetched from Github)
+-sha256  8cfd8c4564b20e610b41e24cdab85d5b208453c51b06a64603e9ef3f86d6de0a  glibc-glibc-2.28-110-g57922433fa038faa6e37798b9655f85a94978d89.tar.gz
++sha256  8cb918cef45112554dd5efdbe4e3d4bb2909708a2b115a3b612b22bd7c670859  glibc-glibc-2.28-133-g6578d89c170cc7b524b9bccafffd5b4207bf646f.tar.gz
+ 
+ # Hashes for license files
+ sha256  8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643  COPYING
+diff --git a/package/glibc/glibc.mk b/package/glibc/glibc.mk
+index 94ffe9eb42..dcf0126569 100644
+--- a/package/glibc/glibc.mk
++++ b/package/glibc/glibc.mk
+@@ -13,7 +13,7 @@ GLIBC_SITE = $(call github,riscv,riscv-glibc,$(GLIBC_VERSION))
+ else
+ # Generate version string using:
+ #   git describe --match 'glibc-*' --abbrev=40 origin/release/MAJOR.MINOR/master
+-GLIBC_VERSION = glibc-2.28-110-g57922433fa038faa6e37798b9655f85a94978d89
++GLIBC_VERSION = glibc-2.28-133-g6578d89c170cc7b524b9bccafffd5b4207bf646f
+ # Upstream doesn't officially provide an https download link.
+ # There is one (https://sourceware.org/git/glibc.git) but it's not reliable,
+ # sometimes the connection times out. So use an unofficial github mirror.
+diff --git a/package/gnupg2/gnupg2.hash b/package/gnupg2/gnupg2.hash
+index 806a07b840..2dee44283b 100644
+--- a/package/gnupg2/gnupg2.hash
++++ b/package/gnupg2/gnupg2.hash
+@@ -1,7 +1,7 @@
+-# From https://lists.gnupg.org/pipermail/gnupg-announce/2019q3/000439.html
+-sha1 12c1cee8871c03f0315fc8f27876364b75c95b12  gnupg-2.2.17.tar.bz2
++# From https://lists.gnupg.org/pipermail/gnupg-announce/2019q4/000443.html
++sha1 e24a1208ffe69d7436b2f27e99542a85f34d0ac0  gnupg-2.2.19.tar.bz2
+ # Calculated based on the hash above and signature
+-# https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.2.17.tar.bz2.sig
++# https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.2.19.tar.bz2.sig
+ # using key D8692123C4065DEA5E0F3AB5249B39D24F25E3B6
+-sha256 afa262868e39b651a2db4c071fba90415154243e83a830ca00516f9a807fd514  gnupg-2.2.17.tar.bz2
++sha256 242554c0e06f3a83c420b052f750b65ead711cc3fddddb5e7274fcdbb4e9dec0  gnupg-2.2.19.tar.bz2
+ sha256 bc2d6664f6276fa0a72d57633b3ae68dc7dcb677b71018bf08c8e93e509f1357  COPYING
+diff --git a/package/gnupg2/gnupg2.mk b/package/gnupg2/gnupg2.mk
+index aa1f7b14d6..28e946b400 100644
+--- a/package/gnupg2/gnupg2.mk
++++ b/package/gnupg2/gnupg2.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-GNUPG2_VERSION = 2.2.17
++GNUPG2_VERSION = 2.2.19
+ GNUPG2_SOURCE = gnupg-$(GNUPG2_VERSION).tar.bz2
+ GNUPG2_SITE = https://gnupg.org/ftp/gcrypt/gnupg
+ GNUPG2_LICENSE = GPL-3.0+
+diff --git a/package/gstreamer1/gst1-plugins-bad/Config.in b/package/gstreamer1/gst1-plugins-bad/Config.in
+index f0a8461165..d36316bf30 100644
+--- a/package/gstreamer1/gst1-plugins-bad/Config.in
++++ b/package/gstreamer1/gst1-plugins-bad/Config.in
+@@ -567,7 +567,6 @@ config BR2_PACKAGE_GST1_PLUGINS_BAD_PLUGIN_WEBRTCDSP
+ 	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_4_8
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS_NPTL
+ 	select BR2_PACKAGE_WEBRTC_AUDIO_PROCESSING
+-	select BR2_PACKAGE_WEBRTC
+ 	help
+ 	  WebRTC echo-cancellation, gain control and noise suppression
+ 
+diff --git a/package/kf5/kf5-kcoreaddons/kf5-kcoreaddons.mk b/package/kf5/kf5-kcoreaddons/kf5-kcoreaddons.mk
+index ea6aac4ec6..76be8876cc 100644
+--- a/package/kf5/kf5-kcoreaddons/kf5-kcoreaddons.mk
++++ b/package/kf5/kf5-kcoreaddons/kf5-kcoreaddons.mk
+@@ -14,10 +14,16 @@ KF5_KCOREADDONS_DEPENDENCIES = kf5-extra-cmake-modules qt5tools
+ KF5_KCOREADDONS_INSTALL_STAGING = YES
+ 
+ KF5_KCOREADDONS_CXXFLAGS = $(TARGET_CXXFLAGS)
+-KF5_KCOREADDONS_CONF_OPTS = -DCMAKE_CXX_FLAGS="$(KF5_KCOREADDONS_CXXFLAGS)"
+ 
+ ifeq ($(BR2_TOOLCHAIN_HAS_LIBATOMIC),y)
+ KF5_KCOREADDONS_CXXFLAGS += -latomic
+ endif
+ 
++KF5_KCOREADDONS_CONF_OPTS = -DCMAKE_CXX_FLAGS="$(KF5_KCOREADDONS_CXXFLAGS)"
++
++ifeq ($(BR2_microblaze),y)
++# Microblaze ld emits warnings, make warnings not to be treated as errors
++KF5_KCOREADDONS_CONF_OPTS += -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--no-fatal-warnings"
++endif
++
+ $(eval $(cmake-package))
+diff --git a/package/libarchive/0008-Bugfix-and-optimize-archive_wstring_append_from_mbs.patch b/package/libarchive/0008-Bugfix-and-optimize-archive_wstring_append_from_mbs.patch
+new file mode 100644
+index 0000000000..a047e26c0c
+--- /dev/null
++++ b/package/libarchive/0008-Bugfix-and-optimize-archive_wstring_append_from_mbs.patch
+@@ -0,0 +1,103 @@
++From 22b1db9d46654afc6f0c28f90af8cdc84a199f41 Mon Sep 17 00:00:00 2001
++From: Martin Matuska <martin@matuska.org>
++Date: Thu, 21 Nov 2019 03:08:40 +0100
++Subject: [PATCH] Bugfix and optimize archive_wstring_append_from_mbs()
++
++The cal to mbrtowc() or mbtowc() should read up to mbs_length
++bytes and not wcs_length. This avoids out-of-bounds reads.
++
++mbrtowc() and mbtowc() return (size_t)-1 wit errno EILSEQ when
++they encounter an invalid multibyte character and (size_t)-2 when
++they they encounter an incomplete multibyte character. As we return
++failure and all our callers error out it makes no sense to continue
++parsing mbs.
++
++As we allocate `len` wchars at the beginning and each wchar has
++at least one byte, there will never be need to grow the buffer,
++so the code can be left out. On the other hand, we are always
++allocatng more memory than we need.
++
++As long as wcs_length == mbs_length == len we can omit wcs_length.
++We keep the old code commented if we decide to save memory and
++use autoexpanding wcs_length in the future.
++
++Fixes #1276
++
++Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
++[Peter: fixes CVE-2019-19221]
++---
++ libarchive/archive_string.c | 28 +++++++++++++++++-----------
++ 1 file changed, 17 insertions(+), 11 deletions(-)
++
++diff --git a/libarchive/archive_string.c b/libarchive/archive_string.c
++index 979a418b..bd39c96f 100644
++--- a/libarchive/archive_string.c
+++++ b/libarchive/archive_string.c
++@@ -591,7 +591,7 @@ archive_wstring_append_from_mbs(struct archive_wstring *dest,
++ 	 * No single byte will be more than one wide character,
++ 	 * so this length estimate will always be big enough.
++ 	 */
++-	size_t wcs_length = len;
+++	// size_t wcs_length = len;
++ 	size_t mbs_length = len;
++ 	const char *mbs = p;
++ 	wchar_t *wcs;
++@@ -600,7 +600,11 @@ archive_wstring_append_from_mbs(struct archive_wstring *dest,
++ 
++ 	memset(&shift_state, 0, sizeof(shift_state));
++ #endif
++-	if (NULL == archive_wstring_ensure(dest, dest->length + wcs_length + 1))
+++	/*
+++	 * As we decided to have wcs_length == mbs_length == len
+++	 * we can use len here instead of wcs_length
+++	 */
+++	if (NULL == archive_wstring_ensure(dest, dest->length + len + 1))
++ 		return (-1);
++ 	wcs = dest->s + dest->length;
++ 	/*
++@@ -609,6 +613,12 @@ archive_wstring_append_from_mbs(struct archive_wstring *dest,
++ 	 * multi bytes.
++ 	 */
++ 	while (*mbs && mbs_length > 0) {
+++		/*
+++		 * The buffer we allocated is always big enough.
+++		 * Keep this code path in a comment if we decide to choose
+++		 * smaller wcs_length in the future
+++		 */
+++/*
++ 		if (wcs_length == 0) {
++ 			dest->length = wcs - dest->s;
++ 			dest->s[dest->length] = L'\0';
++@@ -618,24 +628,20 @@ archive_wstring_append_from_mbs(struct archive_wstring *dest,
++ 				return (-1);
++ 			wcs = dest->s + dest->length;
++ 		}
+++*/
++ #if HAVE_MBRTOWC
++-		r = mbrtowc(wcs, mbs, wcs_length, &shift_state);
+++		r = mbrtowc(wcs, mbs, mbs_length, &shift_state);
++ #else
++-		r = mbtowc(wcs, mbs, wcs_length);
+++		r = mbtowc(wcs, mbs, mbs_length);
++ #endif
++ 		if (r == (size_t)-1 || r == (size_t)-2) {
++ 			ret_val = -1;
++-			if (errno == EILSEQ) {
++-				++mbs;
++-				--mbs_length;
++-				continue;
++-			} else
++-				break;
+++			break;
++ 		}
++ 		if (r == 0 || r > mbs_length)
++ 			break;
++ 		wcs++;
++-		wcs_length--;
+++		// wcs_length--;
++ 		mbs += r;
++ 		mbs_length -= r;
++ 	}
++-- 
++2.20.1
++
+diff --git a/package/libgit2/libgit2.hash b/package/libgit2/libgit2.hash
+index 2d06c26d2d..8b3d57eadd 100644
+--- a/package/libgit2/libgit2.hash
++++ b/package/libgit2/libgit2.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256	adf17310b590e6e7618f070c742b5ee028aeeed2c60099bc4190c386b5060de1  libgit2-0.27.9.tar.gz
++sha256	f6fd26378ff71bd7a4b17b576c82c774a2e9c2d6b74b24718a8fb29551e1c4a5  libgit2-0.27.10.tar.gz
+ sha256	d9a8038088df84fde493fa33a0f1e537252eeb9642122aa4b862690197152813  COPYING
+diff --git a/package/libgit2/libgit2.mk b/package/libgit2/libgit2.mk
+index 25a93d72f3..e797ca5185 100644
+--- a/package/libgit2/libgit2.mk
++++ b/package/libgit2/libgit2.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBGIT2_VERSION = 0.27.9
++LIBGIT2_VERSION = 0.27.10
+ LIBGIT2_SITE = $(call github,libgit2,libgit2,v$(LIBGIT2_VERSION))
+ LIBGIT2_LICENSE = GPL-2.0 with linking exception
+ LIBGIT2_LICENSE_FILES = COPYING
+diff --git a/package/libkrb5/libkrb5.mk b/package/libkrb5/libkrb5.mk
+index 56345416aa..38b39ffd6b 100644
+--- a/package/libkrb5/libkrb5.mk
++++ b/package/libkrb5/libkrb5.mk
+@@ -41,7 +41,7 @@ endif
+ 
+ ifeq ($(BR2_PACKAGE_LIBEDIT),y)
+ LIBKRB5_CONF_OPTS += --with-libedit
+-LIBKRB5_DEPENDENCIES += libedit
++LIBKRB5_DEPENDENCIES += host-pkgconf libedit
+ else
+ LIBKRB5_CONF_OPTS += --without-libedit
+ endif
+diff --git a/package/librsvg/0001-librsvg.pc.in-add-libcroco-to-Requires.Private.patch b/package/librsvg/0001-librsvg.pc.in-add-libcroco-to-Requires.Private.patch
+new file mode 100644
+index 0000000000..0eea5b995b
+--- /dev/null
++++ b/package/librsvg/0001-librsvg.pc.in-add-libcroco-to-Requires.Private.patch
+@@ -0,0 +1,35 @@
++From 322b415f92d4dcd36824eef83bd617bac6e5c8c7 Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Tue, 24 Dec 2019 16:38:35 +0100
++Subject: [PATCH] librsvg.pc.in: add libcroco to Requires.private
++
++libcroco is a mandatory dependency since version 2.35.0 so add it to
++Requires.Private to fix a static build failure with imagemagick
++
++This patch is not upstreamable as librsvg no longer depends on libcroco
++since version 2.47.1. It now does all CSS processing using Rust crates
++from Mozilla Servo.
++
++Fixes:
++ - http://autobuild.buildroot.org/results/42f4b4881569779162d3efe4628b934f965913b9
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++---
++ librsvg.pc.in | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/librsvg.pc.in b/librsvg.pc.in
++index a451de05..4b09984a 100644
++--- a/librsvg.pc.in
+++++ b/librsvg.pc.in
++@@ -10,6 +10,6 @@ Name: librsvg
++ Description: library that renders svg files
++ Version: @VERSION@
++ Requires: glib-2.0 gio-2.0 gdk-pixbuf-2.0 cairo
++-Requires.private:
+++Requires.private: libcroco-0.6
++ Libs: -L${libdir} -lrsvg-@RSVG_API_MAJOR_VERSION@ -lm
++ Cflags: -I${includedir}/librsvg-@RSVG_API_VERSION@
++-- 
++2.24.0
++
+diff --git a/package/libssh/0001-buffer-Fix-size-comparison-with-count.patch b/package/libssh/0001-buffer-Fix-size-comparison-with-count.patch
+deleted file mode 100644
+index 88e1bc3b48..0000000000
+--- a/package/libssh/0001-buffer-Fix-size-comparison-with-count.patch
++++ /dev/null
+@@ -1,48 +0,0 @@
+-From 2aa8c46a853acd4198af16e417ebffd5b0e2c9f4 Mon Sep 17 00:00:00 2001
+-From: Andreas Schneider <asn@cryptomilk.org>
+-Date: Mon, 1 Oct 2018 20:58:47 +0200
+-Subject: [PATCH] buffer: Fix size comparison with count
+-
+-Signed-off-by: Andreas Schneider <asn@cryptomilk.org>
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: commit 9c3ba94960cd5
+-
+- src/buffer.c | 6 +++---
+- 1 file changed, 3 insertions(+), 3 deletions(-)
+-
+-diff --git a/src/buffer.c b/src/buffer.c
+-index da6e587fc9e4..b029f202660f 100644
+---- a/src/buffer.c
+-+++ b/src/buffer.c
+-@@ -816,8 +816,8 @@ static int ssh_buffer_pack_allocate_va(struct ssh_buffer_struct *buffer,
+-     ssh_string string = NULL;
+-     char *cstring = NULL;
+-     size_t needed_size = 0;
+--    size_t count;
+-     size_t len;
+-+    int count; /* int for size comparison with argc */
+-     int rc = SSH_OK;
+- 
+-     for (p = format, count = 0; *p != '\0'; p++, count++) {
+-@@ -934,7 +934,7 @@ int ssh_buffer_pack_va(struct ssh_buffer_struct *buffer,
+-     char *cstring;
+-     bignum b;
+-     size_t len;
+--    int count;
+-+    int count; /* int for size comparison with argc */
+- 
+-     for (p = format, count = 0; *p != '\0'; p++, count++) {
+-         /* Invalid number of arguments passed */
+-@@ -1098,7 +1098,7 @@ int ssh_buffer_unpack_va(struct ssh_buffer_struct *buffer,
+-     } o;
+-     size_t len, rlen, max_len;
+-     va_list ap_copy;
+--    int count;
+-+    int count; /* int for size comparison with argc */
+- 
+-     max_len = ssh_buffer_get_len(buffer);
+- 
+--- 
+-2.20.1
+-
+diff --git a/package/libssh/0002-buffer-Use-size_t-for-argc-argument-in-ssh_buffer_-u.patch b/package/libssh/0002-buffer-Use-size_t-for-argc-argument-in-ssh_buffer_-u.patch
+deleted file mode 100644
+index c86238a7a1..0000000000
+--- a/package/libssh/0002-buffer-Use-size_t-for-argc-argument-in-ssh_buffer_-u.patch
++++ /dev/null
+@@ -1,152 +0,0 @@
+-From 270d6aa2bb01f3430d07cce5f97b48b741e3df9c Mon Sep 17 00:00:00 2001
+-From: Andreas Schneider <asn@cryptomilk.org>
+-Date: Fri, 7 Dec 2018 12:06:03 +0100
+-Subject: [PATCH] buffer: Use size_t for argc argument in ssh_buffer_(un)pack()
+-
+-Signed-off-by: Andreas Schneider <asn@cryptomilk.org>
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: commit c306a693f3fbe
+-
+- include/libssh/buffer.h |  4 ++--
+- src/buffer.c            | 38 +++++++++++++++++++-------------------
+- 2 files changed, 21 insertions(+), 21 deletions(-)
+-
+-diff --git a/include/libssh/buffer.h b/include/libssh/buffer.h
+-index 4721cbe06c20..1c375343ee14 100644
+---- a/include/libssh/buffer.h
+-+++ b/include/libssh/buffer.h
+-@@ -40,11 +40,11 @@ void *ssh_buffer_allocate(struct ssh_buffer_struct *buffer, uint32_t len);
+- int ssh_buffer_allocate_size(struct ssh_buffer_struct *buffer, uint32_t len);
+- int ssh_buffer_pack_va(struct ssh_buffer_struct *buffer,
+-                        const char *format,
+--                       int argc,
+-+                       size_t argc,
+-                        va_list ap);
+- int _ssh_buffer_pack(struct ssh_buffer_struct *buffer,
+-                      const char *format,
+--                     int argc,
+-+                     size_t argc,
+-                      ...);
+- #define ssh_buffer_pack(buffer, format, ...) \
+-     _ssh_buffer_pack((buffer), (format), __VA_NARG__(__VA_ARGS__), __VA_ARGS__, SSH_BUFFER_PACK_END)
+-diff --git a/src/buffer.c b/src/buffer.c
+-index b029f202660f..99863747fc3c 100644
+---- a/src/buffer.c
+-+++ b/src/buffer.c
+-@@ -809,7 +809,7 @@ ssh_buffer_get_ssh_string(struct ssh_buffer_struct *buffer)
+-  */
+- static int ssh_buffer_pack_allocate_va(struct ssh_buffer_struct *buffer,
+-                                        const char *format,
+--                                       int argc,
+-+                                       size_t argc,
+-                                        va_list ap)
+- {
+-     const char *p = NULL;
+-@@ -817,12 +817,12 @@ static int ssh_buffer_pack_allocate_va(struct ssh_buffer_struct *buffer,
+-     char *cstring = NULL;
+-     size_t needed_size = 0;
+-     size_t len;
+--    int count; /* int for size comparison with argc */
+-+    size_t count;
+-     int rc = SSH_OK;
+- 
+-     for (p = format, count = 0; *p != '\0'; p++, count++) {
+-         /* Invalid number of arguments passed */
+--        if (argc != -1 && count > argc) {
+-+        if (count > argc) {
+-             return SSH_ERROR;
+-         }
+- 
+-@@ -881,7 +881,7 @@ static int ssh_buffer_pack_allocate_va(struct ssh_buffer_struct *buffer,
+-         }
+-     }
+- 
+--    if (argc != -1 && argc != count) {
+-+    if (argc != count) {
+-         return SSH_ERROR;
+-     }
+- 
+-@@ -891,11 +891,7 @@ static int ssh_buffer_pack_allocate_va(struct ssh_buffer_struct *buffer,
+-          */
+-         uint32_t canary = va_arg(ap, uint32_t);
+-         if (canary != SSH_BUFFER_PACK_END) {
+--            if (argc == -1){
+--                return SSH_ERROR;
+--            } else {
+--                abort();
+--            }
+-+            abort();
+-         }
+-     }
+- 
+-@@ -918,7 +914,7 @@ static int ssh_buffer_pack_allocate_va(struct ssh_buffer_struct *buffer,
+-  */
+- int ssh_buffer_pack_va(struct ssh_buffer_struct *buffer,
+-                        const char *format,
+--                       int argc,
+-+                       size_t argc,
+-                        va_list ap)
+- {
+-     int rc = SSH_ERROR;
+-@@ -934,11 +930,15 @@ int ssh_buffer_pack_va(struct ssh_buffer_struct *buffer,
+-     char *cstring;
+-     bignum b;
+-     size_t len;
+--    int count; /* int for size comparison with argc */
+-+    size_t count;
+-+
+-+    if (argc > 256) {
+-+        return SSH_ERROR;
+-+    }
+- 
+-     for (p = format, count = 0; *p != '\0'; p++, count++) {
+-         /* Invalid number of arguments passed */
+--        if (argc != -1 && count > argc) {
+-+        if (count > argc) {
+-             return SSH_ERROR;
+-         }
+- 
+-@@ -1010,7 +1010,7 @@ int ssh_buffer_pack_va(struct ssh_buffer_struct *buffer,
+-         }
+-     }
+- 
+--    if (argc != -1 && argc != count) {
+-+    if (argc != count) {
+-         return SSH_ERROR;
+-     }
+- 
+-@@ -1018,11 +1018,7 @@ int ssh_buffer_pack_va(struct ssh_buffer_struct *buffer,
+-         /* Check if our canary is intact, if not somthing really bad happened */
+-         uint32_t canary = va_arg(ap, uint32_t);
+-         if (canary != SSH_BUFFER_PACK_END) {
+--            if (argc == -1){
+--                return SSH_ERROR;
+--            } else {
+--                abort();
+--            }
+-+            abort();
+-         }
+-     }
+-     return rc;
+-@@ -1050,12 +1046,16 @@ int ssh_buffer_pack_va(struct ssh_buffer_struct *buffer,
+-  */
+- int _ssh_buffer_pack(struct ssh_buffer_struct *buffer,
+-                      const char *format,
+--                     int argc,
+-+                     size_t argc,
+-                      ...)
+- {
+-     va_list ap;
+-     int rc;
+- 
+-+    if (argc > 256) {
+-+        return SSH_ERROR;
+-+    }
+-+
+-     va_start(ap, argc);
+-     rc = ssh_buffer_pack_allocate_va(buffer, format, argc, ap);
+-     va_end(ap);
+--- 
+-2.20.1
+-
+diff --git a/package/libssh/0003-more-strict-overflow-fixes.patch b/package/libssh/0003-more-strict-overflow-fixes.patch
+deleted file mode 100644
+index 6232ee77ea..0000000000
+--- a/package/libssh/0003-more-strict-overflow-fixes.patch
++++ /dev/null
+@@ -1,122 +0,0 @@
+-From 7656b1be8dc5425d5af03ffa6af711599fc07e80 Mon Sep 17 00:00:00 2001
+-From: Baruch Siach <baruch@tkos.co.il>
+-Date: Tue, 22 Jan 2019 08:16:50 +0200
+-Subject: [PATCH] buffer: Convert argc to size_t in ssh_buffer_unpack() as well
+-
+-Commit c306a693f3fb ("buffer: Use size_t for argc argument in
+-ssh_buffer_(un)pack()") mentioned unpack in the commit log, but it only
+-touches the pack variants. Extend the conversion to unpack.
+-
+-Pre-initialize the p pointer to avoid possible use before
+-initialization in case of early argc check failure.
+-
+-This fixes build failure:
+-
+-.../libssh-0.8.6/src/buffer.c: In function 'ssh_buffer_unpack_va':
+-.../libssh-0.8.6/src/buffer.c:1229:16: error: assuming signed overflow does not occur when simplifying conditional to constant [-Werror=strict-overflow]
+-             if (argc == -1){
+-		^
+-
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: https://www.libssh.org/archive/libssh/2019-01/0000032.html
+-
+- include/libssh/buffer.h |  4 ++--
+- src/buffer.c            | 25 +++++++++++++------------
+- 2 files changed, 15 insertions(+), 14 deletions(-)
+-
+-diff --git a/include/libssh/buffer.h b/include/libssh/buffer.h
+-index 1c375343ee14..cd2dea6a7ecc 100644
+---- a/include/libssh/buffer.h
+-+++ b/include/libssh/buffer.h
+-@@ -50,11 +50,11 @@ int _ssh_buffer_pack(struct ssh_buffer_struct *buffer,
+-     _ssh_buffer_pack((buffer), (format), __VA_NARG__(__VA_ARGS__), __VA_ARGS__, SSH_BUFFER_PACK_END)
+- 
+- int ssh_buffer_unpack_va(struct ssh_buffer_struct *buffer,
+--                         const char *format, int argc,
+-+                         const char *format, size_t argc,
+-                          va_list ap);
+- int _ssh_buffer_unpack(struct ssh_buffer_struct *buffer,
+-                        const char *format,
+--                       int argc,
+-+                       size_t argc,
+-                        ...);
+- #define ssh_buffer_unpack(buffer, format, ...) \
+-     _ssh_buffer_unpack((buffer), (format), __VA_NARG__(__VA_ARGS__), __VA_ARGS__, SSH_BUFFER_PACK_END)
+-diff --git a/src/buffer.c b/src/buffer.c
+-index 99863747fc3c..c8ad20f24e43 100644
+---- a/src/buffer.c
+-+++ b/src/buffer.c
+-@@ -1082,11 +1082,11 @@ int _ssh_buffer_pack(struct ssh_buffer_struct *buffer,
+-  */
+- int ssh_buffer_unpack_va(struct ssh_buffer_struct *buffer,
+-                          const char *format,
+--                         int argc,
+-+                         size_t argc,
+-                          va_list ap)
+- {
+-     int rc = SSH_ERROR;
+--    const char *p, *last;
+-+    const char *p = format, *last;
+-     union {
+-         uint8_t *byte;
+-         uint16_t *word;
+-@@ -1098,16 +1098,21 @@ int ssh_buffer_unpack_va(struct ssh_buffer_struct *buffer,
+-     } o;
+-     size_t len, rlen, max_len;
+-     va_list ap_copy;
+--    int count; /* int for size comparison with argc */
+-+    size_t count;
+- 
+-     max_len = ssh_buffer_get_len(buffer);
+- 
+-     /* copy the argument list in case a rollback is needed */
+-     va_copy(ap_copy, ap);
+- 
+--    for (p = format, count = 0; *p != '\0'; p++, count++) {
+-+    if (argc > 256) {
+-+        rc = SSH_ERROR;
+-+        goto cleanup;
+-+    }
+-+
+-+    for (count = 0; *p != '\0'; p++, count++) {
+-         /* Invalid number of arguments passed */
+--        if (argc != -1 && count > argc) {
+-+        if (count > argc) {
+-             rc = SSH_ERROR;
+-             goto cleanup;
+-         }
+-@@ -1217,7 +1222,7 @@ int ssh_buffer_unpack_va(struct ssh_buffer_struct *buffer,
+-         }
+-     }
+- 
+--    if (argc != -1 && argc != count) {
+-+    if (argc != count) {
+-         rc = SSH_ERROR;
+-     }
+- 
+-@@ -1226,11 +1231,7 @@ cleanup:
+-         /* Check if our canary is intact, if not something really bad happened */
+-         uint32_t canary = va_arg(ap, uint32_t);
+-         if (canary != SSH_BUFFER_PACK_END){
+--            if (argc == -1){
+--                rc = SSH_ERROR;
+--            } else {
+--                abort();
+--            }
+-+            abort();
+-         }
+-     }
+- 
+-@@ -1320,7 +1321,7 @@ cleanup:
+-  */
+- int _ssh_buffer_unpack(struct ssh_buffer_struct *buffer,
+-                        const char *format,
+--                       int argc,
+-+                       size_t argc,
+-                        ...)
+- {
+-     va_list ap;
+--- 
+-2.20.1
+-
+diff --git a/package/libssh/libssh.hash b/package/libssh/libssh.hash
+index 7164c91069..ca296701bf 100644
+--- a/package/libssh/libssh.hash
++++ b/package/libssh/libssh.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated after checking pgp signature
+-# https://www.libssh.org/files/0.8/libssh-0.8.7.tar.xz.asc
++# https://www.libssh.org/files/0.9/libssh-0.9.3.tar.xz.asc
+ # with key 8DFF53E18F2ABC8D8F3C92237EE0FC4DCC014E3D
+-sha256 43304ca22f0ba0b654e14b574a39816bc70212fdea5858a6637cc26cade3d592  libssh-0.8.7.tar.xz
++sha256 2c8b5f894dced58b3d629f16f3afa6562c20b4bdc894639163cf657833688f0c  libssh-0.9.3.tar.xz
+ sha256 1656186e951db1c010a8485481fa94587f7e53a26d24976bef97945ad0c4df5a  COPYING
+diff --git a/package/libssh/libssh.mk b/package/libssh/libssh.mk
+index 332f2a5700..ce0defa473 100644
+--- a/package/libssh/libssh.mk
++++ b/package/libssh/libssh.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-LIBSSH_VERSION_MAJOR = 0.8
+-LIBSSH_VERSION = $(LIBSSH_VERSION_MAJOR).7
++LIBSSH_VERSION_MAJOR = 0.9
++LIBSSH_VERSION = $(LIBSSH_VERSION_MAJOR).3
+ LIBSSH_SOURCE = libssh-$(LIBSSH_VERSION).tar.xz
+ LIBSSH_SITE = https://www.libssh.org/files/$(LIBSSH_VERSION_MAJOR)
+ LIBSSH_LICENSE = LGPL-2.1
+diff --git a/package/libtomcrypt/0001-fix-CVE-2019-17362.patch b/package/libtomcrypt/0001-fix-CVE-2019-17362.patch
+new file mode 100644
+index 0000000000..91e2145853
+--- /dev/null
++++ b/package/libtomcrypt/0001-fix-CVE-2019-17362.patch
+@@ -0,0 +1,29 @@
++From 25c26a3b7a9ad8192ccc923e15cf62bf0108ef94 Mon Sep 17 00:00:00 2001
++From: werew <werew@ret2libc.com>
++Date: Thu, 3 Oct 2019 19:57:10 +0200
++Subject: [PATCH] Fixes #507
++
++Fix a vulnerability in der_decode_utf8_string as specified here:
++https://github.com/libtom/libtomcrypt/issues/507
++
++[for import into Buildroot]
++Signed-off-by: Thomas De Schampheleire <thomas.de_schampheleire@nokia.com>
++
++
++---
++ src/pk/asn1/der/utf8/der_decode_utf8_string.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/src/pk/asn1/der/utf8/der_decode_utf8_string.c b/src/pk/asn1/der/utf8/der_decode_utf8_string.c
++index 94555b99f..d3ed82bea 100644
++--- a/src/pk/asn1/der/utf8/der_decode_utf8_string.c
+++++ b/src/pk/asn1/der/utf8/der_decode_utf8_string.c
++@@ -65,7 +65,7 @@ int der_decode_utf8_string(const unsigned char *in,  unsigned long inlen,
++       /* count number of bytes */
++       for (z = 0; (tmp & 0x80) && (z <= 4); z++, tmp = (tmp << 1) & 0xFF);
++ 
++-      if (z > 4 || (x + (z - 1) > inlen)) {
+++      if (z == 1 || z > 4 || (x + (z - 1) > inlen)) {
++          return CRYPT_INVALID_PACKET;
++       }
++ 
+diff --git a/package/libuio/libuio.mk b/package/libuio/libuio.mk
+index 13429ec0f1..b6e8e7e774 100644
+--- a/package/libuio/libuio.mk
++++ b/package/libuio/libuio.mk
+@@ -10,7 +10,7 @@ LIBUIO_SITE = $(call github,Linutronix,libuio,$(LIBUIO_VERSION))
+ LIBUIO_LICENSE = LGPL-2.1 (library), GPL-2.0 (programs)
+ LIBUIO_LICENSE_FILES = COPYING
+ LIBUIO_CONF_OPTS = --with-glib=no --without-werror
+-LIBUIO_DEPENDENCIES = $(TARGET_NLS_DEPENDENCIES)
++LIBUIO_DEPENDENCIES = $(TARGET_NLS_DEPENDENCIES) host-pkgconf
+ LIBUIO_LIBS = $(TARGET_NLS_LIBS)
+ LIBUIO_INSTALL_STAGING = YES
+ 
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index 17a27075c2..6241c80820 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -287,10 +287,10 @@ endchoice
+ 
+ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+-	default "4.4.206"	if BR2_KERNEL_HEADERS_4_4
+-	default "4.9.206"	if BR2_KERNEL_HEADERS_4_9
+-	default "4.14.158"	if BR2_KERNEL_HEADERS_4_14
+-	default "4.19.88"	if BR2_KERNEL_HEADERS_4_19
++	default "4.4.208"	if BR2_KERNEL_HEADERS_4_4
++	default "4.9.208"	if BR2_KERNEL_HEADERS_4_9
++	default "4.14.163"	if BR2_KERNEL_HEADERS_4_14
++	default "4.19.94"	if BR2_KERNEL_HEADERS_4_19
+ 	default "4.20.17"	if BR2_KERNEL_HEADERS_4_20
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+ 	default "custom"	if BR2_KERNEL_HEADERS_CUSTOM_TARBALL
+diff --git a/package/lirc-tools/lirc-tools.mk b/package/lirc-tools/lirc-tools.mk
+index e468f2a25d..d66f4e9925 100644
+--- a/package/lirc-tools/lirc-tools.mk
++++ b/package/lirc-tools/lirc-tools.mk
+@@ -47,7 +47,7 @@ endif
+ 
+ ifeq ($(BR2_PACKAGE_PYTHON3),y)
+ LIRC_TOOLS_DEPENDENCIES += python3 host-python3-setuptools
+-LIRC_TOOLS_MAKE_ENV += SETUPTOOLS_ENV="$(PKG_PYTHON_SETUPTOOLS_ENV)"
++LIRC_TOOLS_MAKE_ENV += SETUPTOOLS_ENV='$(PKG_PYTHON_SETUPTOOLS_ENV)'
+ endif
+ 
+ define LIRC_TOOLS_INSTALL_INIT_SYSV
+diff --git a/package/lvm2/lvm2.mk b/package/lvm2/lvm2.mk
+index 14575668a5..3da713fe83 100644
+--- a/package/lvm2/lvm2.mk
++++ b/package/lvm2/lvm2.mk
+@@ -31,6 +31,10 @@ LVM2_MAKE_ENV = $(TARGET_CONFIGURE_OPTS)
+ # package/readline is GPL-3.0+, so not license compatible
+ LVM2_CONF_OPTS += --disable-readline
+ 
++ifeq ($(BR2_PACKAGE_HAS_UDEV),y)
++LVM2_CONF_OPTS += --enable-udev_rules
++endif
++
+ ifeq ($(BR2_PACKAGE_LIBSELINUX),y)
+ LVM2_CONF_OPTS += --enable-selinux
+ LVM2_DEPENDENCIES += libselinux
+diff --git a/package/mali-t76x/Config.in b/package/mali-t76x/Config.in
+index a85fa5b27e..2533f10002 100644
+--- a/package/mali-t76x/Config.in
++++ b/package/mali-t76x/Config.in
+@@ -11,7 +11,7 @@ config BR2_PACKAGE_MALI_T76X
+ 	  Midgard T76X GPU. This package requires a kernel with the
+ 	  ARM Mali Midgard GPU Kernel Drivers enabled.
+ 
+-	  Source: http://malideveloper.arm.com/resources/drivers/
++	  http://malideveloper.arm.com/resources/drivers/
+ 
+ if BR2_PACKAGE_MALI_T76X
+ 
+diff --git a/package/matchbox-desktop/matchbox-desktop.mk b/package/matchbox-desktop/matchbox-desktop.mk
+index 81b13c079c..9054dd80c6 100644
+--- a/package/matchbox-desktop/matchbox-desktop.mk
++++ b/package/matchbox-desktop/matchbox-desktop.mk
+@@ -11,7 +11,6 @@ MATCHBOX_DESKTOP_SITE = http://downloads.yoctoproject.org/releases/matchbox/matc
+ MATCHBOX_DESKTOP_LICENSE = GPL-2.0+
+ MATCHBOX_DESKTOP_LICENSE_FILES = COPYING
+ MATCHBOX_DESKTOP_DEPENDENCIES = matchbox-lib zlib
+-MATCHBOX_DESKTOP_CONF_OPTS = --enable-expat
+ 
+ # The bundled configure script does not properly replace LIBADD_DL, so
+ # we force an autoreconf even if we don't have any patches touching
+diff --git a/package/nodejs/nodejs.hash b/package/nodejs/nodejs.hash
+index d1e2b39c35..ce987e6833 100644
+--- a/package/nodejs/nodejs.hash
++++ b/package/nodejs/nodejs.hash
+@@ -1,5 +1,5 @@
+-# From https://nodejs.org/dist/v8.16.1/SHASUMS256.txt
+-sha256 d8c190acdf2d967faf49c22df883d31a8d4e249d67852dae3c2d8a0f756b0512  node-v8.16.1.tar.xz
++# From https://nodejs.org/dist/v8.17.0/SHASUMS256.txt
++sha256 5b0d96db482b273f0324c299ead86ecfbc5d033516e5fc37c92cfccb933ef6ff  node-v8.17.0.tar.xz
+ 
+ # Hash for license file
+ sha256 b87be6c1479ed977481115869c2dd8b6d59e5ea55aa09939d6c898242121b2f5  LICENSE
+diff --git a/package/nodejs/nodejs.mk b/package/nodejs/nodejs.mk
+index 583b2276e2..72346a516d 100644
+--- a/package/nodejs/nodejs.mk
++++ b/package/nodejs/nodejs.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-NODEJS_VERSION = 8.16.1
++NODEJS_VERSION = 8.17.0
+ NODEJS_SOURCE = node-v$(NODEJS_VERSION).tar.xz
+ NODEJS_SITE = http://nodejs.org/dist/v$(NODEJS_VERSION)
+ NODEJS_DEPENDENCIES = host-python host-nodejs c-ares \
+diff --git a/package/ntp/0003-override-shell.patch b/package/ntp/0003-override-shell.patch
+new file mode 100644
+index 0000000000..0161e6520a
+--- /dev/null
++++ b/package/ntp/0003-override-shell.patch
+@@ -0,0 +1,20 @@
++sntp/libopts/m4/libopts.m4: allow override shell with POSIX_SHELL
++
++Pull in fix from upstream AutoGen [1] to accept POSIX_SHELL from the
++environment during the configure step.
++
++[1] http://git.savannah.gnu.org/cgit/autogen.git/commit/?id=db064b9a252f3ef3d8db25411ea0edb0ff8ea758
++
++Signed-off-by: James Byrne <james.byrne@origamienergy.com>
++
++diff --git a/sntp/libopts/m4/libopts.m4 b/sntp/libopts/m4/libopts.m4
++--- a/sntp/libopts/m4/libopts.m4
+++++ b/sntp/libopts/m4/libopts.m4
++@@ -114,6 +114,7 @@
++   AC_PROG_SED
++   [while :
++   do
+++      test -x "$POSIX_SHELL" && break
++       POSIX_SHELL=`which bash`
++       test -x "$POSIX_SHELL" && break
++       POSIX_SHELL=`which dash`
+diff --git a/package/ntp/ntp.mk b/package/ntp/ntp.mk
+index d53fcc5d0b..56050f4fe1 100644
+--- a/package/ntp/ntp.mk
++++ b/package/ntp/ntp.mk
+@@ -10,7 +10,7 @@ NTP_SITE = https://www.eecis.udel.edu/~ntp/ntp_spool/ntp4/ntp-$(NTP_VERSION_MAJO
+ NTP_DEPENDENCIES = host-pkgconf libevent
+ NTP_LICENSE = NTP
+ NTP_LICENSE_FILES = COPYRIGHT
+-NTP_CONF_ENV = ac_cv_lib_md5_MD5Init=no
++NTP_CONF_ENV = ac_cv_lib_md5_MD5Init=no POSIX_SHELL=/bin/sh
+ NTP_CONF_OPTS = \
+ 	--with-shared \
+ 	--program-transform-name=s,,, \
+diff --git a/package/opencv3/0001-3rdparty-protobuf-fix-compilation-issue-on-s390.patch b/package/opencv3/0001-3rdparty-protobuf-fix-compilation-issue-on-s390.patch
+deleted file mode 100644
+index 7743eae533..0000000000
+--- a/package/opencv3/0001-3rdparty-protobuf-fix-compilation-issue-on-s390.patch
++++ /dev/null
+@@ -1,38 +0,0 @@
+-From ac9ec55b37b2dd3b224144b4f20857a80719b750 Mon Sep 17 00:00:00 2001
+-From: Loic Devulder <ldevulder@suse.de>
+-Date: Fri, 28 Sep 2018 15:33:18 +0200
+-Subject: [PATCH] 3rdparty/protobuf: fix compilation issue on s390
+-
+-This commit fixes an issue while trying to compile
+-on s390x architecture.
+-
+-This is simply a backport of a fixe already applied
+-in official protobuf code:
+-- https://github.com/protocolbuffers/protobuf/pull/3955
+-
+-Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
+-[Retrieved from:
+-https://github.com/opencv/opencv/commit/ac9ec55b37b2dd3b224144b4f20857a80719b750]
+----
+- .../protobuf/stubs/atomicops_internals_generic_gcc.h      | 8 ++++++++
+- 1 file changed, 8 insertions(+)
+-
+-diff --git a/3rdparty/protobuf/src/google/protobuf/stubs/atomicops_internals_generic_gcc.h b/3rdparty/protobuf/src/google/protobuf/stubs/atomicops_internals_generic_gcc.h
+-index 0b0b06ce6cf..075c406abab 100644
+---- a/3rdparty/protobuf/src/google/protobuf/stubs/atomicops_internals_generic_gcc.h
+-+++ b/3rdparty/protobuf/src/google/protobuf/stubs/atomicops_internals_generic_gcc.h
+-@@ -146,6 +146,14 @@ inline Atomic64 NoBarrier_Load(volatile const Atomic64* ptr) {
+-   return __atomic_load_n(ptr, __ATOMIC_RELAXED);
+- }
+- 
+-+inline Atomic64 Release_CompareAndSwap(volatile Atomic64* ptr,
+-+                                       Atomic64 old_value,
+-+                                       Atomic64 new_value) {
+-+  __atomic_compare_exchange_n(ptr, &old_value, new_value, false,
+-+                              __ATOMIC_RELEASE, __ATOMIC_ACQUIRE);
+-+  return old_value;
+-+}
+-+
+- #endif // defined(__LP64__)
+- 
+- }  // namespace internal
+diff --git a/package/opencv3/Config.in b/package/opencv3/Config.in
+index c308cd4d87..cf7763d4ae 100644
+--- a/package/opencv3/Config.in
++++ b/package/opencv3/Config.in
+@@ -140,6 +140,7 @@ config BR2_PACKAGE_OPENCV3_LIB_ML
+ config BR2_PACKAGE_OPENCV3_LIB_OBJDETECT
+ 	bool "objdetect"
+ 	# opencv_core dependency is already enabled
++	select BR2_PACKAGE_OPENCV3_LIB_CALIB3D
+ 	select BR2_PACKAGE_OPENCV3_LIB_IMGPROC
+ 	select BR2_PACKAGE_OPENCV3_LIB_ML
+ 	help
+diff --git a/package/opencv3/opencv3.hash b/package/opencv3/opencv3.hash
+index 34baf260d4..4953d01a1c 100644
+--- a/package/opencv3/opencv3.hash
++++ b/package/opencv3/opencv3.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256 4eef85759d5450b183459ff216b4c0fa43e87a4f6aa92c8af649f89336f002ec  opencv3-3.4.3.tar.gz
+-sha256 fea311907cb6271b05ff5843b238e0f2edb6f204a3432975211030d20704b321  LICENSE
++sha256 b7ea364de7273cfb3b771a0d9c111b8b8dfb42ff2bcd2d84681902fb8f49892a  opencv3-3.4.9.tar.gz
++sha256 c3596f2f886631ac49af2c9a201ca559f850bb5726bdc25eacbe2369a70caad9  LICENSE
+diff --git a/package/opencv3/opencv3.mk b/package/opencv3/opencv3.mk
+index f720464543..a6d795bd85 100644
+--- a/package/opencv3/opencv3.mk
++++ b/package/opencv3/opencv3.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-OPENCV3_VERSION = 3.4.3
++OPENCV3_VERSION = 3.4.9
+ OPENCV3_SITE = $(call github,opencv,opencv,$(OPENCV3_VERSION))
+ OPENCV3_INSTALL_STAGING = YES
+ OPENCV3_LICENSE = BSD-3-Clause
+@@ -13,16 +13,15 @@ OPENCV3_SUPPORTS_IN_SOURCE_BUILD = NO
+ 
+ OPENCV3_CXXFLAGS = $(TARGET_CXXFLAGS)
+ 
+-# Uses __atomic_fetch_add_4
+-ifeq ($(BR2_TOOLCHAIN_HAS_LIBATOMIC),y)
+-OPENCV3_CXXFLAGS += -latomic
+-endif
+-
+ # Fix c++11 build with missing std::exception_ptr
+ ifeq ($(BR2_TOOLCHAIN_HAS_GCC_BUG_64735),y)
+ OPENCV3_CXXFLAGS += -DCV__EXCEPTION_PTR=0
+ endif
+ 
++ifeq ($(BR2_TOOLCHAIN_HAS_GCC_BUG_68485),y)
++OPENCV3_CXXFLAGS += -O0
++endif
++
+ # OpenCV component options
+ OPENCV3_CONF_OPTS += \
+ 	-DCMAKE_CXX_FLAGS="$(OPENCV3_CXXFLAGS)" \
+diff --git a/package/openpowerlink/Config.in b/package/openpowerlink/Config.in
+index 68ea751954..1a3dd62acd 100644
+--- a/package/openpowerlink/Config.in
++++ b/package/openpowerlink/Config.in
+@@ -50,7 +50,6 @@ config BR2_PACKAGE_OPENPOWERLINK_STACK_MONOLITHIC_USER_STACK_LIB
+ config BR2_PACKAGE_OPENPOWERLINK_STACK_USERSPACE_DAEMON_LIB
+ 	bool "user-space pcap daemon"
+ 	select BR2_PACKAGE_LIBPCAP
+-	select BR2_PACKAGE_OPENPOWERLINK_PCAP_DAEMON
+ 	help
+ 	  Compile openPOWERLINK application library which contains the
+ 	  interface to a Linux user space driver, and the Linux user
+diff --git a/package/perl-sys-cpu/Config.in b/package/perl-sys-cpu/Config.in
+index 8306b371dc..70cfded8ff 100644
+--- a/package/perl-sys-cpu/Config.in
++++ b/package/perl-sys-cpu/Config.in
+@@ -5,5 +5,7 @@ config BR2_PACKAGE_PERL_SYS_CPU
+ 	  Perl module for getting information about the system CPU
+ 	  (Sys::CPU).
+ 
++	  http://search.cpan.org/dist/Sys-CPU/
++
+ comment "perl-sys-cpu needs a toolchain w/ dynamic library"
+ 	depends on BR2_STATIC_LIBS
+diff --git a/package/pimd/Config.in b/package/pimd/Config.in
+index d6a579bda2..718f84f4f8 100644
+--- a/package/pimd/Config.in
++++ b/package/pimd/Config.in
+@@ -5,4 +5,4 @@ config BR2_PACKAGE_PIMD
+ 	  pimd is a lightweight stand-alone PIM-SM v2 multicast routing
+ 	  daemon.
+ 
+-	  http://troglobit.com/project/pimd/
++	  http://troglobit.com/projects/pimd/
+diff --git a/package/pkg-python.mk b/package/pkg-python.mk
+index e906920417..cf64649893 100644
+--- a/package/pkg-python.mk
++++ b/package/pkg-python.mk
+@@ -27,9 +27,7 @@ endef
+ # Target distutils-based packages
+ PKG_PYTHON_DISTUTILS_ENV = \
+ 	PATH=$(BR_PATH) \
+-	CC="$(TARGET_CC)" \
+-	CFLAGS="$(TARGET_CFLAGS)" \
+-	LDFLAGS="$(TARGET_LDFLAGS)" \
++	$(TARGET_CONFIGURE_OPTS) \
+ 	LDSHARED="$(TARGET_CROSS)gcc -shared" \
+ 	PYTHONPATH="$(if $(BR2_PACKAGE_PYTHON3),$(PYTHON3_PATH),$(PYTHON_PATH))" \
+ 	PYTHONNOUSERSITE=1 \
+@@ -52,7 +50,8 @@ PKG_PYTHON_DISTUTILS_INSTALL_STAGING_OPTS = \
+ # Host distutils-based packages
+ HOST_PKG_PYTHON_DISTUTILS_ENV = \
+ 	PATH=$(BR_PATH) \
+-	PYTHONNOUSERSITE=1
++	PYTHONNOUSERSITE=1 \
++	$(HOST_CONFIGURE_OPTS)
+ 
+ HOST_PKG_PYTHON_DISTUTILS_INSTALL_OPTS = \
+ 	--prefix=$(HOST_DIR)
+@@ -61,6 +60,7 @@ HOST_PKG_PYTHON_DISTUTILS_INSTALL_OPTS = \
+ PKG_PYTHON_SETUPTOOLS_ENV = \
+ 	_PYTHON_SYSCONFIGDATA_NAME="$(PKG_PYTHON_SYSCONFIGDATA_NAME)" \
+ 	PATH=$(BR_PATH) \
++	$(TARGET_CONFIGURE_OPTS) \
+ 	PYTHONPATH="$(if $(BR2_PACKAGE_PYTHON3),$(PYTHON3_PATH),$(PYTHON_PATH))" \
+ 	PYTHONNOUSERSITE=1 \
+ 	_python_sysroot=$(STAGING_DIR) \
+@@ -82,7 +82,8 @@ PKG_PYTHON_SETUPTOOLS_INSTALL_STAGING_OPTS = \
+ # Host setuptools-based packages
+ HOST_PKG_PYTHON_SETUPTOOLS_ENV = \
+ 	PATH=$(BR_PATH) \
+-	PYTHONNOUSERSITE=1
++	PYTHONNOUSERSITE=1 \
++	$(HOST_CONFIGURE_OPTS)
+ 
+ HOST_PKG_PYTHON_SETUPTOOLS_INSTALL_OPTS = \
+ 	--prefix=$(HOST_DIR) \
+diff --git a/package/python-coherence/Config.in b/package/python-coherence/Config.in
+index 71f79f42ee..63427964a7 100644
+--- a/package/python-coherence/Config.in
++++ b/package/python-coherence/Config.in
+@@ -8,7 +8,7 @@ config BR2_PACKAGE_PYTHON_COHERENCE
+ 	help
+ 	  A DLNA/UPnP Media Server and Framework for the Digital Living.
+ 
+-	  http://coherence-project.org/
++	  https://github.com/coherence-project/Coherence
+ 
+ comment "python-coherence needs a toolchain w/ C++"
+ 	depends on BR2_PACKAGE_PYTHON
+diff --git a/package/python-crc16/Config.in b/package/python-crc16/Config.in
+index 3fd8da7a85..b7a10b66ad 100644
+--- a/package/python-crc16/Config.in
++++ b/package/python-crc16/Config.in
+@@ -8,4 +8,4 @@ config BR2_PACKAGE_PYTHON_CRC16
+ 	  or transmission. There are many variants of CRC and CRC16,
+ 	  in particular.
+ 
+-	  http://pycrc16.googlecode.com/
++	  https://code.google.com/archive/p/pycrc16/
+diff --git a/package/python-django/python-django.hash b/package/python-django/python-django.hash
+index 213c525f76..5d1e6c40e7 100644
+--- a/package/python-django/python-django.hash
++++ b/package/python-django/python-django.hash
+@@ -1,5 +1,5 @@
+ # md5, sha256 from https://pypi.org/pypi/django/json
+-md5	a9d02735cb5722608c08fb2d79350523  Django-2.1.15.tar.gz
+-sha256	 a794f7a2f4b7c928eecfbc4ebad03712ff27fb545abe269bf01aa8500781eb1c Django-2.1.15.tar.gz
++md5	a9a6555d166196e502b69715341f7ad4  Django-2.2.9.tar.gz
++sha256	662a1ff78792e3fd77f16f71b1f31149489434de4b62a74895bd5d6534e635a5  Django-2.2.9.tar.gz
+ # Locally computed sha256 checksums
+ sha256	b846415d1b514e9c1dff14a22deb906d794bc546ca6129f950a18cd091e2a669  LICENSE
+diff --git a/package/python-django/python-django.mk b/package/python-django/python-django.mk
+index c3e60f8759..d5b2c1585f 100644
+--- a/package/python-django/python-django.mk
++++ b/package/python-django/python-django.mk
+@@ -4,10 +4,10 @@
+ #
+ ################################################################################
+ 
+-PYTHON_DJANGO_VERSION = 2.1.15
++PYTHON_DJANGO_VERSION = 2.2.9
+ PYTHON_DJANGO_SOURCE = Django-$(PYTHON_DJANGO_VERSION).tar.gz
+ # The official Django site has an unpractical URL
+-PYTHON_DJANGO_SITE = https://files.pythonhosted.org/packages/a5/ea/a3424e68851acb44a1f8f823dc32ee3eb10b7fda474b03d527f7e666b443
++PYTHON_DJANGO_SITE = https://files.pythonhosted.org/packages/2c/0d/2aa8e58c791d2aa65658fa26f2b035a9da13a6a34d1b2d991912c8a33729
+ PYTHON_DJANGO_LICENSE = BSD-3-Clause
+ PYTHON_DJANGO_LICENSE_FILES = LICENSE
+ PYTHON_DJANGO_SETUP_TYPE = setuptools
+diff --git a/package/python-dpkt/Config.in b/package/python-dpkt/Config.in
+index f1e4ddff15..d8e3388d7e 100644
+--- a/package/python-dpkt/Config.in
++++ b/package/python-dpkt/Config.in
+@@ -6,4 +6,4 @@ config BR2_PACKAGE_PYTHON_DPKT
+ 	  Fast, simple packet creation / parsing, with definitions
+ 	  for the basic TCP/IP protocols.
+ 
+-	  http://code.google.com/p/dpkt/
++	  https://github.com/kbandla/dpkt
+diff --git a/package/python-ecdsa/python-ecdsa.hash b/package/python-ecdsa/python-ecdsa.hash
+index b4bd70638d..3e24783657 100644
+--- a/package/python-ecdsa/python-ecdsa.hash
++++ b/package/python-ecdsa/python-ecdsa.hash
+@@ -1,4 +1,5 @@
+-# md5 from https://pypi.python.org/pypi/ecdsa/json
+-md5	1f60eda9cb5c46722856db41a3ae6670  ecdsa-0.13.tar.gz
+-# sha256 calculated by scanpypi
+-sha256	64cf1ee26d1cde3c73c6d7d107f835fed7c6a2904aef9eac223d57ad800c43fa  ecdsa-0.13.tar.gz
++# md5, sha256 from https://pypi.org/pypi/ecdsa/json
++md5	b1b33f7fe171eb1278de6f93eefc34f8  ecdsa-0.13.3.tar.gz
++sha256	163c80b064a763ea733870feb96f9dd9b92216cfcacd374837af18e4e8ec3d4d  ecdsa-0.13.3.tar.gz
++# Locally computed sha256 checksums
++sha256	3eca9845773d2e5b8cc9d8c119d345f00a4806e4bd660d4a3d6cdf9c0e9d8bb2  LICENSE
+diff --git a/package/python-ecdsa/python-ecdsa.mk b/package/python-ecdsa/python-ecdsa.mk
+index 75b0634e14..90e359f8b7 100644
+--- a/package/python-ecdsa/python-ecdsa.mk
++++ b/package/python-ecdsa/python-ecdsa.mk
+@@ -4,9 +4,9 @@
+ #
+ ################################################################################
+ 
+-PYTHON_ECDSA_VERSION = 0.13
++PYTHON_ECDSA_VERSION = 0.13.3
+ PYTHON_ECDSA_SOURCE = ecdsa-$(PYTHON_ECDSA_VERSION).tar.gz
+-PYTHON_ECDSA_SITE = https://pypi.python.org/packages/source/e/ecdsa
++PYTHON_ECDSA_SITE = https://files.pythonhosted.org/packages/8c/d8/9c3596fd0f18ae0a76333492a119c00183323d8e64de1a4f4bd642856963
+ PYTHON_ECDSA_SETUP_TYPE = setuptools
+ PYTHON_ECDSA_LICENSE = MIT
+ PYTHON_ECDSA_LICENSE_FILES = LICENSE
+diff --git a/package/python-pyasn-modules/Config.in b/package/python-pyasn-modules/Config.in
+index 387020d9d6..cedd68b34e 100644
+--- a/package/python-pyasn-modules/Config.in
++++ b/package/python-pyasn-modules/Config.in
+@@ -1,7 +1,7 @@
+ config BR2_PACKAGE_PYTHON_PYASN_MODULES
+ 	bool "python-pyasn-modules"
+ 	depends on BR2_INSTALL_LIBSTDCPP
+-	select BR2_PACKAGE_PYASN # runtime
++	select BR2_PACKAGE_PYTHON_PYASN # runtime
+ 	help
+ 	  A collection of ASN.1-based protocols modules.
+ 
+diff --git a/package/python-pypcap/Config.in b/package/python-pypcap/Config.in
+index 9b71575c0b..9b410ecc2b 100644
+--- a/package/python-pypcap/Config.in
++++ b/package/python-pypcap/Config.in
+@@ -6,4 +6,4 @@ config BR2_PACKAGE_PYTHON_PYPCAP
+ 	  The pypcap module is an object-oriented wrapper of the C
+ 	  libpcap library.
+ 
+-	  https://code.google.com/p/pypcap/
++	  https://github.com/dugsong/pypcap
+diff --git a/package/python-pyqt5/python-pyqt5.hash b/package/python-pyqt5/python-pyqt5.hash
+index 2a7d05b49a..8ef467a27b 100644
+--- a/package/python-pyqt5/python-pyqt5.hash
++++ b/package/python-pyqt5/python-pyqt5.hash
+@@ -1,3 +1,6 @@
+ # md5 from http://http://sourceforge.net/projects/pyqt/files/PyQt5/PyQt-5.7, sha256 locally computed
+ md5	e3dc21f31fd714659f0688e1eb31bacf  PyQt5_gpl-5.7.tar.gz
+ sha256	892693ba5f79989abb2061dad2d5c4e6f127e9dd3240f73f8220c7152cd35b05  PyQt5_gpl-5.7.tar.gz
++
++# Hash for license file
++sha256	8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  LICENSE
+diff --git a/package/python-pyqt5/python-pyqt5.mk b/package/python-pyqt5/python-pyqt5.mk
+index 4955936ae3..b6d559cd5b 100644
+--- a/package/python-pyqt5/python-pyqt5.mk
++++ b/package/python-pyqt5/python-pyqt5.mk
+@@ -11,6 +11,14 @@ PYTHON_PYQT5_LICENSE = GPL-3.0
+ PYTHON_PYQT5_LICENSE_FILES = LICENSE
+ 
+ PYTHON_PYQT5_DEPENDENCIES = python-sip host-python-sip qt5base
++PYTHON_PYQT5_MODULES = \
++	QtCore \
++	$(if $(BR2_PACKAGE_QT5BASE_DBUS),QtDBus) \
++	$(if $(BR2_PACKAGE_QT5BASE_GUI),QtGui) \
++	$(if $(BR2_PACKAGE_QT5BASE_NETWORK),QtNetwork) \
++	$(if $(BR2_PACKAGE_QT5BASE_OPENGL_LIB),QtOpenGL) \
++	$(if $(BR2_PACKAGE_QT5BASE_PRINTSUPPORT),QtPrintSupport) \
++	$(if $(BR2_PACKAGE_QT5BASE_XML),QtXml)
+ 
+ ifeq ($(BR2_PACKAGE_PYTHON),y)
+ PYTHON_PYQT5_PYTHON_DIR = python$(PYTHON_VERSION_MAJOR)
+@@ -20,6 +28,103 @@ PYTHON_PYQT5_PYTHON_DIR = python$(PYTHON3_VERSION_MAJOR)
+ PYTHON_PYQT5_RM_PORT_BASE = port_v2
+ endif
+ 
++ifeq ($(BR2_PACKAGE_QT5BASE_WIDGETS),y)
++PYTHON_PYQT5_MODULES += QtWidgets
++
++# QtSql needs QtWidgets
++ifeq ($(BR2_PACKAGE_QT5BASE_SQL),y)
++PYTHON_PYQT5_MODULES += QtSql
++endif
++
++# QtTest needs QtWidgets
++ifeq ($(BR2_PACKAGE_QT5BASE_TEST),y)
++PYTHON_PYQT5_MODULES += QtTest
++endif
++endif
++
++ifeq ($(BR2_PACKAGE_QT5CONNECTIVITY),y)
++PYTHON_PYQT5_DEPENDENCIES += qt5connectivity
++PYTHON_PYQT5_MODULES += QtBluetooth QtNfc
++endif
++
++ifeq ($(BR2_PACKAGE_QT5DECLARATIVE),y)
++PYTHON_PYQT5_DEPENDENCIES += qt5declarative
++PYTHON_PYQT5_MODULES += QtQml
++
++# QtQuick module needs opengl
++ifeq ($(BR2_PACKAGE_QT5DECLARATIVE_QUICK)$(BR2_PACKAGE_QT5BASE_OPENGL_LIB),yy)
++PYTHON_PYQT5_MODULES += \
++	QtQuick \
++	$(if $(BR2_PACKAGE_QT5BASE_WIDGETS),QtQuickWidgets)
++endif
++endif
++
++ifeq ($(BR2_PACKAGE_QT5ENGINIO),y)
++PYTHON_PYQT5_DEPENDENCIES += qt5enginio
++PYTHON_PYQT5_MODULES += Enginio
++endif
++
++ifeq ($(BR2_PACKAGE_QT5LOCATION),y)
++PYTHON_PYQT5_DEPENDENCIES += qt5location
++PYTHON_PYQT5_MODULES += QtLocation QtPositioning
++endif
++
++ifeq ($(BR2_PACKAGE_QT5MULTIMEDIA),y)
++PYTHON_PYQT5_DEPENDENCIES += qt5multimedia
++PYTHON_PYQT5_MODULES += \
++	QtMultimedia \
++	$(if $(BR2_PACKAGE_QT5BASE_WIDGETS),QtMultimediaWidgets)
++endif
++
++ifeq ($(BR2_PACKAGE_QT5SENSORS),y)
++PYTHON_PYQT5_DEPENDENCIES += qt5sensors
++PYTHON_PYQT5_MODULES += QtSensors
++endif
++
++ifeq ($(BR2_PACKAGE_QT5SERIALPORT),y)
++PYTHON_PYQT5_DEPENDENCIES += qt5serialport
++PYTHON_PYQT5_MODULES += QtSerialPort
++endif
++
++ifeq ($(BR2_PACKAGE_QT5SVG),y)
++PYTHON_PYQT5_DEPENDENCIES += qt5svg
++PYTHON_PYQT5_MODULES += QtSvg
++endif
++
++ifeq ($(BR2_PACKAGE_QT5WEBCHANNEL),y)
++PYTHON_PYQT5_DEPENDENCIES += qt5webchannel
++PYTHON_PYQT5_MODULES += QtWebChannel
++endif
++
++ifeq ($(BR2_PACKAGE_QT5WEBENGINE),y)
++PYTHON_PYQT5_DEPENDENCIES += qt5webengine
++PYTHON_PYQT5_MODULES += \
++	QtWebEngineCore \
++	$(if $(BR2_PACKAGE_QT5BASE_WIDGETS),QtWebEngineWidgets)
++endif
++
++ifeq ($(BR2_PACKAGE_QT5WEBKIT),y)
++PYTHON_PYQT5_DEPENDENCIES += qt5webkit
++PYTHON_PYQT5_MODULES += \
++	QtWebKit \
++	$(if $(BR2_PACKAGE_QT5BASE_WIDGETS),QtWebKitWidgets)
++endif
++
++ifeq ($(BR2_PACKAGE_QT5WEBSOCKETS),y)
++PYTHON_PYQT5_DEPENDENCIES += qt5websockets
++PYTHON_PYQT5_MODULES += QtWebSockets
++endif
++
++ifeq ($(BR2_PACKAGE_QT5X11EXTRAS),y)
++PYTHON_PYQT5_DEPENDENCIES += qt5x11extras
++PYTHON_PYQT5_MODULES += QtX11Extras
++endif
++
++ifeq ($(BR2_PACKAGE_QT5XMLPATTERNS),y)
++PYTHON_PYQT5_DEPENDENCIES += qt5xmlpatterns
++PYTHON_PYQT5_MODULES += QtXmlPatterns
++endif
++
+ PYTHON_PYQT5_QTDETAIL_LICENSE = Open Source
+ 
+ PYTHON_PYQT5_QTDETAIL_TYPE = shared
+@@ -52,7 +157,8 @@ PYTHON_PYQT5_CONF_OPTS = \
+ 	-w --confirm-license \
+ 	--no-designer-plugin \
+ 	--no-docstrings \
+-	--no-sip-files
++	--no-sip-files \
++	$(foreach module,$(PYTHON_PYQT5_MODULES),--enable=$(module))
+ 
+ define PYTHON_PYQT5_CONFIGURE_CMDS
+ 	$(call PYTHON_PYQT5_GENERATE_QTDETAIL,$(@D))
+diff --git a/package/python-subprocess32/python-subprocess32.mk b/package/python-subprocess32/python-subprocess32.mk
+index d6c57fb8bd..c635196e90 100644
+--- a/package/python-subprocess32/python-subprocess32.mk
++++ b/package/python-subprocess32/python-subprocess32.mk
+@@ -11,4 +11,21 @@ PYTHON_SUBPROCESS32_SETUP_TYPE = setuptools
+ PYTHON_SUBPROCESS32_LICENSE = Python-2.0
+ PYTHON_SUBPROCESS32_LICENSE_FILES = LICENSE
+ 
++# The configure step needs to be run outside of the setup.py since it isn't
++# run correctly for cross-compiling
++define PYTHON_SUBPROCESS32_CONFIGURE_CMDS
++	(cd $(@D) && \
++	$(TARGET_CONFIGURE_OPTS) \
++	$(TARGET_CONFIGURE_ARGS) \
++	./configure \
++		--target=$(GNU_TARGET_NAME) \
++		--host=$(GNU_TARGET_NAME) \
++		--build=$(GNU_HOST_NAME) \
++		--prefix=/usr \
++		--exec-prefix=/usr \
++		--sysconfdir=/etc \
++		--program-prefix="" \
++	)
++endef
++
+ $(eval $(python-package))
+diff --git a/package/python3/python3.hash b/package/python3/python3.hash
+index a138724ff8..6e99cae59b 100644
+--- a/package/python3/python3.hash
++++ b/package/python3/python3.hash
+@@ -1,5 +1,5 @@
+-# From https://www.python.org/downloads/release/python-375/
+-md5 08ed8030b1183107c48f2092e79a87e2 Python-3.7.5.tar.xz
++# From https://www.python.org/downloads/release/python-376/
++md5 c08fbee72ad5c2c95b0f4e44bf6fd72c Python-3.7.6.tar.xz
+ # Locally computed
+-sha256 e85a76ea9f3d6c485ec1780fca4e500725a4a7bbc63c78ebc44170de9b619d94 Python-3.7.5.tar.xz
++sha256 55a2cce72049f0794e9a11a84862e9039af9183603b78bc60d89539f82cf533f Python-3.7.6.tar.xz
+ sha256 a77d71d6be6f9032e6b6e5d2cf6da68f9eeab9036edfbc043633c8979cd5e82c LICENSE
+diff --git a/package/python3/python3.mk b/package/python3/python3.mk
+index 625c059135..7f93372c22 100644
+--- a/package/python3/python3.mk
++++ b/package/python3/python3.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ PYTHON3_VERSION_MAJOR = 3.7
+-PYTHON3_VERSION = $(PYTHON3_VERSION_MAJOR).5
++PYTHON3_VERSION = $(PYTHON3_VERSION_MAJOR).6
+ PYTHON3_SOURCE = Python-$(PYTHON3_VERSION).tar.xz
+ PYTHON3_SITE = https://python.org/ftp/python/$(PYTHON3_VERSION)
+ PYTHON3_LICENSE = Python-2.0, others
+diff --git a/package/qpdf/Config.in b/package/qpdf/Config.in
+index 87a3192c5e..3a4fa6072c 100644
+--- a/package/qpdf/Config.in
++++ b/package/qpdf/Config.in
+@@ -1,7 +1,6 @@
+ config BR2_PACKAGE_QPDF
+ 	bool "qpdf"
+ 	depends on BR2_INSTALL_LIBSTDCPP
+-	select BR2_PACKAGE_PCRE
+ 	select BR2_PACKAGE_ZLIB
+ 	select BR2_PACKAGE_JPEG
+ 	help
+diff --git a/package/qpdf/qpdf.hash b/package/qpdf/qpdf.hash
+index 4bf2d3b30d..6109306720 100644
+--- a/package/qpdf/qpdf.hash
++++ b/package/qpdf/qpdf.hash
+@@ -1,4 +1,5 @@
+ # From https://sourceforge.net/projects/qpdf/files/qpdf/8.2.1/qpdf-8.2.1.sha512/download
+ sha512	ef3aeb4a7ca3ec48ab62341533eedcb2a6d0985767317ab72c22f0c0ecfef6849bfdc34b1bcec6427c7bde166143adb409c895ff40d8be6628e6323e27697a8c  qpdf-8.2.1.tar.gz
+ # Locally computed:
++sha256  cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30  LICENSE.txt
+ sha256  fb929ac30decb4dc3a2eea2bec6c43296a797c5d2d602deb3784ee39430583d5  Artistic-2.0
+diff --git a/package/qpdf/qpdf.mk b/package/qpdf/qpdf.mk
+index 2f6efdd73e..db46b99a1e 100644
+--- a/package/qpdf/qpdf.mk
++++ b/package/qpdf/qpdf.mk
+@@ -7,9 +7,9 @@
+ QPDF_VERSION = 8.2.1
+ QPDF_SITE = http://downloads.sourceforge.net/project/qpdf/qpdf/$(QPDF_VERSION)
+ QPDF_INSTALL_STAGING = YES
+-QPDF_LICENSE = Artistic-2.0
+-QPDF_LICENSE_FILES = Artistic-2.0
+-QPDF_DEPENDENCIES = pcre zlib jpeg
++QPDF_LICENSE = Apache-2.0 or Artistic-2.0
++QPDF_LICENSE_FILES = LICENSE.txt Artistic-2.0
++QPDF_DEPENDENCIES = zlib jpeg
+ 
+ QPDF_CONF_OPTS = --without-random
+ 
+diff --git a/package/qt-webkit-kiosk/Config.in b/package/qt-webkit-kiosk/Config.in
+index 71b4f8346a..13ed9bd22b 100644
+--- a/package/qt-webkit-kiosk/Config.in
++++ b/package/qt-webkit-kiosk/Config.in
+@@ -15,6 +15,8 @@ config BR2_PACKAGE_QT_WEBKIT_KIOSK
+ 	help
+ 	  Simple kiosk-mode browser powered by Qt5Webkit
+ 
++	  https://github.com/sergey-dryabzhinsky/qt-webkit-kiosk
++
+ if BR2_PACKAGE_QT_WEBKIT_KIOSK
+ 
+ config BR2_PACKAGE_QT_WEBKIT_KIOSK_SOUNDS
+diff --git a/package/qt5/qt5virtualkeyboard/Config.in b/package/qt5/qt5virtualkeyboard/Config.in
+index 3a60c27332..8e9cacd3c8 100644
+--- a/package/qt5/qt5virtualkeyboard/Config.in
++++ b/package/qt5/qt5virtualkeyboard/Config.in
+@@ -14,6 +14,8 @@ config BR2_PACKAGE_QT5VIRTUALKEYBOARD
+ 	  consists of a C++ backend supporting custom input methods as
+ 	  well as a UI frontend implemented in QML.
+ 
++	  https://doc.qt.io/qt-5/qtvirtualkeyboard-index.html
++
+ if BR2_PACKAGE_QT5VIRTUALKEYBOARD
+ 
+ config BR2_PACKAGE_QT5VIRTUALKEYBOARD_LANGUAGE_LAYOUTS
+diff --git a/package/rpcbind/Config.in b/package/rpcbind/Config.in
+index ced2d40944..9cde7bba39 100644
+--- a/package/rpcbind/Config.in
++++ b/package/rpcbind/Config.in
+@@ -9,6 +9,8 @@ config BR2_PACKAGE_RPCBIND
+ 	  The rpcbind utility is a server that converts RPC program
+ 	  numbers into universal addresses.
+ 
++	  https://sourceforge.net/projects/rpcbind/
++
+ comment "rpcbind needs a toolchain w/ threads"
+ 	depends on !BR2_TOOLCHAIN_HAS_THREADS
+ 	depends on BR2_USE_MMU
+diff --git a/package/rtl8821au/Config.in b/package/rtl8821au/Config.in
+index 9827ad5b94..87c191b22a 100644
+--- a/package/rtl8821au/Config.in
++++ b/package/rtl8821au/Config.in
+@@ -7,4 +7,4 @@ config BR2_PACKAGE_RTL8821AU
+ 	help
+ 	  rtl8821au wifi driver
+ 
+-	  https://github.com/paralin/rtl8821au
++	  https://github.com/abperiasamy/rtl8812AU_8821AU_linux
+diff --git a/package/runc/runc.hash b/package/runc/runc.hash
+index 969bb0bfb3..3e8eff3cca 100644
+--- a/package/runc/runc.hash
++++ b/package/runc/runc.hash
+@@ -1,3 +1,3 @@
+ # Locally computed
+-sha256	efe4ff9bbe49b19074346d65c914d809c0a3e90d062ea9619fe240f931f0b700  runc-v1.0.0-rc8.tar.gz
++sha256	2ec69c25df9f02c6fd38eb287145f8afba6772f809abe01df4534b5bfd68e8d4  runc-1.0.0-rc9.tar.gz
+ sha256  552a739c3b25792263f731542238b92f6f8d07e9a488eae27e6c4690038a8243  LICENSE
+diff --git a/package/runc/runc.mk b/package/runc/runc.mk
+index 55097e5a17..acf61ab160 100644
+--- a/package/runc/runc.mk
++++ b/package/runc/runc.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-RUNC_VERSION = v1.0.0-rc8
+-RUNC_SITE = $(call github,opencontainers,runc,$(RUNC_VERSION))
++RUNC_VERSION = 1.0.0-rc9
++RUNC_SITE = $(call github,opencontainers,runc,v$(RUNC_VERSION))
+ RUNC_LICENSE = Apache-2.0
+ RUNC_LICENSE_FILES = LICENSE
+ 
+diff --git a/package/rygel/rygel.mk b/package/rygel/rygel.mk
+index 1bf3ab4350..de5cacd120 100644
+--- a/package/rygel/rygel.mk
++++ b/package/rygel/rygel.mk
+@@ -17,8 +17,6 @@ RYGEL_DEPENDENCIES = \
+ 	sqlite \
+ 	$(TARGET_NLS_DEPENDENCIES)
+ RYGEL_INSTALL_STAGING = YES
+-# We're patching configure.ac
+-RYGEL_AUTORECONF = YES
+ 
+ RYGEL_CONF_ENV = LIBS=$(TARGET_NLS_LIBS)
+ RYGEL_CONF_OPTS += \
+diff --git a/package/samba4/samba4.hash b/package/samba4/samba4.hash
+index e0ea49a6f1..27b5551ada 100644
+--- a/package/samba4/samba4.hash
++++ b/package/samba4/samba4.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated after checking pgp signature
+-# https://download.samba.org/pub/samba/stable/samba-4.9.15.tar.asc
+-sha256 377102b80b97941bf0d131b828cae8415190e5bdd2928c2e2c954e29f1904496  samba-4.9.15.tar.gz
++# https://download.samba.org/pub/samba/stable/samba-4.9.17.tar.asc
++sha256 42467af2efab4793c7988561644a84de4000e96a87ce8239362c6d10abace295  samba-4.9.17.tar.gz
+ sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  COPYING
+diff --git a/package/samba4/samba4.mk b/package/samba4/samba4.mk
+index 3f30efac60..e15d0742e7 100644
+--- a/package/samba4/samba4.mk
++++ b/package/samba4/samba4.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SAMBA4_VERSION = 4.9.15
++SAMBA4_VERSION = 4.9.17
+ SAMBA4_SITE = https://download.samba.org/pub/samba/stable
+ SAMBA4_SOURCE = samba-$(SAMBA4_VERSION).tar.gz
+ SAMBA4_INSTALL_STAGING = YES
+diff --git a/package/sdl2/0002-fix-busy-loop-in-dlopen.patch b/package/sdl2/0002-fix-busy-loop-in-dlopen.patch
+new file mode 100644
+index 0000000000..e335f95b7e
+--- /dev/null
++++ b/package/sdl2/0002-fix-busy-loop-in-dlopen.patch
+@@ -0,0 +1,41 @@
++
++# HG changeset patch
++# User Paul Cercueil <paul@crapouillou.net>
++# Date 1576820863 28800
++# Node ID 4f5bef55183c677d12a7da8f3392879ed50670a3
++# Parent  01f16d7f36cb9f4fa02016e57fbe915fdea71cc8
++kmsdrm: Fix busy-loop within libc's dlopen()
++For some obscure reason, the order in which the libdrm/libgbm libraries
++are loaded matters.
++
++Without this fix, the first call to check_modesetting() will work and
++load then unload all symbols properly, but the second call to this
++function will lock up as soon as dlopen() is called on libdrm.
++
++Swapping the order in which the libdrm and libgbm libraries are loaded
++is enough to fix (or work around?) this issue.
++
++Fixes #4891:
++https://bugzilla.libsdl.org/show_bug.cgi?id=4891
++
++Upstream: https://hg.libsdl.org/SDL/rev/4f5bef55183c
++
++Signed-off-by: Paul Cercueil <paul@crapouillou.net>
++[yann.morin.1998@free.fr: add upstream commit URL]
++Signed-off-by: Yann E. MORIN <yann.morin.1998@free.fr>
++
++diff -r 01f16d7f36cb -r 4f5bef55183c src/video/kmsdrm/SDL_kmsdrmdyn.c
++--- a/src/video/kmsdrm/SDL_kmsdrmdyn.c	Thu Dec 19 21:45:44 2019 -0800
+++++ b/src/video/kmsdrm/SDL_kmsdrmdyn.c	Thu Dec 19 21:47:43 2019 -0800
++@@ -50,8 +50,8 @@
++ #endif
++ 
++ static kmsdrmdynlib kmsdrmlibs[] = {
++-    {NULL, SDL_VIDEO_DRIVER_KMSDRM_DYNAMIC},
++-    {NULL, SDL_VIDEO_DRIVER_KMSDRM_DYNAMIC_GBM}
+++    {NULL, SDL_VIDEO_DRIVER_KMSDRM_DYNAMIC_GBM},
+++    {NULL, SDL_VIDEO_DRIVER_KMSDRM_DYNAMIC}
++ };
++ 
++ static void *
++
+diff --git a/package/setserial/Config.in b/package/setserial/Config.in
+index 4ff2477e84..1182cb063b 100644
+--- a/package/setserial/Config.in
++++ b/package/setserial/Config.in
+@@ -4,3 +4,5 @@ config BR2_PACKAGE_SETSERIAL
+ 	depends on BR2_USE_MMU
+ 	help
+ 	  Setserial : configuration of serial ports
++
++	  http://setserial.sourceforge.net/
+diff --git a/package/spidev_test/Config.in b/package/spidev_test/Config.in
+index 0d8214cc29..44990c66b6 100644
+--- a/package/spidev_test/Config.in
++++ b/package/spidev_test/Config.in
+@@ -14,4 +14,4 @@ config BR2_PACKAGE_SPIDEV_TEST
+ 	  This means you won't have quad-pumped SPI support if your
+ 	  toolchain is too old.
+ 
+-	  https://www.kernel.org/doc/Documentation/spi/spidev_test.c
++	  https://www.kernel.org/doc/html/latest/spi/index.html
+diff --git a/package/syslog-ng/Config.in b/package/syslog-ng/Config.in
+index fbc236221a..6b3ad67523 100644
+--- a/package/syslog-ng/Config.in
++++ b/package/syslog-ng/Config.in
+@@ -13,7 +13,7 @@ config BR2_PACKAGE_SYSLOG_NG
+ 	  of input and output methods: syslog, unstructured text,
+ 	  queueing, SQL & NoSQL
+ 
+-	  https://syslog-ng.org/
++	  https://www.syslog-ng.com/products/open-source-log-management/
+ 
+ comment "syslog-ng needs a toolchain w/ wchar, threads"
+ 	depends on BR2_USE_MMU
+diff --git a/package/tcllib/Config.in b/package/tcllib/Config.in
+index b0a4ad060e..3a307b9aee 100644
+--- a/package/tcllib/Config.in
++++ b/package/tcllib/Config.in
+@@ -8,4 +8,4 @@ config BR2_PACKAGE_TCLLIB
+ 	  is to collect commonly used function into a single library,
+ 	  which users can rely on to be available and stable
+ 
+-	  http://tcl.activestate.com/software/tcllib/
++	  https://www.tcl.tk/software/tcllib/
+diff --git a/package/tftpd/Config.in b/package/tftpd/Config.in
+index ea5cb303f9..d4e81e70bc 100644
+--- a/package/tftpd/Config.in
++++ b/package/tftpd/Config.in
+@@ -6,3 +6,5 @@ config BR2_PACKAGE_TFTPD
+ 	depends on BR2_PACKAGE_BUSYBOX_SHOW_OTHERS
+ 	help
+ 	  HPA's Trivial File Transfer Protocol (tftp) server.
++
++	  https://git.kernel.org/pub/scm/network/tftp/tftp-hpa.git
+diff --git a/package/usbmount/Config.in b/package/usbmount/Config.in
+index f87bd911f2..8ce0ce7613 100644
+--- a/package/usbmount/Config.in
++++ b/package/usbmount/Config.in
+@@ -7,7 +7,7 @@ config BR2_PACKAGE_USBMOUNT
+ 	  devices when they are plugged in, and unmounts them when
+ 	  they are removed.
+ 
+-	  http://usbmount.alioth.debian.org/
++	  https://wiki.debian.org/usbmount
+ 
+ comment "usbmount requires udev to be enabled"
+ 	depends on !BR2_PACKAGE_HAS_UDEV
+diff --git a/package/w_scan/Config.in b/package/w_scan/Config.in
+index 01dbbae122..d5471200ad 100644
+--- a/package/w_scan/Config.in
++++ b/package/w_scan/Config.in
+@@ -11,4 +11,4 @@ config BR2_PACKAGE_W_SCAN
+ 	  capable of creating channels.conf files (in different output
+ 	  formats !) as well as initial tuning data for scan.
+ 
+-	  http://wirbel.htpc-forum.de/w_scan/index_en.html
++	  https://www.gen2vdr.de/wirbel/w_scan/index2.html
+diff --git a/package/wavpack/0001-fix-Github-issue-19-new-dependency-on-wchar-t-by-removing.patch b/package/wavpack/0001-fix-Github-issue-19-new-dependency-on-wchar-t-by-removing.patch
+deleted file mode 100644
+index e5faf91221..0000000000
+--- a/package/wavpack/0001-fix-Github-issue-19-new-dependency-on-wchar-t-by-removing.patch
++++ /dev/null
+@@ -1,70 +0,0 @@
+-From 876fc3f3907e871d0938ac6c8c5252f5f31abd1f Mon Sep 17 00:00:00 2001
+-From: David Bryant <david@wavpack.com>
+-Date: Thu, 16 Feb 2017 17:11:12 -0800
+-Subject: [PATCH] fix GitHub issue #19 (new dependency on wchar_t) by removing
+- dependency
+-
+-[Upstream commit: https://github.com/dbry/WavPack/commit/876fc3f3907e871d0938ac6c8c5252f5f31abd1f]
+-Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+----
+- cli/import_id3.c | 10 +++++-----
+- cli/wvtag.c      |  2 ++
+- 2 files changed, 7 insertions(+), 5 deletions(-)
+-
+-diff --git a/cli/import_id3.c b/cli/import_id3.c
+-index 51e54ee..fc30aeb 100644
+---- a/cli/import_id3.c
+-+++ b/cli/import_id3.c
+-@@ -34,7 +34,7 @@ static struct {
+- 
+- #define NUM_TEXT_TAG_ITEMS (sizeof (text_tag_table) / sizeof (text_tag_table [0]))
+- 
+--static int WideCharToUTF8 (const wchar_t *Wide, unsigned char *pUTF8, int len);
+-+static int WideCharToUTF8 (const uint16_t *Wide, unsigned char *pUTF8, int len);
+- static void Latin1ToUTF8 (void *string, int len);
+- 
+- // Import specified ID3v2.3 tag. The WavPack context accepts the tag items, and can be
+-@@ -163,7 +163,7 @@ int ImportID3v2 (WavpackContext *wpc, unsigned char *tag_data, int tag_size, cha
+-             }
+-             else if (frame_body [0] == 1 && frame_size > 2 && frame_body [1] == 0xFF && frame_body [2] == 0xFE) {
+-                 int nchars = (frame_size - 3) / 2;
+--                wchar_t *wide_string = malloc ((nchars + 1) * sizeof (wchar_t));
+-+                uint16_t *wide_string = malloc ((nchars + 1) * sizeof (uint16_t));
+-                 unsigned char *fp = frame_body + 3;
+- 
+-                 utf8_string = malloc ((nchars + 1) * 3);
+-@@ -297,9 +297,9 @@ int ImportID3v2 (WavpackContext *wpc, unsigned char *tag_data, int tag_size, cha
+- // may be less than the number of characters in the wide string if the buffer
+- // length is exceeded.
+- 
+--static int WideCharToUTF8 (const wchar_t *Wide, unsigned char *pUTF8, int len)
+-+static int WideCharToUTF8 (const uint16_t *Wide, unsigned char *pUTF8, int len)
+- {
+--    const wchar_t *pWide = Wide;
+-+    const uint16_t *pWide = Wide;
+-     int outndx = 0;
+- 
+-     while (*pWide) {
+-@@ -335,7 +335,7 @@ static int WideCharToUTF8 (const wchar_t *Wide, unsigned char *pUTF8, int len)
+- static void Latin1ToUTF8 (void *string, int len)
+- {
+-     int max_chars = (int) strlen (string);
+--    wchar_t *temp = (wchar_t *) malloc ((max_chars + 1) * 2);
+-+    uint16_t *temp = (uint16_t *) malloc ((max_chars + 1) * sizeof (uint16_t));
+- 
+-     MultiByteToWideChar (28591, 0, string, -1, temp, max_chars + 1);
+-     WideCharToUTF8 (temp, (unsigned char *) string, len);
+-diff --git a/cli/wvtag.c b/cli/wvtag.c
+-index 6e6512a..45e621e 100644
+---- a/cli/wvtag.c
+-+++ b/cli/wvtag.c
+-@@ -1344,7 +1344,9 @@ static void dump_UTF8_string (char *string, FILE *dst)
+- // resulting string will not fit in the specified buffer size then it is
+- // truncated.
+- 
+-+#if defined (_WIN32)
+- static int UTF8ToWideChar (const unsigned char *pUTF8, wchar_t *pWide);
+-+#endif
+- 
+- static void UTF8ToAnsi (char *string, int len)
+- {
+diff --git a/package/wavpack/0002-issue-27-do-not-overwrite-stack-on-corrupt-RF64-file.patch b/package/wavpack/0002-issue-27-do-not-overwrite-stack-on-corrupt-RF64-file.patch
+deleted file mode 100644
+index bda00999b9..0000000000
+--- a/package/wavpack/0002-issue-27-do-not-overwrite-stack-on-corrupt-RF64-file.patch
++++ /dev/null
+@@ -1,118 +0,0 @@
+-From d5bf76b5a88d044a1be1d5656698e3ba737167e5 Mon Sep 17 00:00:00 2001
+-From: David Bryant <david@wavpack.com>
+-Date: Sun, 4 Feb 2018 11:28:15 -0800
+-Subject: [PATCH] issue #27, do not overwrite stack on corrupt RF64 file
+-
+-Fixes CVE-2018-6767
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- cli/riff.c | 39 ++++++++++++++++++++++++++++++++-------
+- 1 file changed, 32 insertions(+), 7 deletions(-)
+-
+-diff --git a/cli/riff.c b/cli/riff.c
+-index 8b1af45..de98c1e 100644
+---- a/cli/riff.c
+-+++ b/cli/riff.c
+-@@ -42,6 +42,7 @@ typedef struct {
+- 
+- #pragma pack(pop)
+- 
+-+#define CS64ChunkFormat "4D"
+- #define DS64ChunkFormat "DDDL"
+- 
+- #define WAVPACK_NO_ERROR    0
+-@@ -101,13 +102,13 @@ int ParseRiffHeaderConfig (FILE *infile, char *infilename, char *fourcc, Wavpack
+- 
+-         if (!strncmp (chunk_header.ckID, "ds64", 4)) {
+-             if (chunk_header.ckSize < sizeof (DS64Chunk) ||
+--                !DoReadFile (infile, &ds64_chunk, chunk_header.ckSize, &bcount) ||
+--                bcount != chunk_header.ckSize) {
+-+                !DoReadFile (infile, &ds64_chunk, sizeof (DS64Chunk), &bcount) ||
+-+                bcount != sizeof (DS64Chunk)) {
+-                     error_line ("%s is not a valid .WAV file!", infilename);
+-                     return WAVPACK_SOFT_ERROR;
+-             }
+-             else if (!(config->qmode & QMODE_NO_STORE_WRAPPER) &&
+--                !WavpackAddWrapper (wpc, &ds64_chunk, chunk_header.ckSize)) {
+-+                !WavpackAddWrapper (wpc, &ds64_chunk, sizeof (DS64Chunk))) {
+-                     error_line ("%s", WavpackGetErrorMessage (wpc));
+-                     return WAVPACK_SOFT_ERROR;
+-             }
+-@@ -315,10 +316,11 @@ int ParseRiffHeaderConfig (FILE *infile, char *infilename, char *fourcc, Wavpack
+- 
+- int WriteRiffHeader (FILE *outfile, WavpackContext *wpc, int64_t total_samples, int qmode)
+- {
+--    int do_rf64 = 0, write_junk = 1;
+-+    int do_rf64 = 0, write_junk = 1, table_length = 0;
+-     ChunkHeader ds64hdr, datahdr, fmthdr;
+-     RiffChunkHeader riffhdr;
+-     DS64Chunk ds64_chunk;
+-+    CS64Chunk cs64_chunk;
+-     JunkChunk junkchunk;
+-     WaveHeader wavhdr;
+-     uint32_t bcount;
+-@@ -380,6 +382,7 @@ int WriteRiffHeader (FILE *outfile, WavpackContext *wpc, int64_t total_samples,
+-     strncpy (riffhdr.formType, "WAVE", sizeof (riffhdr.formType));
+-     total_riff_bytes = sizeof (riffhdr) + wavhdrsize + sizeof (datahdr) + ((total_data_bytes + 1) & ~(int64_t)1);
+-     if (do_rf64) total_riff_bytes += sizeof (ds64hdr) + sizeof (ds64_chunk);
+-+    total_riff_bytes += table_length * sizeof (CS64Chunk);
+-     if (write_junk) total_riff_bytes += sizeof (junkchunk);
+-     strncpy (fmthdr.ckID, "fmt ", sizeof (fmthdr.ckID));
+-     strncpy (datahdr.ckID, "data", sizeof (datahdr.ckID));
+-@@ -394,11 +397,12 @@ int WriteRiffHeader (FILE *outfile, WavpackContext *wpc, int64_t total_samples,
+- 
+-     if (do_rf64) {
+-         strncpy (ds64hdr.ckID, "ds64", sizeof (ds64hdr.ckID));
+--        ds64hdr.ckSize = sizeof (ds64_chunk);
+-+        ds64hdr.ckSize = sizeof (ds64_chunk) + (table_length * sizeof (CS64Chunk));
+-         CLEAR (ds64_chunk);
+-         ds64_chunk.riffSize64 = total_riff_bytes;
+-         ds64_chunk.dataSize64 = total_data_bytes;
+-         ds64_chunk.sampleCount64 = total_samples;
+-+        ds64_chunk.tableLength = table_length;
+-         riffhdr.ckSize = (uint32_t) -1;
+-         datahdr.ckSize = (uint32_t) -1;
+-         WavpackNativeToLittleEndian (&ds64hdr, ChunkHeaderFormat);
+-@@ -409,6 +413,14 @@ int WriteRiffHeader (FILE *outfile, WavpackContext *wpc, int64_t total_samples,
+-         datahdr.ckSize = (uint32_t) total_data_bytes;
+-     }
+- 
+-+    // this "table" is just a dummy placeholder for testing (normally not written)
+-+
+-+    if (table_length) {
+-+        strncpy (cs64_chunk.ckID, "dmmy", sizeof (cs64_chunk.ckID));
+-+        cs64_chunk.chunkSize64 = 12345678;
+-+        WavpackNativeToLittleEndian (&cs64_chunk, CS64ChunkFormat);
+-+    }
+-+
+-     // write the RIFF chunks up to just before the data starts
+- 
+-     WavpackNativeToLittleEndian (&riffhdr, ChunkHeaderFormat);
+-@@ -418,8 +430,21 @@ int WriteRiffHeader (FILE *outfile, WavpackContext *wpc, int64_t total_samples,
+- 
+-     if (!DoWriteFile (outfile, &riffhdr, sizeof (riffhdr), &bcount) || bcount != sizeof (riffhdr) ||
+-         (do_rf64 && (!DoWriteFile (outfile, &ds64hdr, sizeof (ds64hdr), &bcount) || bcount != sizeof (ds64hdr))) ||
+--        (do_rf64 && (!DoWriteFile (outfile, &ds64_chunk, sizeof (ds64_chunk), &bcount) || bcount != sizeof (ds64_chunk))) ||
+--        (write_junk && (!DoWriteFile (outfile, &junkchunk, sizeof (junkchunk), &bcount) || bcount != sizeof (junkchunk))) ||
+-+        (do_rf64 && (!DoWriteFile (outfile, &ds64_chunk, sizeof (ds64_chunk), &bcount) || bcount != sizeof (ds64_chunk)))) {
+-+            error_line ("can't write .WAV data, disk probably full!");
+-+            return FALSE;
+-+    }
+-+
+-+    // again, this is normally not written except for testing
+-+
+-+    while (table_length--)
+-+        if (!DoWriteFile (outfile, &cs64_chunk, sizeof (cs64_chunk), &bcount) || bcount != sizeof (cs64_chunk)) {
+-+            error_line ("can't write .WAV data, disk probably full!");
+-+            return FALSE;
+-+        }
+-+
+-+
+-+    if ((write_junk && (!DoWriteFile (outfile, &junkchunk, sizeof (junkchunk), &bcount) || bcount != sizeof (junkchunk))) ||
+-         !DoWriteFile (outfile, &fmthdr, sizeof (fmthdr), &bcount) || bcount != sizeof (fmthdr) ||
+-         !DoWriteFile (outfile, &wavhdr, wavhdrsize, &bcount) || bcount != wavhdrsize ||
+-         !DoWriteFile (outfile, &datahdr, sizeof (datahdr), &bcount) || bcount != sizeof (datahdr)) {
+--- 
+-2.11.0
+-
+diff --git a/package/wavpack/0003-issue-28-do-not-overwrite-heap-on-corrupt-DSDIFF-fil.patch b/package/wavpack/0003-issue-28-do-not-overwrite-heap-on-corrupt-DSDIFF-fil.patch
+deleted file mode 100644
+index 950877b03c..0000000000
+--- a/package/wavpack/0003-issue-28-do-not-overwrite-heap-on-corrupt-DSDIFF-fil.patch
++++ /dev/null
+@@ -1,38 +0,0 @@
+-From 36a24c7881427d2e1e4dc1cef58f19eee0d13aec Mon Sep 17 00:00:00 2001
+-From: David Bryant <david@wavpack.com>
+-Date: Sat, 10 Feb 2018 16:01:39 -0800
+-Subject: [PATCH] issue #28, do not overwrite heap on corrupt DSDIFF file
+-
+-Fixes CVE-2018-7253
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- cli/dsdiff.c | 12 +++++++++++-
+- 1 file changed, 11 insertions(+), 1 deletion(-)
+-
+-diff --git a/cli/dsdiff.c b/cli/dsdiff.c
+-index 410dc1c..c016df9 100644
+---- a/cli/dsdiff.c
+-+++ b/cli/dsdiff.c
+-@@ -153,7 +153,17 @@ int ParseDsdiffHeaderConfig (FILE *infile, char *infilename, char *fourcc, Wavpa
+-                 error_line ("dsdiff file version = 0x%08x", version);
+-         }
+-         else if (!strncmp (dff_chunk_header.ckID, "PROP", 4)) {
+--            char *prop_chunk = malloc ((size_t) dff_chunk_header.ckDataSize);
+-+            char *prop_chunk;
+-+
+-+            if (dff_chunk_header.ckDataSize < 4 || dff_chunk_header.ckDataSize > 1024) {
+-+                error_line ("%s is not a valid .DFF file!", infilename);
+-+                return WAVPACK_SOFT_ERROR;
+-+            }
+-+
+-+            if (debug_logging_mode)
+-+                error_line ("got PROP chunk of %d bytes total", (int) dff_chunk_header.ckDataSize);
+-+
+-+            prop_chunk = malloc ((size_t) dff_chunk_header.ckDataSize);
+- 
+-             if (!DoReadFile (infile, prop_chunk, (uint32_t) dff_chunk_header.ckDataSize, &bcount) ||
+-                 bcount != dff_chunk_header.ckDataSize) {
+--- 
+-2.11.0
+-
+diff --git a/package/wavpack/0004-issue-28-fix-buffer-overflows-and-bad-allocs-on-corr.patch b/package/wavpack/0004-issue-28-fix-buffer-overflows-and-bad-allocs-on-corr.patch
+deleted file mode 100644
+index 142e81ff7a..0000000000
+--- a/package/wavpack/0004-issue-28-fix-buffer-overflows-and-bad-allocs-on-corr.patch
++++ /dev/null
+@@ -1,72 +0,0 @@
+-From 8e3fe45a7bac31d9a3b558ae0079e2d92a04799e Mon Sep 17 00:00:00 2001
+-From: David Bryant <david@wavpack.com>
+-Date: Sun, 11 Feb 2018 16:37:47 -0800
+-Subject: [PATCH] issue #28, fix buffer overflows and bad allocs on corrupt CAF
+- files
+-
+-Fixes CVE-2018-7254
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- cli/caff.c | 30 +++++++++++++++++++++++-------
+- 1 file changed, 23 insertions(+), 7 deletions(-)
+-
+-diff --git a/cli/caff.c b/cli/caff.c
+-index ae57c4b..6248a71 100644
+---- a/cli/caff.c
+-+++ b/cli/caff.c
+-@@ -89,8 +89,8 @@ typedef struct
+- 
+- #define CAFChannelDescriptionFormat "LLLLL"
+- 
+--static const char TMH_full [] = { 1,2,3,13,9,10,5,6,12,14,15,16,17,9,4,18,7,8,19,20,21 };
+--static const char TMH_std [] = { 1,2,3,11,8,9,5,6,10,12,13,14,15,7,4,16 };
+-+static const char TMH_full [] = { 1,2,3,13,9,10,5,6,12,14,15,16,17,9,4,18,7,8,19,20,21,0 };
+-+static const char TMH_std [] = { 1,2,3,11,8,9,5,6,10,12,13,14,15,7,4,16,0 };
+- 
+- static struct {
+-     uint32_t mChannelLayoutTag;     // Core Audio layout, 100 - 146 in high word, num channels in low word
+-@@ -274,10 +274,19 @@ int ParseCaffHeaderConfig (FILE *infile, char *infilename, char *fourcc, Wavpack
+-             }
+-         }
+-         else if (!strncmp (caf_chunk_header.mChunkType, "chan", 4)) {
+--            CAFChannelLayout *caf_channel_layout = malloc ((size_t) caf_chunk_header.mChunkSize);
+-+            CAFChannelLayout *caf_channel_layout;
+- 
+--            if (caf_chunk_header.mChunkSize < sizeof (CAFChannelLayout) ||
+--                !DoReadFile (infile, caf_channel_layout, (uint32_t) caf_chunk_header.mChunkSize, &bcount) ||
+-+            if (caf_chunk_header.mChunkSize < sizeof (CAFChannelLayout) || caf_chunk_header.mChunkSize > 1024) {
+-+                error_line ("this .CAF file has an invalid 'chan' chunk!");
+-+                return WAVPACK_SOFT_ERROR;
+-+            }
+-+
+-+            if (debug_logging_mode)
+-+                error_line ("'chan' chunk is %d bytes", (int) caf_chunk_header.mChunkSize);
+-+
+-+            caf_channel_layout = malloc ((size_t) caf_chunk_header.mChunkSize);
+-+
+-+            if (!DoReadFile (infile, caf_channel_layout, (uint32_t) caf_chunk_header.mChunkSize, &bcount) ||
+-                 bcount != caf_chunk_header.mChunkSize) {
+-                     error_line ("%s is not a valid .CAF file!", infilename);
+-                     free (caf_channel_layout);
+-@@ -495,8 +504,15 @@ int ParseCaffHeaderConfig (FILE *infile, char *infilename, char *fourcc, Wavpack
+-         }
+-         else {          // just copy unknown chunks to output file
+- 
+--            int bytes_to_copy = (uint32_t) caf_chunk_header.mChunkSize;
+--            char *buff = malloc (bytes_to_copy);
+-+            uint32_t bytes_to_copy = (uint32_t) caf_chunk_header.mChunkSize;
+-+            char *buff;
+-+
+-+            if (caf_chunk_header.mChunkSize < 0 || caf_chunk_header.mChunkSize > 1048576) {
+-+                error_line ("%s is not a valid .CAF file!", infilename);
+-+                return WAVPACK_SOFT_ERROR;
+-+            }
+-+
+-+            buff = malloc (bytes_to_copy);
+- 
+-             if (debug_logging_mode)
+-                 error_line ("extra unknown chunk \"%c%c%c%c\" of %d bytes",
+--- 
+-2.11.0
+-
+diff --git a/package/wavpack/0005-issue-30-issue-31-issue-32-no-multiple-format-chunks.patch b/package/wavpack/0005-issue-30-issue-31-issue-32-no-multiple-format-chunks.patch
+deleted file mode 100644
+index f837a0e966..0000000000
+--- a/package/wavpack/0005-issue-30-issue-31-issue-32-no-multiple-format-chunks.patch
++++ /dev/null
+@@ -1,64 +0,0 @@
+-From 26cb47f99d481ad9b93eeff80d26e6b63bbd7e15 Mon Sep 17 00:00:00 2001
+-From: David Bryant <david@wavpack.com>
+-Date: Tue, 24 Apr 2018 22:18:07 -0700
+-Subject: [PATCH] issue #30 issue #31 issue #32: no multiple format chunks in
+- WAV or W64
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- cli/riff.c   | 7 ++++++-
+- cli/wave64.c | 6 ++++++
+- 2 files changed, 12 insertions(+), 1 deletion(-)
+-
+-diff --git a/cli/riff.c b/cli/riff.c
+-index 7bddf63..5d6452e 100644
+---- a/cli/riff.c
+-+++ b/cli/riff.c
+-@@ -53,7 +53,7 @@ extern int debug_logging_mode;
+- 
+- int ParseRiffHeaderConfig (FILE *infile, char *infilename, char *fourcc, WavpackContext *wpc, WavpackConfig *config)
+- {
+--    int is_rf64 = !strncmp (fourcc, "RF64", 4), got_ds64 = 0;
+-+    int is_rf64 = !strncmp (fourcc, "RF64", 4), got_ds64 = 0, format_chunk = 0;
+-     int64_t total_samples = 0, infilesize;
+-     RiffChunkHeader riff_chunk_header;
+-     ChunkHeader chunk_header;
+-@@ -140,6 +140,11 @@ int ParseRiffHeaderConfig (FILE *infile, char *infilename, char *fourcc, Wavpack
+-         else if (!strncmp (chunk_header.ckID, "fmt ", 4)) {     // if it's the format chunk, we want to get some info out of there and
+-             int supported = TRUE, format;                        // make sure it's a .wav file we can handle
+- 
+-+            if (format_chunk++) {
+-+                error_line ("%s is not a valid .WAV file!", infilename);
+-+                return WAVPACK_SOFT_ERROR;
+-+            }
+-+
+-             if (chunk_header.ckSize < 16 || chunk_header.ckSize > sizeof (WaveHeader) ||
+-                 !DoReadFile (infile, &WaveHeader, chunk_header.ckSize, &bcount) ||
+-                 bcount != chunk_header.ckSize) {
+-diff --git a/cli/wave64.c b/cli/wave64.c
+-index fa928a0..0388dc7 100644
+---- a/cli/wave64.c
+-+++ b/cli/wave64.c
+-@@ -53,6 +53,7 @@ int ParseWave64HeaderConfig (FILE *infile, char *infilename, char *fourcc, Wavpa
+-     Wave64ChunkHeader chunk_header;
+-     Wave64FileHeader filehdr;
+-     WaveHeader WaveHeader;
+-+    int format_chunk = 0;
+-     uint32_t bcount;
+- 
+-     infilesize = DoGetFileSize (infile);
+-@@ -104,6 +105,11 @@ int ParseWave64HeaderConfig (FILE *infile, char *infilename, char *fourcc, Wavpa
+-         if (!memcmp (chunk_header.ckID, fmt_guid, sizeof (fmt_guid))) {
+-             int supported = TRUE, format;
+- 
+-+            if (format_chunk++) {
+-+                error_line ("%s is not a valid .W64 file!", infilename);
+-+                return WAVPACK_SOFT_ERROR;
+-+            }
+-+
+-             chunk_header.ckSize = (chunk_header.ckSize + 7) & ~7L;
+- 
+-             if (chunk_header.ckSize < 16 || chunk_header.ckSize > sizeof (WaveHeader) ||
+--- 
+-2.11.0
+-
+diff --git a/package/wavpack/0006-issue-33-sanitize-size-of-unknown-chunks-before-mall.patch b/package/wavpack/0006-issue-33-sanitize-size-of-unknown-chunks-before-mall.patch
+deleted file mode 100644
+index 76ebce66d6..0000000000
+--- a/package/wavpack/0006-issue-33-sanitize-size-of-unknown-chunks-before-mall.patch
++++ /dev/null
+@@ -1,75 +0,0 @@
+-From 6f8bb34c2993a48ab9afbe353e6d0cff7c8d821d Mon Sep 17 00:00:00 2001
+-From: David Bryant <david@wavpack.com>
+-Date: Tue, 24 Apr 2018 17:27:01 -0700
+-Subject: [PATCH] issue #33, sanitize size of unknown chunks before malloc()
+-
+-Signed-off-by: Peter Korsgaard <peter@korsgaard.com>
+----
+- cli/dsdiff.c | 9 ++++++++-
+- cli/riff.c   | 9 ++++++++-
+- cli/wave64.c | 9 ++++++++-
+- 3 files changed, 24 insertions(+), 3 deletions(-)
+-
+-diff --git a/cli/dsdiff.c b/cli/dsdiff.c
+-index c016df9..fa56bbb 100644
+---- a/cli/dsdiff.c
+-+++ b/cli/dsdiff.c
+-@@ -279,7 +279,14 @@ int ParseDsdiffHeaderConfig (FILE *infile, char *infilename, char *fourcc, Wavpa
+-         else {          // just copy unknown chunks to output file
+- 
+-             int bytes_to_copy = (int)(((dff_chunk_header.ckDataSize) + 1) & ~(int64_t)1);
+--            char *buff = malloc (bytes_to_copy);
+-+            char *buff;
+-+
+-+            if (bytes_to_copy < 0 || bytes_to_copy > 4194304) {
+-+                error_line ("%s is not a valid .DFF file!", infilename);
+-+                return WAVPACK_SOFT_ERROR;
+-+            }
+-+
+-+            buff = malloc (bytes_to_copy);
+- 
+-             if (debug_logging_mode)
+-                 error_line ("extra unknown chunk \"%c%c%c%c\" of %d bytes",
+-diff --git a/cli/riff.c b/cli/riff.c
+-index de98c1e..7bddf63 100644
+---- a/cli/riff.c
+-+++ b/cli/riff.c
+-@@ -286,7 +286,14 @@ int ParseRiffHeaderConfig (FILE *infile, char *infilename, char *fourcc, Wavpack
+-         else {          // just copy unknown chunks to output file
+- 
+-             int bytes_to_copy = (chunk_header.ckSize + 1) & ~1L;
+--            char *buff = malloc (bytes_to_copy);
+-+            char *buff;
+-+
+-+            if (bytes_to_copy < 0 || bytes_to_copy > 4194304) {
+-+                error_line ("%s is not a valid .WAV file!", infilename);
+-+                return WAVPACK_SOFT_ERROR;
+-+            }
+-+
+-+            buff = malloc (bytes_to_copy);
+- 
+-             if (debug_logging_mode)
+-                 error_line ("extra unknown chunk \"%c%c%c%c\" of %d bytes",
+-diff --git a/cli/wave64.c b/cli/wave64.c
+-index 591d640..fa928a0 100644
+---- a/cli/wave64.c
+-+++ b/cli/wave64.c
+-@@ -241,7 +241,14 @@ int ParseWave64HeaderConfig (FILE *infile, char *infilename, char *fourcc, Wavpa
+-         }
+-         else {          // just copy unknown chunks to output file
+-             int bytes_to_copy = (chunk_header.ckSize + 7) & ~7L;
+--            char *buff = malloc (bytes_to_copy);
+-+            char *buff;
+-+
+-+            if (bytes_to_copy < 0 || bytes_to_copy > 4194304) {
+-+                error_line ("%s is not a valid .W64 file!", infilename);
+-+                return WAVPACK_SOFT_ERROR;
+-+            }
+-+
+-+            buff = malloc (bytes_to_copy);
+- 
+-             if (debug_logging_mode)
+-                 error_line ("extra unknown chunk \"%c%c%c%c\" of %d bytes",
+--- 
+-2.11.0
+-
+diff --git a/package/wavpack/wavpack.hash b/package/wavpack/wavpack.hash
+index 56ba7d839c..6b1f90a1fe 100644
+--- a/package/wavpack/wavpack.hash
++++ b/package/wavpack/wavpack.hash
+@@ -1,2 +1,3 @@
+ # locally computed hash
+-sha256  1939627d5358d1da62bc6158d63f7ed12905552f3a799c799ee90296a7612944  wavpack-5.1.0.tar.bz2
++sha256  77e5b1cfa26e387e4275b362f0c3fb9a27106447d9bce00f9f794f30badb77e3  wavpack-5.2.0.tar.xz
++sha256  2ab58075e26305cc16920e9867c1d43f46ce81adab2051100dd316a3a93a2619  COPYING
+diff --git a/package/wavpack/wavpack.mk b/package/wavpack/wavpack.mk
+index c23b12752a..9246b95397 100644
+--- a/package/wavpack/wavpack.mk
++++ b/package/wavpack/wavpack.mk
+@@ -4,9 +4,10 @@
+ #
+ ################################################################################
+ 
+-WAVPACK_VERSION = 5.1.0
+-WAVPACK_SITE = http://www.wavpack.com
+-WAVPACK_SOURCE = wavpack-$(WAVPACK_VERSION).tar.bz2
++WAVPACK_VERSION = 5.2.0
++WAVPACK_SITE = \
++	https://github.com/dbry/WavPack/releases/download/$(WAVPACK_VERSION)
++WAVPACK_SOURCE = wavpack-$(WAVPACK_VERSION).tar.xz
+ WAVPACK_INSTALL_STAGING = YES
+ WAVPACK_DEPENDENCIES = $(if $(BR2_ENABLE_LOCALE),,libiconv)
+ WAVPACK_LICENSE = BSD-3-Clause
+diff --git a/package/wsapi-fcgi/Config.in b/package/wsapi-fcgi/Config.in
+index 73ef8cb00c..657ae78c66 100644
+--- a/package/wsapi-fcgi/Config.in
++++ b/package/wsapi-fcgi/Config.in
+@@ -8,4 +8,4 @@ config BR2_PACKAGE_WSAPI_FCGI
+ 	  applications. This is the rock that contains the FCGI module
+ 	  lfcgi.
+ 
+-	  http://www.keplerproject.org/wsapi
++	  https://luarocks.org/modules/mascarenhas/wsapi-fcgi
+diff --git a/package/wsapi-xavante/Config.in b/package/wsapi-xavante/Config.in
+index 7079ad4eda..7af23b84e4 100644
+--- a/package/wsapi-xavante/Config.in
++++ b/package/wsapi-xavante/Config.in
+@@ -7,4 +7,4 @@ config BR2_PACKAGE_WSAPI_XAVANTE
+ 	  applications. This is the rock that contains the Xavante
+ 	  adapter and launcher.
+ 
+-	  http://www.keplerproject.org/wsapi
++	  https://keplerproject.github.io/wsapi/
+diff --git a/package/wsapi/Config.in b/package/wsapi/Config.in
+index 72e2dcd8e0..e758e8e0a6 100644
+--- a/package/wsapi/Config.in
++++ b/package/wsapi/Config.in
+@@ -6,4 +6,4 @@ config BR2_PACKAGE_WSAPI
+ 	help
+ 	  API that abstracts the web server from Lua web applications.
+ 
+-	  http://www.keplerproject.org/wsapi
++	  https://keplerproject.github.io/wsapi/
+diff --git a/package/x11r7/xserver_xorg-server/1.20.5/0001-modesettings-needs-dri2.patch b/package/x11r7/xserver_xorg-server/1.20.6/0001-modesettings-needs-dri2.patch
+similarity index 89%
+rename from package/x11r7/xserver_xorg-server/1.20.5/0001-modesettings-needs-dri2.patch
+rename to package/x11r7/xserver_xorg-server/1.20.6/0001-modesettings-needs-dri2.patch
+index 790371c456..97ec29d044 100644
+--- a/package/x11r7/xserver_xorg-server/1.20.5/0001-modesettings-needs-dri2.patch
++++ b/package/x11r7/xserver_xorg-server/1.20.6/0001-modesettings-needs-dri2.patch
+@@ -1,7 +1,7 @@
+ Kernel modesettings support also depends on dri2, see
+ http://cgit.freedesktop.org/xorg/xserver/tree/hw/xfree86/drivers/modesetting/Makefile.am#n46
+ 
+-Patch sent upstream: https://bugs.freedesktop.org/show_bug.cgi?id=91584
++Patch sent upstream: https://gitlab.freedesktop.org/xorg/xserver/issues/479
+ 
+ [rebased for version 1.20.0]
+ Signed-off-by: Bernd Kuhls <bernd.kuhls@t-online.de>
+diff --git a/package/x11r7/xserver_xorg-server/1.20.5/0002-configure.ac-Fix-check-for-CLOCK_MONOTONIC.patch b/package/x11r7/xserver_xorg-server/1.20.6/0002-configure.ac-Fix-check-for-CLOCK_MONOTONIC.patch
+similarity index 100%
+rename from package/x11r7/xserver_xorg-server/1.20.5/0002-configure.ac-Fix-check-for-CLOCK_MONOTONIC.patch
+rename to package/x11r7/xserver_xorg-server/1.20.6/0002-configure.ac-Fix-check-for-CLOCK_MONOTONIC.patch
+diff --git a/package/x11r7/xserver_xorg-server/1.20.5/0003-Remove-check-for-useSIGIO-option.patch b/package/x11r7/xserver_xorg-server/1.20.6/0003-Remove-check-for-useSIGIO-option.patch
+similarity index 100%
+rename from package/x11r7/xserver_xorg-server/1.20.5/0003-Remove-check-for-useSIGIO-option.patch
+rename to package/x11r7/xserver_xorg-server/1.20.6/0003-Remove-check-for-useSIGIO-option.patch
+diff --git a/package/x11r7/xserver_xorg-server/1.20.5/0004-include-misc.h-fix-uClibc-build.patch b/package/x11r7/xserver_xorg-server/1.20.6/0004-include-misc.h-fix-uClibc-build.patch
+similarity index 100%
+rename from package/x11r7/xserver_xorg-server/1.20.5/0004-include-misc.h-fix-uClibc-build.patch
+rename to package/x11r7/xserver_xorg-server/1.20.6/0004-include-misc.h-fix-uClibc-build.patch
+diff --git a/package/x11r7/xserver_xorg-server/1.20.5/0005-hw-xwayland-Makefile.am-fix-build-without-glx.patch b/package/x11r7/xserver_xorg-server/1.20.6/0005-hw-xwayland-Makefile.am-fix-build-without-glx.patch
+similarity index 100%
+rename from package/x11r7/xserver_xorg-server/1.20.5/0005-hw-xwayland-Makefile.am-fix-build-without-glx.patch
+rename to package/x11r7/xserver_xorg-server/1.20.6/0005-hw-xwayland-Makefile.am-fix-build-without-glx.patch
+diff --git a/package/x11r7/xserver_xorg-server/1.20.6/0006-hw-xfree86-common-xf86Init.c-fix-build-without-glx.patch b/package/x11r7/xserver_xorg-server/1.20.6/0006-hw-xfree86-common-xf86Init.c-fix-build-without-glx.patch
+new file mode 100644
+index 0000000000..f1fdfe3e37
+--- /dev/null
++++ b/package/x11r7/xserver_xorg-server/1.20.6/0006-hw-xfree86-common-xf86Init.c-fix-build-without-glx.patch
+@@ -0,0 +1,45 @@
++From 49456e0a37fac7bc9d1f01bc1519fb0d699956db Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Fri, 27 Dec 2019 23:33:37 +0100
++Subject: [PATCH] hw/xfree86/common/xf86Init.c: fix build without glx
++
++Since commit d8ec33fe0542141aed1d9016d2ecaf52da944b4b, an include on
++glxvndabi.h has been added to hw/xfree86/common/xf86Init.c
++
++However, if glx is disabled through --disable-glx and GLX headers are
++not installed in the build's environment, build fails on:
++
++In file included from xf86Init.c:81:
++../../../include/glxvndabi.h:64:10: fatal error: GL/glxproto.h: No such file or directory
++   64 | #include <GL/glxproto.h>
++      |          ^~~~~~~~~~~~~~~
++
++Fix this failure by removing this include which does not seem to be
++needed (an other option would have been to keep it under an ifdef GLXEXT
++block)
++
++Fixes:
++ - http://autobuild.buildroot.org/results/de838a843f97673d1381a55fd4e9b07164693913
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Retrieved from:
++https://gitlab.freedesktop.org/xorg/xserver/commit/49456e0a37fac7bc9d1f01bc1519fb0d699956db]
++---
++ hw/xfree86/common/xf86Init.c | 1 -
++ 1 file changed, 1 deletion(-)
++
++diff --git a/hw/xfree86/common/xf86Init.c b/hw/xfree86/common/xf86Init.c
++index 0631c7237..e6fb11398 100644
++--- a/hw/xfree86/common/xf86Init.c
+++++ b/hw/xfree86/common/xf86Init.c
++@@ -74,7 +74,6 @@
++ #include "xf86Crtc.h"
++ #include "picturestr.h"
++ #include "randrstr.h"
++-#include "glxvndabi.h"
++ #include "xf86Bus.h"
++ #ifdef XSERVER_LIBPCIACCESS
++ #include "xf86VGAarbiter.h"
++-- 
++2.24.1
++
+diff --git a/package/x11r7/xserver_xorg-server/Config.in b/package/x11r7/xserver_xorg-server/Config.in
+index ec4ba91502..982b9bcb4e 100644
+--- a/package/x11r7/xserver_xorg-server/Config.in
++++ b/package/x11r7/xserver_xorg-server/Config.in
+@@ -61,7 +61,7 @@ choice
+ 	bool "X Window System server version"
+ 
+ config BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_20
+-	bool "1.20.5"
++	bool "1.20.6"
+ 	select BR2_PACKAGE_XSERVER_XORG_SERVER_VIDEODRV_ABI_24
+ 	select BR2_PACKAGE_XLIB_LIBXFONT2
+ 
+@@ -79,7 +79,7 @@ endchoice
+ 
+ config BR2_PACKAGE_XSERVER_XORG_SERVER_VERSION
+ 	string
+-	default "1.20.5" if BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_20
++	default "1.20.6" if BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_20
+ 	default "1.17.4" if BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_17
+ 	default "1.14.7" if BR2_PACKAGE_XSERVER_XORG_SERVER_V_1_14
+ 
+diff --git a/package/x11r7/xserver_xorg-server/xserver_xorg-server.hash b/package/x11r7/xserver_xorg-server/xserver_xorg-server.hash
+index f79dc0c4eb..cd1b560162 100644
+--- a/package/x11r7/xserver_xorg-server/xserver_xorg-server.hash
++++ b/package/x11r7/xserver_xorg-server/xserver_xorg-server.hash
+@@ -3,8 +3,11 @@ sha1   7a95765e56b124758fcd7b609589e65b8870880b                                x
+ sha256 fcf66fa6ad86227613d2d3e8ae13ded297e2a1e947e9060a083eaf80d323451f        xorg-server-1.14.7.tar.bz2
+ # From https://lists.x.org/archives/xorg-announce/2015-October/002650.html
+ sha256 0c4b45c116a812a996eb432d8508cf26c2ec8c3916ff2a50781796882f8d6457        xorg-server-1.17.4.tar.bz2
+-# From https://lists.x.org/archives/xorg-announce/2019-May/002993.html
+-md5 c9fc7e21e11286dbedd22c00df652130  xorg-server-1.20.5.tar.bz2
+-sha1 fea6fd34c7f48b3c69fbecd8fb294eaa1498e69c  xorg-server-1.20.5.tar.bz2
+-sha256 a81d8243f37e75a03d4f8c55f96d0bc25802be6ec45c3bfa5cb614c6d01bac9d  xorg-server-1.20.5.tar.bz2
+-sha512 625f0626b122cf95600abe382c3217348999357a0e2d2443092f1b67cff1c98d7ef09303884ceaeac181e0555dc56b0d4d44bda45cc464dac2d9a50c5b32d631  xorg-server-1.20.5.tar.bz2
++# From https://lists.x.org/archives/xorg-announce/2019-November/003032.html
++md5 a98170084f2c8fed480d2ff601f8a14b  xorg-server-1.20.6.tar.bz2
++sha1 59473e72136113f3a35b1ab5a5cfcbcad955b660  xorg-server-1.20.6.tar.bz2
++sha256 6316146304e6e8a36d5904987ae2917b5d5b195dc9fc63d67f7aca137e5a51d1  xorg-server-1.20.6.tar.bz2
++sha512 9aa0ba4aee92fe628f2b8c41e4fe0134dc86154bb8787f907884ef2fd970e18e68e72ea8a1beb706d11ecf155b2abc9731f1abadff251ed592f8cca3b1240dd6  xorg-server-1.20.6.tar.bz2
++
++# Locally calculated
++sha256 4cc0447a22635c7b2f1a93fec4aa94f1970fadeb72a063de006b51cf4963a06f  COPYING
+diff --git a/package/x265/Config.in b/package/x265/Config.in
+index cc39d6c6a9..180931db66 100644
+--- a/package/x265/Config.in
++++ b/package/x265/Config.in
+@@ -11,7 +11,7 @@ config BR2_PACKAGE_X265
+ 	  General Public License (GPL) 2 license or a commercial
+ 	  license, similar to the x264 project.
+ 
+-	  http://x265.org
++	  https://bitbucket.org/multicoreware/x265/wiki/Home
+ 
+ if BR2_PACKAGE_X265
+ 
+diff --git a/package/zip/0007-timezone.c-needs-time.h-fixes-musl-compile.patch b/package/zip/0007-timezone.c-needs-time.h-fixes-musl-compile.patch
+new file mode 100644
+index 0000000000..bdaa638f61
+--- /dev/null
++++ b/package/zip/0007-timezone.c-needs-time.h-fixes-musl-compile.patch
+@@ -0,0 +1,38 @@
++From 68abba9fb2ed114ac35712756b1f7700a865c498 Mon Sep 17 00:00:00 2001
++From: Peter Seiderer <ps.report@gmx.net>
++Date: Tue, 17 Dec 2019 21:25:01 +0100
++Subject: [PATCH] timezone.c: needs time.h (fixes musl compile)
++
++Fixes:
++
++  In file included from util.c:28:
++  timezone.c: In function 'mktime':
++  timezone.c:644:18: error: dereferencing pointer to incomplete type 'struct tm'
++       save_isdst = tm->tm_isdst;
++
++  timezone.c:661:11: warning: implicit declaration of function 'localtime'; did you mean 'dostime'? [-Wimplicit-function-declaration]
++       ltm = localtime(&then);
++
++  timezone.c:661:9: warning: assignment to 'struct tm *' from 'int' makes pointer from integer without a cast [-Wint-conversion]
++       ltm = localtime(&then);
++
++Signed-off-by: Peter Seiderer <ps.report@gmx.net>
++---
++ timezone.c | 1 +
++ 1 file changed, 1 insertion(+)
++
++diff --git a/timezone.c b/timezone.c
++index 485ec02..18aecbd 100644
++--- a/timezone.c
+++++ b/timezone.c
++@@ -41,6 +41,7 @@
++ #include "timezone.h"
++ #include <ctype.h>
++ #include <errno.h>
+++#include <time.h>
++ 
++ #ifdef IZTZ_DEFINESTDGLOBALS
++ long timezone = 0;
++-- 
++2.24.0
++
+diff --git a/utils/scanpypi b/utils/scanpypi
+index 55b3d1e61c..abb190a536 100755
+--- a/utils/scanpypi
++++ b/utils/scanpypi
+@@ -739,6 +739,8 @@ def main():
+             package.create_hash_file()
+ 
+             package.create_config_in()
++            print("NOTE: Remember to also make an update to the DEVELOPERS file")
++            print("      and include an entry for the pkg in packages/Config.in")
+             print()
+             # printing an empty line for visual confort
+     finally:

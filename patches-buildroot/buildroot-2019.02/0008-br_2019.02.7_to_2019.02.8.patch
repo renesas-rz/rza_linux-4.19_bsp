@@ -1,0 +1,3968 @@
+diff --git a/CHANGES b/CHANGES
+index 3bea34bf4d..f952453790 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -1,3 +1,43 @@
++2019.02.8, released December 7th, 2019
++
++	Important / security related fixes.
++
++	Infrastructure: Make HOST_<pkg>_DL_OPTS inherit from
++	<pkg>_DL_OPTS by default, just like it is done for a number of
++	other package variables
++
++	Add <pkg>_KEEP_PY_FILES to exclude specific python .py files
++	from the removal done by BR2_PACKAGE_PYTHON{,3}_PYC_ONLY for
++	the (rare) case where the .py files are needed at runtime
++	rather than .pyc.
++
++	Fix <pkg>-reconfigure handling for packages using the kconfig
++	infrastructure.
++
++	Toolchain: ensure external toolchain kernel headers version
++	check correctly stop the build on mismatch
++
++	Deconfigs: beaglebone: fix boot issue
++
++	Updated/fixed packages: am33x-cm3, asterisk, bind, chrony,
++	clamav, collectd, connman, faifa, gob2, haproxy,
++	intel-microcode, ipsec-tools, jasper, jpeg-turbo, kodi,
++	kvm-unit-tests, libftdi, libftdi1, libnss, libstrophe,
++	libsvgtiny, lvm2, lzma, mariadb, minicom, neardal, nodejs,
++	opencv3, openvmtools, oracle-mysql, perl-gdgraph,
++	perl-gdtextutil, php, postgresql, prosody, python-django,
++	rabbitmq-c, rauc, redis, rpcbind, socat, spice,
++	spice-protocol, tftpd, tiff, webkitgtk
++
++	New packages: libmspack
++
++	Issues resolved (http://bugs.uclibc.org):
++
++	#12166: Compiling nodejs for SAMA5D3 always crash with illegal inst..
++	#12171: Python-opencv needs config.py and config-3.7.py to run..
++	#12211: host-nodejs 10.15.3 package fail to build
++	#12316: tzdata fails to install with empty "default local time"
++
+ 2019.02.7, Released November 10th, 2019
+ 
+ 	Important / security related fixes.
+diff --git a/DEVELOPERS b/DEVELOPERS
+index ae2df884ea..58adad5c16 100644
+--- a/DEVELOPERS
++++ b/DEVELOPERS
+@@ -309,6 +309,7 @@ F:	package/libilbc/
+ F:	package/libldns/
+ F:	package/libmicrohttpd/
+ F:	package/libminiupnpc/
++F:	package/libmspack/
+ F:	package/libnatpmp/
+ F:	package/libnpth/
+ F:	package/libogg/
+@@ -556,9 +557,6 @@ F:	package/log4cpp/
+ N:	Daniel Nicoletti <dantti12@gmail.com>
+ F:	package/cutelyst/
+ 
+-N:	Daniel Nyström <daniel.nystrom@timeterminal.se>
+-F:	package/e2tools/
+-
+ N:	Daniel Price <daniel.price@gmail.com>
+ F:	package/nodejs/
+ F:	package/redis/
+@@ -809,7 +807,9 @@ F:	package/ser2net/
+ 
+ N:	Francois Perrad <francois.perrad@gadz.org>
+ F:	board/olimex/a20_olinuxino
++F:	board/olimex/imx233_olinuxino/
+ F:	configs/olimex_a20_olinuxino_*
++F:	configs/olimex_imx233_olinuxino_defconfig
+ F:	package/4th/
+ F:	package/chipmunk/
+ F:	package/dado/
+@@ -1331,7 +1331,7 @@ F:	package/lynx/
+ N:	Mario Rugiero <mrugiero@gmail.com>
+ F:	package/ratpoison/
+ 
+-N:	Mark Corbin <mark.corbin@embecosm.com>
++N:	Mark Corbin <mark@dibsco.co.uk>
+ F:	arch/arch.mk.riscv
+ F:	arch/Config.in.riscv
+ F:	board/qemu/riscv32-virt/
+@@ -1520,6 +1520,9 @@ F:	package/python-pyzmq/
+ N:	Michael Trimarchi <michael@amarulasolutions.com>
+ F:	package/python-spidev/
+ 
++N:	Michael Vetter <jubalh@iodoru.org>
++F:	package/jasper/
++
+ N:	Michał Łyszczek <michal.lyszczek@bofc.pl>
+ F:	board/altera/socrates_cyclone5/
+ F:	board/pine64/rock64
+diff --git a/Makefile b/Makefile
+index 43c4411e67..dfa62870c7 100644
+--- a/Makefile
++++ b/Makefile
+@@ -92,9 +92,9 @@ all:
+ .PHONY: all
+ 
+ # Set and export the version string
+-export BR2_VERSION := 2019.02.7
++export BR2_VERSION := 2019.02.8
+ # Actual time the release is cut (for reproducible builds)
+-BR2_VERSION_EPOCH = 1573422000
++BR2_VERSION_EPOCH = 1575746000
+ 
+ # Save running make version since it's clobbered by the make package
+ RUNNING_MAKE_VERSION := $(MAKE_VERSION)
+diff --git a/board/beaglebone/uEnv.txt b/board/beaglebone/uEnv.txt
+index a665f20889..8fce54d87e 100644
+--- a/board/beaglebone/uEnv.txt
++++ b/board/beaglebone/uEnv.txt
+@@ -3,6 +3,9 @@ devtype=mmc
+ bootdir=
+ bootfile=zImage
+ bootpartition=mmcblk0p2
++console=ttyS0,115200n8
++loadaddr=0x82000000
++fdtaddr=0x88000000
+ set_mmc1=if test $board_name = A33515BB; then setenv bootpartition mmcblk1p2; fi
+-set_bootargs=setenv bootargs console=ttyO0,115200n8 root=/dev/${bootpartition} rw rootfstype=ext4 rootwait
++set_bootargs=setenv bootargs console=${console} root=/dev/${bootpartition} rw rootfstype=ext4 rootwait
+ uenvcmd=run set_mmc1; run set_bootargs;run loadimage;run loadfdt;printenv bootargs;bootz ${loadaddr} - ${fdtaddr}
+diff --git a/docs/manual/quickstart.txt b/docs/manual/quickstart.txt
+index 74158ae249..542b278603 100644
+--- a/docs/manual/quickstart.txt
++++ b/docs/manual/quickstart.txt
+@@ -87,15 +87,21 @@ This directory contains several subdirectories:
+   target). This directory contains one subdirectory for each of these
+   components.
+ 
+-* +staging/+ which contains a hierarchy similar to a root filesystem
+-  hierarchy. This directory contains the headers and libraries of the
+-  cross-compilation toolchain and all the userspace packages selected
+-  for the target. However, this directory is 'not' intended to be
+-  the root filesystem for the target: it contains a lot of development
+-  files, unstripped binaries and libraries that make it far too big
+-  for an embedded system. These development files are used to compile
+-  libraries and applications for the target that depend on other
+-  libraries.
++* +host/+ contains both the tools built for the host, and the sysroot
++  of the target toolchain. The former is an installation of tools
++  compiled for the host that are needed for the proper execution of
++  Buildroot, including the cross-compilation toolchain. The latter
++  is a hierarchy similar to a root filesystem hierarchy. It contains
++  the headers and libraries of all user-space packages that provide
++  and install libraries used by other packages. However, this
++  directory is 'not' intended to be the root filesystem for the target:
++  it contains a lot of development files, unstripped binaries and
++  libraries that make it far too big for an embedded system. These
++  development files are used to compile libraries and applications for
++  the target that depend on other libraries.
++
++* +staging/+ is a symlink to the target toolchain sysroot inside
++  +host/+, which exists for backwards compatibility.
+ 
+ * +target/+ which contains 'almost' the complete root filesystem for
+   the target: everything needed is present except the device files in
+@@ -111,10 +117,6 @@ This directory contains several subdirectories:
+   development files (headers, etc.) are not present, the binaries are
+   stripped.
+ 
+-* +host/+ contains the installation of tools compiled for the host
+-  that are needed for the proper execution of Buildroot, including the
+-  cross-compilation toolchain.
+-
+ These commands, +make menuconfig|nconfig|gconfig|xconfig+ and +make+, are the
+ basic ones that allow to easily and quickly generate images fitting
+ your needs, with all the features and applications you enabled.
+diff --git a/linux/Config.in b/linux/Config.in
+index 61e4fb6d72..c5a3f9eda7 100644
+--- a/linux/Config.in
++++ b/linux/Config.in
+@@ -122,7 +122,7 @@ endif
+ 
+ config BR2_LINUX_KERNEL_VERSION
+ 	string
+-	default "4.19.81" if BR2_LINUX_KERNEL_LATEST_VERSION
++	default "4.19.88" if BR2_LINUX_KERNEL_LATEST_VERSION
+ 	default "v4.4.176-cip31" if BR2_LINUX_KERNEL_LATEST_CIP_VERSION
+ 	default BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE \
+ 		if BR2_LINUX_KERNEL_CUSTOM_VERSION
+diff --git a/linux/linux.hash b/linux/linux.hash
+index 33db15ab5b..9e5dc6a019 100644
+--- a/linux/linux.hash
++++ b/linux/linux.hash
+@@ -1,6 +1,6 @@
+ # From https://www.kernel.org/pub/linux/kernel/v4.x/sha256sums.asc
+ sha256 d011245629b980d4c15febf080b54804aaf215167b514a3577feddb2495f8a3e  linux-4.20.17.tar.xz
+-sha256 293ec1ae0f6b3b4be83a217224b51d137f2163cf2d9d294eecf5d0a354e4e29d  linux-4.19.81.tar.xz
+-sha256 ff519c428ee9bbb513a84db5ec32a7e3705cd8c23a57104b25b944cb79583fae  linux-4.14.151.tar.xz
+-sha256 9572ebfa6ba0efcf9f1ec7b62c7b89baa36a621ab9fd4c5ad025196c549605ac  linux-4.9.198.tar.xz
+-sha256 ecf808d88d04086da25bf44288d63a7110dd99948c17bc1162e5301abccff312  linux-4.4.198.tar.xz
++sha256 5da5e16fe08fa506f8f74aa4f17be22b52c0f513e9a3f7e7ae22fc53597ad493  linux-4.4.206.tar.xz
++sha256 1df27899a9bc4dd874f3830ab9e7b638f0026dffd67a2e230444e5d2805ccad6  linux-4.9.206.tar.xz
++sha256 0d49ec72e273f6fc7462ad56849b2285f13fd5f4185e8f932a0074fc2eca1bb3  linux-4.14.158.tar.xz
++sha256 c1923b6bd166e6dd07be860c15f59e8273aaa8692bc2a1fce1d31b826b9b3fbe  linux-4.19.88.tar.xz
+diff --git a/package/Config.in b/package/Config.in
+index 5314e03f83..ce6745348a 100644
+--- a/package/Config.in
++++ b/package/Config.in
+@@ -1161,6 +1161,7 @@ endmenu
+ 
+ menu "Compression and decompression"
+ 	source "package/libarchive/Config.in"
++	source "package/libmspack/Config.in"
+ 	source "package/libsquish/Config.in"
+ 	source "package/libzip/Config.in"
+ 	source "package/lzo/Config.in"
+diff --git a/package/am33x-cm3/0002-Makefile-unconditionally-disable-SSP.patch b/package/am33x-cm3/0002-Makefile-unconditionally-disable-SSP.patch
+new file mode 100644
+index 0000000000..ed333bfe05
+--- /dev/null
++++ b/package/am33x-cm3/0002-Makefile-unconditionally-disable-SSP.patch
+@@ -0,0 +1,35 @@
++From 6c3b05b74ccd49d8ba246bfef0c2e549b9f2bf7b Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Tue, 29 Oct 2019 16:14:18 +0100
++Subject: [PATCH] Makefile: unconditionally disable SSP
++
++Though -nostdlib is passed in $(CFLAGS), -fno-stack-protector must also be
++passed to avoid linking errors related to undefined references to
++'__stack_chk_guard' and '__stack_chk_fail' if toolchain enforces
++-fstack-protector.
++
++Fixes:
++ - http://autobuild.buildroot.net/results/3a3a21f3c35ea025e9b93e09c2454aed0ad31034
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++---
++ Makefile | 3 ++-
++ 1 file changed, 2 insertions(+), 1 deletion(-)
++
++diff --git a/Makefile b/Makefile
++index c3ec071..5226006 100644
++--- a/Makefile
+++++ b/Makefile
++@@ -16,7 +16,8 @@ INCLUDES = $(SRCDIR)/include
++ CFLAGS =-march=armv7-m -mcpu=cortex-m3 -mthumb -nostdlib -Wall -Wundef \
++ 	-Werror-implicit-function-declaration -Wstrict-prototypes \
++ 	-Wdeclaration-after-statement -fno-delete-null-pointer-checks \
++-	-Wempty-body -fno-strict-overflow  -g -I$(INCLUDES) -O2
+++	-Wempty-body -fno-strict-overflow -fno-stack-protector \
+++	-g -I$(INCLUDES) -O2
++ LDFLAGS =-nostartfiles -fno-exceptions -Tfirmware.ld
++ 
++ EXECUTABLE=am335x-pm-firmware.elf
++-- 
++2.23.0
++
+diff --git a/package/am33x-cm3/0003-Makefile-unconditionally-disable-PIE.patch b/package/am33x-cm3/0003-Makefile-unconditionally-disable-PIE.patch
+new file mode 100644
+index 0000000000..6be157932d
+--- /dev/null
++++ b/package/am33x-cm3/0003-Makefile-unconditionally-disable-PIE.patch
+@@ -0,0 +1,33 @@
++From 0e8c3c4851ce64268a8ae1810ef72594251d917d Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Sun, 10 Nov 2019 21:57:12 +0100
++Subject: [PATCH] Makefile: unconditionally disable PIE
++
++Though -nostdlib is passed in $(CFLAGS), -fno-pie must also be passed to
++avoid linking errors related to overlapping sections if toolchain
++enforces PIE.
++
++Fixes:
++ - http://autobuild.buildroot.org/results/418a40b995e91bc66e692dfbc4b0521db3fa5fbb
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++---
++ Makefile | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/Makefile b/Makefile
++index 5226006..fe3d844 100644
++--- a/Makefile
+++++ b/Makefile
++@@ -17,7 +17,7 @@ CFLAGS =-march=armv7-m -mcpu=cortex-m3 -mthumb -nostdlib -Wall -Wundef \
++ 	-Werror-implicit-function-declaration -Wstrict-prototypes \
++ 	-Wdeclaration-after-statement -fno-delete-null-pointer-checks \
++ 	-Wempty-body -fno-strict-overflow -fno-stack-protector \
++-	-g -I$(INCLUDES) -O2
+++	-fno-pie -g -I$(INCLUDES) -O2
++ LDFLAGS =-nostartfiles -fno-exceptions -Tfirmware.ld
++ 
++ EXECUTABLE=am335x-pm-firmware.elf
++-- 
++2.23.0
++
+diff --git a/package/asterisk/asterisk.hash b/package/asterisk/asterisk.hash
+index 4cb4a42e19..26aa4b89b7 100644
+--- a/package/asterisk/asterisk.hash
++++ b/package/asterisk/asterisk.hash
+@@ -1,5 +1,5 @@
+ # Locally computed
+-sha256  9323f1fd41416d2d997015b2199d5507847e54da64c2e24923d75f5c283c5e83  asterisk-16.6.1.tar.gz
++sha256  474cbc6f9dddee94616f8af8e097bc4d340dc9698c4165dc45be6e0be80ff725  asterisk-16.6.2.tar.gz
+ 
+ # sha1 from: http://downloads.asterisk.org/pub/telephony/sounds/releases
+ # sha256 locally computed
+diff --git a/package/asterisk/asterisk.mk b/package/asterisk/asterisk.mk
+index 6f94f628a4..00070aadba 100644
+--- a/package/asterisk/asterisk.mk
++++ b/package/asterisk/asterisk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-ASTERISK_VERSION = 16.6.1
++ASTERISK_VERSION = 16.6.2
+ # Use the github mirror: it's an official mirror maintained by Digium, and
+ # provides tarballs, which the main Asterisk git tree (behind Gerrit) does not.
+ ASTERISK_SITE = $(call github,asterisk,asterisk,$(ASTERISK_VERSION))
+diff --git a/package/atk/Config.in b/package/atk/Config.in
+index c980614998..d9371b879b 100644
+--- a/package/atk/Config.in
++++ b/package/atk/Config.in
+@@ -7,6 +7,8 @@ config BR2_PACKAGE_ATK
+ 	help
+ 	  The ATK accessibility toolkit, needed to build GTK+-2.x.
+ 
++	  https://gitlab.gnome.org/GNOME/atk
++
+ comment "atk needs a toolchain w/ wchar, threads"
+ 	depends on BR2_USE_MMU
+ 	depends on !BR2_USE_WCHAR || !BR2_TOOLCHAIN_HAS_THREADS
+diff --git a/package/bcg729/Config.in b/package/bcg729/Config.in
+index 8e9bcfe66b..cb936ae158 100644
+--- a/package/bcg729/Config.in
++++ b/package/bcg729/Config.in
+@@ -4,4 +4,4 @@ config BR2_PACKAGE_BCG729
+ 	  Bcg729 is an opensource implementation of both encoder and
+ 	  decoder of the ITU G729 Annex A/B speech codec.
+ 
+-	  http://www.linphone.org/technical-corner/bcg729/overview
++	  https://www.linphone.org/technical-corner/bcg729
+diff --git a/package/bind/Config.in b/package/bind/Config.in
+index 049a90cbaf..951dd23564 100644
+--- a/package/bind/Config.in
++++ b/package/bind/Config.in
+@@ -24,7 +24,7 @@ config BR2_PACKAGE_BIND
+ 	  intended to be linked with applications requiring name
+ 	  service.
+ 
+-	  http://www.isc.org/sw/bind/
++	  https://www.isc.org/bind/
+ 
+ if BR2_PACKAGE_BIND
+ 
+diff --git a/package/bind/bind.hash b/package/bind/bind.hash
+index 999c6602a8..53b5ce3a47 100644
+--- a/package/bind/bind.hash
++++ b/package/bind/bind.hash
+@@ -1,4 +1,4 @@
+-# Verified from https://ftp.isc.org/isc/bind9/9.11.10/bind-9.11.10.tar.gz.asc
+-# with key 156890685EA0DF6A1371EF2017CC5DB1F0088407
+-sha256 b2bb840cda20e6771ae8c054007b4ec12e1bb6aa6bfe79102890eb94956a70c3 bind-9.11.10.tar.gz
++# Verified from https://ftp.isc.org/isc/bind9/9.11.13/bind-9.11.13.tar.gz.asc
++# with key AE3FAC796711EC59FC007AA474BB6B9A4CBB3D38
++sha256 fd3f3cc9fcfcdaa752db35eb24598afa1fdcc2509d3227fc90a8631b7b400f7d bind-9.11.13.tar.gz
+ sha256 cd02c93b8dcda794f55dfd1231828d69633072a98eee4874f9cf732d22d9dcde COPYRIGHT
+diff --git a/package/bind/bind.mk b/package/bind/bind.mk
+index 4ac81f1d24..efe4abde9c 100644
+--- a/package/bind/bind.mk
++++ b/package/bind/bind.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-BIND_VERSION = 9.11.10
++BIND_VERSION = 9.11.13
+ BIND_SITE = https://ftp.isc.org/isc/bind9/$(BIND_VERSION)
+ # bind does not support parallel builds.
+ BIND_MAKE = $(MAKE1)
+diff --git a/package/ca-certificates/Config.in b/package/ca-certificates/Config.in
+index 6bb71820d2..cd9825a811 100644
+--- a/package/ca-certificates/Config.in
++++ b/package/ca-certificates/Config.in
+@@ -9,4 +9,4 @@ config BR2_PACKAGE_CA_CERTIFICATES
+ 	  Debian infrastructure and those shipped with Mozilla's
+ 	  browsers.
+ 
+-	  http://anonscm.debian.org/gitweb/?p=collab-maint/ca-certificates.git
++	  https://salsa.debian.org/debian/ca-certificates
+diff --git a/package/chrony/chrony.mk b/package/chrony/chrony.mk
+index b5821b238d..00709e6f83 100644
+--- a/package/chrony/chrony.mk
++++ b/package/chrony/chrony.mk
+@@ -13,6 +13,7 @@ CHRONY_CONF_OPTS = \
+ 	--host-system=Linux \
+ 	--host-machine=$(BR2_ARCH) \
+ 	--prefix=/usr \
++	--without-readline \
+ 	--without-tomcrypt
+ 
+ ifeq ($(BR2_PACKAGE_LIBCAP),y)
+@@ -34,10 +35,10 @@ else
+ CHRONY_CONF_OPTS += --without-seccomp
+ endif
+ 
+-ifeq ($(BR2_PACKAGE_READLINE),y)
+-CHRONY_DEPENDENCIES += readline
++ifeq ($(BR2_PACKAGE_LIBEDIT),y)
++CHRONY_DEPENDENCIES += libedit
+ else
+-CHRONY_CONF_OPTS += --disable-readline
++CHRONY_CONF_OPTS += --without-editline --disable-readline
+ endif
+ 
+ # If pps-tools is available, build it before so the package can use it
+diff --git a/package/clamav/Config.in b/package/clamav/Config.in
+index 2017011b67..57338e910f 100644
+--- a/package/clamav/Config.in
++++ b/package/clamav/Config.in
+@@ -4,6 +4,7 @@ config BR2_PACKAGE_CLAMAV
+ 	depends on BR2_TOOLCHAIN_HAS_THREADS
+ 	depends on BR2_USE_MMU # fork()
+ 	depends on BR2_USE_WCHAR
++	select BR2_PACKAGE_LIBMSPACK
+ 	select BR2_PACKAGE_LIBTOOL
+ 	select BR2_PACKAGE_OPENSSL
+ 	select BR2_PACKAGE_ZLIB
+diff --git a/package/clamav/clamav.hash b/package/clamav/clamav.hash
+index 1246f4febf..84758c5ccb 100644
+--- a/package/clamav/clamav.hash
++++ b/package/clamav/clamav.hash
+@@ -1,5 +1,5 @@
+ # Locally calculated
+-sha256 0bf094f0919d158a578421d66bc2569c8c8181233ba162bb51722f98c802bccd  clamav-0.101.4.tar.gz
++sha256 04bc4af7aa61cd4ce419a1cfbf77605ee40128455c7627fe2725dd157392d58c  clamav-0.101.5.tar.gz
+ sha256 0c4fd2fa9733fc9122503797648710851e4ee6d9e4969dd33fcbd8c63cd2f584  COPYING
+ sha256 d72a145c90918184a05ef65a04c9e6f7466faa59bc1b82c8f6a8ddc7ddcb9bed  COPYING.bzip2
+ sha256 dfb818a0d41411c6fb1c193c68b73018ceadd1994bda41ad541cbff292894bc6  COPYING.file
+diff --git a/package/clamav/clamav.mk b/package/clamav/clamav.mk
+index 03ce4136a7..5285c7afd2 100644
+--- a/package/clamav/clamav.mk
++++ b/package/clamav/clamav.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-CLAMAV_VERSION = 0.101.4
++CLAMAV_VERSION = 0.101.5
+ CLAMAV_SITE = https://www.clamav.net/downloads/production
+ CLAMAV_LICENSE = GPL-2.0
+ CLAMAV_LICENSE_FILES = COPYING COPYING.bzip2 COPYING.file COPYING.getopt \
+@@ -12,6 +12,7 @@ CLAMAV_LICENSE_FILES = COPYING COPYING.bzip2 COPYING.file COPYING.getopt \
+ 	COPYING.unrar COPYING.zlib
+ CLAMAV_DEPENDENCIES = \
+ 	host-pkgconf \
++	libmspack \
+ 	libtool \
+ 	openssl \
+ 	zlib \
+@@ -32,6 +33,7 @@ CLAMAV_CONF_OPTS = \
+ 	--with-ltdl-include=$(STAGING_DIR)/usr/include \
+ 	--with-ltdl-lib=$(STAGING_DIR)/usr/lib \
+ 	--with-openssl=$(STAGING_DIR)/usr \
++	--with-system-libmspack=$(STAGING_DIR)/usr \
+ 	--with-zlib=$(STAGING_DIR)/usr \
+ 	--disable-zlib-vcheck \
+ 	--disable-rpath \
+diff --git a/package/collectd/collectd.mk b/package/collectd/collectd.mk
+index 7b2a517268..6cb040ab18 100644
+--- a/package/collectd/collectd.mk
++++ b/package/collectd/collectd.mk
+@@ -184,7 +184,7 @@ COLLECTD_CONF_OPTS += --with-libpq=$(STAGING_DIR)/usr/bin/pg_config
+ COLLECTD_CONF_ENV += LIBS="-lpthread -lm"
+ endif
+ ifeq ($(BR2_PACKAGE_YAJL),y)
+-COLLECTD_CONF_OPTS += --with-yajl=$(STAGING_DIR)/usr
++COLLECTD_CONF_OPTS += --with-libyajl=$(STAGING_DIR)/usr
+ endif
+ 
+ # network can use libgcrypt
+diff --git a/package/connman/connman.mk b/package/connman/connman.mk
+index b67d1c4b86..0431759440 100644
+--- a/package/connman/connman.mk
++++ b/package/connman/connman.mk
+@@ -39,6 +39,7 @@ define CONNMAN_INSTALL_INIT_SYSTEMD
+ endef
+ 
+ ifeq ($(BR2_PACKAGE_CONNMAN_CLIENT),y)
++CONNMAN_LICENSE += , GPL-2.0+ (client)
+ CONNMAN_CONF_OPTS += --enable-client
+ CONNMAN_DEPENDENCIES += readline
+ 
+diff --git a/package/copas/Config.in b/package/copas/Config.in
+index 2de1967102..347d86ddfc 100644
+--- a/package/copas/Config.in
++++ b/package/copas/Config.in
+@@ -8,4 +8,4 @@ config BR2_PACKAGE_COPAS
+ 	  servers. But it also features timers and client support for
+ 	  http(s), ftp and smtp requests.
+ 
+-	  http://www.keplerproject.org/copas/
++	  http://keplerproject.github.io/copas/
+diff --git a/package/dmraid/Config.in b/package/dmraid/Config.in
+index aa98c853a1..3c375f4c67 100644
+--- a/package/dmraid/Config.in
++++ b/package/dmraid/Config.in
+@@ -12,6 +12,8 @@ config BR2_PACKAGE_DMRAID
+ 	  dmraid uses the Linux device-mapper to create devices with
+ 	  respective mappings for the ATARAID sets discovered.
+ 
++	  http://people.redhat.com/~heinzm/sw/dmraid/
++
+ comment "dmraid needs a toolchain w/ threads, dynamic library"
+ 	depends on BR2_USE_MMU
+ 	depends on BR2_STATIC_LIBS || !BR2_TOOLCHAIN_HAS_THREADS
+diff --git a/package/doom-wad/Config.in b/package/doom-wad/Config.in
+index 6f51cfb936..9ef4e3e5a2 100644
+--- a/package/doom-wad/Config.in
++++ b/package/doom-wad/Config.in
+@@ -7,3 +7,5 @@ config BR2_PACKAGE_DOOM_WAD
+ 
+ 	  The wad file will be placed in the /usr/share/games/doom
+ 	  directory.
++
++	  https://doomwiki.org/wiki/DOOM1.WAD
+diff --git a/package/elf2flt/Config.in.host b/package/elf2flt/Config.in.host
+index b93795baa4..d6685a7ff6 100644
+--- a/package/elf2flt/Config.in.host
++++ b/package/elf2flt/Config.in.host
+@@ -9,3 +9,5 @@ config BR2_PACKAGE_HOST_ELF2FLT
+ 
+ 	  This option compiles the required tools and makes the required
+ 	  modifications on your toolchain (linker).
++
++	  https://github.com/uclinux-dev/elf2flt
+diff --git a/package/faifa/0003-Makefile.in-fix-asbolute-symlink-of-libfaifa.so.patch b/package/faifa/0003-Makefile.in-fix-asbolute-symlink-of-libfaifa.so.patch
+new file mode 100644
+index 0000000000..876d2a60f4
+--- /dev/null
++++ b/package/faifa/0003-Makefile.in-fix-asbolute-symlink-of-libfaifa.so.patch
+@@ -0,0 +1,32 @@
++From d16abf61049947c451a6411a13fc15dda32feb47 Mon Sep 17 00:00:00 2001
++From: Florian Fainelli <f.fainelli@gmail.com>
++Date: Sat, 6 Sep 2014 11:23:02 -0700
++Subject: [PATCH] Makefile.in: fix asbolute symlink of libfaifa.so
++
++Fixes #7
++
++Signed-off-by: Florian Fainelli <f.fainelli@gmail.com>
++[Upstream: da2e279fd736d05bcd0ee6e4609c44fece017ba8]
++Signed-off-by: Thomas Petazzoni <thomas.petazzoni@bootlin.com>
++---
++ Makefile.in | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/Makefile.in b/Makefile.in
++index ba65bee..9dec7ee 100644
++--- a/Makefile.in
+++++ b/Makefile.in
++@@ -98,9 +98,9 @@ install: installman strip
++ 	$(INSTALL) -m0755 hpav_cfg $(DESTDIR)$(sbindir)
++ 	$(INSTALL) -d $(DESTDIR)$(libdir)
++ 	$(INSTALL) -m0644 $(LIB_SONAME) $(DESTDIR)$(libdir)
++-	ln -sf $(DESTDIR)$(libdir)/$(LIB_SONAME) $(DESTDIR)$(libdir)/$(LIB_SHARED_SO)
++ 	$(INSTALL) -d $(DESTDIR)$(includedir)/faifa
++ 	cp $(HEADERS) $(DESTDIR)$(includedir)/faifa
+++	cd $(DESTDIR)$(libdir) && ln -sf $(LIB_SONAME) $(LIB_SHARED_SO)
++ 
++ strip:
++ 	$(STRIP) $(APP)
++-- 
++2.23.0
++
+diff --git a/package/faifa/Config.in b/package/faifa/Config.in
+index 753abc67ec..486f35d508 100644
+--- a/package/faifa/Config.in
++++ b/package/faifa/Config.in
+@@ -10,7 +10,7 @@ config BR2_PACKAGE_FAIFA
+ 	  Intellon-specific management and control frames as well as
+ 	  standard management frames.
+ 
+-	  https://dev.open-plc.org
++	  https://github.com/ffainelli/faifa
+ 
+ comment "faifa needs a toolchain w/ dynamic library, threads"
+ 	depends on BR2_STATIC_LIBS || !BR2_TOOLCHAIN_HAS_THREADS
+diff --git a/package/fastd/Config.in b/package/fastd/Config.in
+index 47c76b5ad6..5ef6de8d78 100644
+--- a/package/fastd/Config.in
++++ b/package/fastd/Config.in
+@@ -9,7 +9,7 @@ config BR2_PACKAGE_FASTD
+ 	help
+ 	  Fast and Secure Tunneling Daemon
+ 
+-	  https://projects.universe-factory.net/projects/fastd/wiki
++	  https://github.com/NeoRaider/fastd/wiki
+ 
+ if BR2_PACKAGE_FASTD
+ 
+diff --git a/package/flashbench/Config.in b/package/flashbench/Config.in
+index 7be1ea9bc3..a50f482ac3 100644
+--- a/package/flashbench/Config.in
++++ b/package/flashbench/Config.in
+@@ -7,4 +7,4 @@ config BR2_PACKAGE_FLASHBENCH
+ 	  SD cards and other media for the Linaro flash memory
+ 	  survey.
+ 
+-	  https://wiki.linaro.org/WorkingGroups/KernelConsolidation/Projects/FlashCardSurvey
++	  https://git.linaro.org/people/arnd.bergmann/flashbench.git
+diff --git a/package/fmt/Config.in b/package/fmt/Config.in
+index 69a6fb80a6..8643c9b5af 100644
+--- a/package/fmt/Config.in
++++ b/package/fmt/Config.in
+@@ -7,5 +7,7 @@ config BR2_PACKAGE_FMT
+ 	  used as a safe alternative to printf or as a fast alternative
+ 	  to IOStreams.
+ 
++	  https://fmt.dev
++
+ comment "fmt needs a toolchain w/ C++, wchar"
+ 	depends on !BR2_INSTALL_LIBSTDCPP || !BR2_USE_WCHAR
+diff --git a/package/fswebcam/Config.in b/package/fswebcam/Config.in
+index d268454aae..fbd077bc37 100644
+--- a/package/fswebcam/Config.in
++++ b/package/fswebcam/Config.in
+@@ -15,7 +15,7 @@ config BR2_PACKAGE_FSWEBCAM
+ 	  stdio where it can be piped to something like ncftpput or
+ 	  scp.
+ 
+-	  http://www.firestorm.cx/fswebcam/
++	  https://www.sanslogic.co.uk/fswebcam/
+ 
+ comment "fswebcam needs a toolchain w/ dynamic library"
+ 	depends on BR2_USE_MMU
+diff --git a/package/glib-networking/Config.in b/package/glib-networking/Config.in
+index b84a739460..1a8ebe6c0b 100644
+--- a/package/glib-networking/Config.in
++++ b/package/glib-networking/Config.in
+@@ -9,6 +9,8 @@ config BR2_PACKAGE_GLIB_NETWORKING
+ 	help
+ 	  Network-related GIO modules for glib.
+ 
++	  https://gitlab.gnome.org/GNOME/glib-networking
++
+ comment "glib-networking needs a toolchain w/ wchar, threads, dynamic library"
+ 	depends on BR2_USE_MMU
+ 	depends on !BR2_USE_WCHAR || !BR2_TOOLCHAIN_HAS_THREADS || BR2_STATIC_LIBS
+diff --git a/package/gob2/gob2.hash b/package/gob2/gob2.hash
+index 3678bdd5c9..7edf518f34 100644
+--- a/package/gob2/gob2.hash
++++ b/package/gob2/gob2.hash
+@@ -1,2 +1,4 @@
+ # Locally calculated
+ sha256 f7ee84c07ca88ae96e5a60461957cc4dd0aa69d61804433d1c85de3d50be8026  gob2-2.0.20.tar.xz
++sha256 b8a2f73f743dc1a51aff23f1aacbca4b868564db52496fa3c0caba755bfd1eaf  COPYING
++sha256 7222386392eecf784e2f0c406f412f238cb6d25865a8447ae0947b32bb569889  COPYING.generated-code
+diff --git a/package/gob2/gob2.mk b/package/gob2/gob2.mk
+index fe60673821..d0cce8fb76 100644
+--- a/package/gob2/gob2.mk
++++ b/package/gob2/gob2.mk
+@@ -7,6 +7,8 @@
+ GOB2_VERSION = 2.0.20
+ GOB2_SOURCE = gob2-$(GOB2_VERSION).tar.xz
+ GOB2_SITE = http://ftp.5z.com/pub/gob
++GOB2_LICENSE = GPL-2.0+
++GOB2_LICENSE_FILES = COPYING COPYING.generated-code
+ HOST_GOB2_DEPENDENCIES = host-bison host-flex host-libglib2
+ 
+ $(eval $(host-autotools-package))
+diff --git a/package/gqview/Config.in b/package/gqview/Config.in
+index c1df40cc19..a654dc41fb 100644
+--- a/package/gqview/Config.in
++++ b/package/gqview/Config.in
+@@ -4,4 +4,4 @@ config BR2_PACKAGE_GQVIEW
+ 	help
+ 	  GQview is an image viewer for Unix operating systems
+ 
+-	  http://prdownloads.sourceforge.net/gqview
++	  http://gqview.sourceforge.net/
+diff --git a/package/gr-osmosdr/Config.in b/package/gr-osmosdr/Config.in
+index aa6ef0d4c2..f26380371f 100644
+--- a/package/gr-osmosdr/Config.in
++++ b/package/gr-osmosdr/Config.in
+@@ -5,6 +5,8 @@ config BR2_PACKAGE_GR_OSMOSDR
+ 	help
+ 	  GNU Radio block for interfacing with various radio hardware
+ 
++	  http://osmocom.org/projects/osmosdr
++
+ if BR2_PACKAGE_GR_OSMOSDR
+ 
+ config BR2_PACKAGE_GR_OSMOSDR_PYTHON
+diff --git a/package/gtkperf/Config.in b/package/gtkperf/Config.in
+index 78c35e72e7..a763e305c7 100644
+--- a/package/gtkperf/Config.in
++++ b/package/gtkperf/Config.in
+@@ -7,3 +7,5 @@ config BR2_PACKAGE_GTKPERF
+ 	  predefined GTK+ widgets
+ 	  e.g. (opening comboboxes, toggling buttons, scrolling text
+ 	  yms.) and this way define the speed of device/platform.
++
++	  http://gtkperf.sourceforge.net/
+diff --git a/package/haproxy/haproxy.hash b/package/haproxy/haproxy.hash
+index be3451d83b..6060400de4 100644
+--- a/package/haproxy/haproxy.hash
++++ b/package/haproxy/haproxy.hash
+@@ -1,5 +1,5 @@
+ # Locally computed:
+-sha256	ad46312fa1e38763863807d2c9304551c28ad91cff83f0c21a36756913c1c8e1	haproxy-1.9.1.tar.gz
++sha256	adae40f963b03df0917edc44681064627f77683dcf7db66ef030672ad6d00547	haproxy-1.9.13.tar.gz
+ sha256	0717ca51fceaa25ac9e5ccc62e0c727dcf27796057201fb5fded56a25ff6ca28	LICENSE
+ sha256	5df07007198989c622f5d41de8d703e7bef3d0e79d62e24332ee739a452af62a	doc/lgpl.txt
+ sha256	ddb9db7630752f8fdc6898f7c99a99eaeeac5213627ecb093df9c82f56175dc7	doc/gpl.txt
+diff --git a/package/haproxy/haproxy.mk b/package/haproxy/haproxy.mk
+index e382f61f8e..aa440d7d66 100644
+--- a/package/haproxy/haproxy.mk
++++ b/package/haproxy/haproxy.mk
+@@ -5,7 +5,7 @@
+ ################################################################################
+ 
+ HAPROXY_VERSION_MAJOR = 1.9
+-HAPROXY_VERSION = $(HAPROXY_VERSION_MAJOR).1
++HAPROXY_VERSION = $(HAPROXY_VERSION_MAJOR).13
+ HAPROXY_SITE = http://www.haproxy.org/download/$(HAPROXY_VERSION_MAJOR)/src
+ HAPROXY_LICENSE = GPL-2.0+ and LGPL-2.1+ with exceptions
+ HAPROXY_LICENSE_FILES = LICENSE doc/lgpl.txt doc/gpl.txt
+diff --git a/package/hicolor-icon-theme/Config.in b/package/hicolor-icon-theme/Config.in
+index 10edbf8865..5ef2cd2267 100644
+--- a/package/hicolor-icon-theme/Config.in
++++ b/package/hicolor-icon-theme/Config.in
+@@ -7,3 +7,5 @@ config BR2_PACKAGE_HICOLOR_ICON_THEME
+ 	  standard directory structure for storing icons of third-party
+ 	  applications (i.e. the ones not available in usual icon
+ 	  themes).
++
++	  https://www.freedesktop.org/wiki/Software/icon-theme/
+diff --git a/package/ifenslave/Config.in b/package/ifenslave/Config.in
+index 2203284db0..d28e0f7c29 100644
+--- a/package/ifenslave/Config.in
++++ b/package/ifenslave/Config.in
+@@ -4,4 +4,4 @@ config BR2_PACKAGE_IFENSLAVE
+ 	help
+ 	  Configure network interfaces for parallel routing (bonding)
+ 
+-	  http://anonscm.debian.org/cgit/collab-maint/ifenslave.git
++	  https://salsa.debian.org/debian/ifenslave
+diff --git a/package/intel-microcode/intel-microcode.hash b/package/intel-microcode/intel-microcode.hash
+index 5d340e627f..f9fce28b2d 100644
+--- a/package/intel-microcode/intel-microcode.hash
++++ b/package/intel-microcode/intel-microcode.hash
+@@ -1,3 +1,3 @@
+ # Locally computed
+-sha256 2b6b728d351764dfbf6a9763ac96ae7e04085f382a309fed3abc0118f094c943  intel-microcode-20190918.tar.gz
++sha256 0000f7cf96f2b07a1ba9d1fc0bcfcb49d0edb91f7d487a57a88c147e57c5873b  intel-microcode-20191112.tar.gz
+ sha256 1f8bf63fc2b1b486c507b98ff7d283c7eb58c7945746b94188a310d6787cbee5  license
+diff --git a/package/intel-microcode/intel-microcode.mk b/package/intel-microcode/intel-microcode.mk
+index a4d4a01f71..0492ace69e 100644
+--- a/package/intel-microcode/intel-microcode.mk
++++ b/package/intel-microcode/intel-microcode.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-INTEL_MICROCODE_VERSION = 20190918
++INTEL_MICROCODE_VERSION = 20191112
+ INTEL_MICROCODE_SITE = $(call github,intel,Intel-Linux-Processor-Microcode-Data-Files,microcode-$(INTEL_MICROCODE_VERSION))
+ INTEL_MICROCODE_LICENSE = PROPRIETARY
+ INTEL_MICROCODE_LICENSE_FILES = license
+diff --git a/package/ipsec-tools/ipsec-tools.hash b/package/ipsec-tools/ipsec-tools.hash
+index b12bea9477..7a944eb8ee 100644
+--- a/package/ipsec-tools/ipsec-tools.hash
++++ b/package/ipsec-tools/ipsec-tools.hash
+@@ -1,3 +1,6 @@
+ # From http://sourceforge.net/projects/ipsec-tools/files/ipsec-tools/0.8.2/
+ md5	d53ec14a0a3ece64e09e5e34b3350b41	ipsec-tools-0.8.2.tar.bz2
+ sha1	7d92cae9fde59fb4f125636698c43b0a3df3d0f0	ipsec-tools-0.8.2.tar.bz2
++
++# Locally calculated
++sha256	3f4af4aef0b2599928bee9875935b8fad8449ddbb98ea7da74c20c3dff5cdef7  src/setkey/setkey.c
+diff --git a/package/ipsec-tools/ipsec-tools.mk b/package/ipsec-tools/ipsec-tools.mk
+index 7ac6b5cb22..634d752661 100644
+--- a/package/ipsec-tools/ipsec-tools.mk
++++ b/package/ipsec-tools/ipsec-tools.mk
+@@ -7,6 +7,8 @@
+ IPSEC_TOOLS_VERSION = 0.8.2
+ IPSEC_TOOLS_SOURCE = ipsec-tools-$(IPSEC_TOOLS_VERSION).tar.bz2
+ IPSEC_TOOLS_SITE = http://sourceforge.net/projects/ipsec-tools/files/ipsec-tools/$(IPSEC_TOOLS_VERSION)
++IPSEC_TOOLS_LICENSE = BSD-3-Clause
++IPSEC_TOOLS_LICENSE_FILES = src/setkey/setkey.c
+ IPSEC_TOOLS_INSTALL_STAGING = YES
+ IPSEC_TOOLS_MAKE = $(MAKE1)
+ IPSEC_TOOLS_DEPENDENCIES = openssl flex host-pkgconf host-flex host-bison
+diff --git a/package/iw/Config.in b/package/iw/Config.in
+index fd73b20992..8a74e3b2ad 100644
+--- a/package/iw/Config.in
++++ b/package/iw/Config.in
+@@ -5,7 +5,7 @@ config BR2_PACKAGE_IW
+ 	help
+ 	  Utility for wireless devices using the mac80211 kernel stack
+ 
+-	  http://wireless.kernel.org/en/users/Documentation/iw
++	  https://wireless.wiki.kernel.org/en/users/documentation/iw
+ 
+ comment "iw needs a toolchain w/ threads"
+ 	depends on !BR2_TOOLCHAIN_HAS_THREADS
+diff --git a/package/jasper/0001-verify-data-range-CVE-2018-19541.patch b/package/jasper/0001-verify-data-range-CVE-2018-19541.patch
+new file mode 100644
+index 0000000000..35b4299dcf
+--- /dev/null
++++ b/package/jasper/0001-verify-data-range-CVE-2018-19541.patch
+@@ -0,0 +1,35 @@
++From 24fc4d6f01d2d4c8297d1bebec02360f796e01c2 Mon Sep 17 00:00:00 2001
++From: Michael Vetter <jubalh@iodoru.org>
++Date: Mon, 4 Nov 2019 18:17:44 +0100
++Subject: [PATCH] Verify range data in jp2_pclr_getdata
++
++This fixes CVE-2018-19541.
++We need to verify the data is in the expected range. Otherwise we get
++problems later.
++
++This is a better fix for https://github.com/mdadams/jasper/pull/199
++which caused segfaults under certain circumstances.
++
++Patch by Adam Majer <adam.majer@suse.de>
++Signed-off-by: Michael Vetter <jubalh@iodoru.org>
++---
++ src/libjasper/jp2/jp2_cod.c | 6 ++++++
++ 1 file changed, 6 insertions(+)
++
++diff --git a/src/libjasper/jp2/jp2_cod.c b/src/libjasper/jp2/jp2_cod.c
++index 890e6ad..0f8d804 100644
++--- a/src/libjasper/jp2/jp2_cod.c
+++++ b/src/libjasper/jp2/jp2_cod.c
++@@ -855,6 +855,12 @@ static int jp2_pclr_getdata(jp2_box_t *box, jas_stream_t *in)
++ 	  jp2_getuint8(in, &pclr->numchans)) {
++ 		return -1;
++ 	}
+++
+++    // verify in range data as per I.5.3.4 - Palette box
+++    if (pclr->numchans < 1 || pclr->numlutents < 1 || pclr->numlutents > 1024) {
+++        return -1;
+++    }
+++
++ 	lutsize = pclr->numlutents * pclr->numchans;
++ 	if (!(pclr->lutdata = jas_alloc2(lutsize, sizeof(int_fast32_t)))) {
++ 		return -1;
+diff --git a/package/jasper/0002-check-null-in-jp2_decode-CVE-2018-19542.patch b/package/jasper/0002-check-null-in-jp2_decode-CVE-2018-19542.patch
+new file mode 100644
+index 0000000000..515a6162cd
+--- /dev/null
++++ b/package/jasper/0002-check-null-in-jp2_decode-CVE-2018-19542.patch
+@@ -0,0 +1,24 @@
++From fc62d1b7164ded2405fd6a0604548b34a5a77462 Mon Sep 17 00:00:00 2001
++From: Timothy Lyanguzov <timothy.lyanguzov@sap.com>
++Date: Mon, 18 Mar 2019 16:46:24 +1300
++Subject: [PATCH] Fix CVE-2018-19542: Check for NULL pointer in jp2_decode
++
++Signed-off-by: Michael Vetter <jubalh@iodoru.org>
++---
++ src/libjasper/jp2/jp2_dec.c | 3 +++
++ 1 file changed, 3 insertions(+)
++
++diff --git a/src/libjasper/jp2/jp2_dec.c b/src/libjasper/jp2/jp2_dec.c
++index 03b0eaf..a535c19 100644
++--- a/src/libjasper/jp2/jp2_dec.c
+++++ b/src/libjasper/jp2/jp2_dec.c
++@@ -388,6 +388,9 @@ jas_image_t *jp2_decode(jas_stream_t *in, const char *optstr)
++ 				jas_image_setcmpttype(dec->image, newcmptno, jp2_getct(jas_image_clrspc(dec->image), 0, channo + 1));
++ 				}
++ #endif
+++			} else {
+++				jas_eprintf("error: invalid MTYP in CMAP box\n");
+++				goto error;
++ 			}
++ 		}
++ 	}
+diff --git a/package/jasper/0003-test-asclen-CVE-2018-19540.patch b/package/jasper/0003-test-asclen-CVE-2018-19540.patch
+new file mode 100644
+index 0000000000..9401da511b
+--- /dev/null
++++ b/package/jasper/0003-test-asclen-CVE-2018-19540.patch
+@@ -0,0 +1,29 @@
++From e38454aa1a15b78c028a778fc8bfba3587e25c25 Mon Sep 17 00:00:00 2001
++From: Michael Vetter <jubalh@iodoru.org>
++Date: Fri, 15 Mar 2019 11:01:02 +0100
++Subject: [PATCH] Make sure asclen is at least 1
++
++If txtdesc->asclen is < 1, the array index of txtdesc->ascdata will be negative which causes the heap based overflow.
++
++Regards CVE-2018-19540.
++Regards https://github.com/mdadams/jasper/issues/182 bug#3
++Fix by Markus Koschany <apo@debian.org>.
++From https://gist.github.com/apoleon/13598a45bf6522f6a79b77a629205823
++Signed-off-by: Michael Vetter <jubalh@iodoru.org>
++---
++ src/libjasper/base/jas_icc.c | 2 ++
++ 1 file changed, 2 insertions(+)
++
++diff --git a/src/libjasper/base/jas_icc.c b/src/libjasper/base/jas_icc.c
++index 4607930..762c0e8 100644
++--- a/src/libjasper/base/jas_icc.c
+++++ b/src/libjasper/base/jas_icc.c
++@@ -1104,6 +1104,8 @@ static int jas_icctxtdesc_input(jas_iccattrval_t *attrval, jas_stream_t *in,
++ 	if (jas_stream_read(in, txtdesc->ascdata, txtdesc->asclen) !=
++ 	  JAS_CAST(int, txtdesc->asclen))
++ 		goto error;
+++	if (txtdesc->asclen < 1)
+++		goto error;
++ 	txtdesc->ascdata[txtdesc->asclen - 1] = '\0';
++ 	if (jas_iccgetuint32(in, &txtdesc->uclangcode) ||
++ 	  jas_iccgetuint32(in, &txtdesc->uclen))
+diff --git a/package/jasper/jasper.hash b/package/jasper/jasper.hash
+index 4fea367ebc..7e9ce0ea90 100644
+--- a/package/jasper/jasper.hash
++++ b/package/jasper/jasper.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256 85266eea728f8b14365db9eaf1edc7be4c348704e562bb05095b9a077cf1a97b  jasper-version-2.0.14.tar.gz
++sha256 f1d8b90f231184d99968f361884e2054a1714fdbbd9944ba1ae4ebdcc9bbfdb1  jasper-2.0.16.tar.gz
+ sha256 4ad1bb42aff888c4403d792e6e2c5f1716d6c279fea70b296333c9d577d30b81  LICENSE
+diff --git a/package/jasper/jasper.mk b/package/jasper/jasper.mk
+index 31fded779b..287c358884 100644
+--- a/package/jasper/jasper.mk
++++ b/package/jasper/jasper.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-JASPER_VERSION = version-2.0.14
+-JASPER_SITE = $(call github,mdadams,jasper,$(JASPER_VERSION))
++JASPER_VERSION = 2.0.16
++JASPER_SITE = $(call github,mdadams,jasper,version-$(JASPER_VERSION))
+ JASPER_INSTALL_STAGING = YES
+ JASPER_LICENSE = JasPer-2.0
+ JASPER_LICENSE_FILES = LICENSE
+diff --git a/package/jpeg-turbo/0001-tjLoadImage-Fix-int-overflow-segfault-w-big-BMP.patch b/package/jpeg-turbo/0001-tjLoadImage-Fix-int-overflow-segfault-w-big-BMP.patch
+deleted file mode 100644
+index a10fcf62af..0000000000
+--- a/package/jpeg-turbo/0001-tjLoadImage-Fix-int-overflow-segfault-w-big-BMP.patch
++++ /dev/null
+@@ -1,51 +0,0 @@
+-From 3d9c64e9f8aa1ee954d1d0bb3390fc894bb84da3 Mon Sep 17 00:00:00 2001
+-From: DRC <information@libjpeg-turbo.org>
+-Date: Tue, 1 Jan 2019 18:57:36 -0600
+-Subject: [PATCH] tjLoadImage(): Fix int overflow/segfault w/big BMP
+-
+-Fixes #304
+-
+-[baruch: drop the ChangeLog.md hunk]
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: commit 3d9c64e9f8aa
+-
+- ChangeLog.md | 4 ++++
+- turbojpeg.c  | 9 ++++++---
+- 2 files changed, 10 insertions(+), 3 deletions(-)
+-
+-diff --git a/turbojpeg.c b/turbojpeg.c
+-index 90a9ce6a0be8..3f7cd640677f 100644
+---- a/turbojpeg.c
+-+++ b/turbojpeg.c
+-@@ -1,5 +1,5 @@
+- /*
+-- * Copyright (C)2009-2018 D. R. Commander.  All Rights Reserved.
+-+ * Copyright (C)2009-2019 D. R. Commander.  All Rights Reserved.
+-  *
+-  * Redistribution and use in source and binary forms, with or without
+-  * modification, are permitted provided that the following conditions are met:
+-@@ -1960,7 +1960,8 @@ DLLEXPORT unsigned char *tjLoadImage(const char *filename, int *width,
+-                                      int align, int *height, int *pixelFormat,
+-                                      int flags)
+- {
+--  int retval = 0, tempc, pitch;
+-+  int retval = 0, tempc;
+-+  size_t pitch;
+-   tjhandle handle = NULL;
+-   tjinstance *this;
+-   j_compress_ptr cinfo = NULL;
+-@@ -2013,7 +2014,9 @@ DLLEXPORT unsigned char *tjLoadImage(const char *filename, int *width,
+-   *pixelFormat = cs2pf[cinfo->in_color_space];
+- 
+-   pitch = PAD((*width) * tjPixelSize[*pixelFormat], align);
+--  if ((dstBuf = (unsigned char *)malloc(pitch * (*height))) == NULL)
+-+  if ((unsigned long long)pitch * (unsigned long long)(*height) >
+-+      (unsigned long long)((size_t)-1) ||
+-+      (dstBuf = (unsigned char *)malloc(pitch * (*height))) == NULL)
+-     _throwg("tjLoadImage(): Memory allocation failure");
+- 
+-   if (setjmp(this->jerr.setjmp_buffer)) {
+--- 
+-2.20.1
+-
+diff --git a/package/jpeg-turbo/0002-wrbmp.c-Don-t-allow-quantization-w-non-RGB-CS.patch b/package/jpeg-turbo/0002-wrbmp.c-Don-t-allow-quantization-w-non-RGB-CS.patch
+deleted file mode 100644
+index 3e4e5bd082..0000000000
+--- a/package/jpeg-turbo/0002-wrbmp.c-Don-t-allow-quantization-w-non-RGB-CS.patch
++++ /dev/null
+@@ -1,39 +0,0 @@
+-From f8cca819a4fb42aafa5f70df43c45e8c416d716f Mon Sep 17 00:00:00 2001
+-From: DRC <information@libjpeg-turbo.org>
+-Date: Tue, 1 Jan 2019 20:32:40 -0600
+-Subject: [PATCH] wrbmp.c: Don't allow quantization w/ non-RGB CS
+-
+-If cinfo->quantize_colors == 1, then jpeg_calc_output_dimensions() will
+-set cinfo->output_components to 1, and if cinfo->out_color_space is not
+-RGB (or extended RGB), hilarity will ensue.
+-
+-Fixes #305
+-
+-[baruch: drop the ChangeLog.md hunk]
+-Signed-off-by: Baruch Siach <baruch@tkos.co.il>
+----
+-Upstream status: commit f8cca819a4
+-
+- ChangeLog.md | 4 ++++
+- wrbmp.c      | 5 +++--
+- 2 files changed, 7 insertions(+), 2 deletions(-)
+-
+-diff --git a/wrbmp.c b/wrbmp.c
+-index 4bf81426b0ef..239f64eb3c3f 100644
+---- a/wrbmp.c
+-+++ b/wrbmp.c
+-@@ -502,8 +502,9 @@ jinit_write_bmp(j_decompress_ptr cinfo, boolean is_os2,
+-       dest->pub.put_pixel_rows = put_gray_rows;
+-     else
+-       dest->pub.put_pixel_rows = put_pixel_rows;
+--  } else if (cinfo->out_color_space == JCS_RGB565 ||
+--             cinfo->out_color_space == JCS_CMYK) {
+-+  } else if (!cinfo->quantize_colors &&
+-+             (cinfo->out_color_space == JCS_RGB565 ||
+-+              cinfo->out_color_space == JCS_CMYK)) {
+-     dest->pub.put_pixel_rows = put_pixel_rows;
+-   } else {
+-     ERREXIT(cinfo, JERR_BMP_COLORSPACE);
+--- 
+-2.20.1
+-
+diff --git a/package/jpeg-turbo/jpeg-turbo.hash b/package/jpeg-turbo/jpeg-turbo.hash
+index 1779324c51..ea6060f2b9 100644
+--- a/package/jpeg-turbo/jpeg-turbo.hash
++++ b/package/jpeg-turbo/jpeg-turbo.hash
+@@ -1,7 +1,7 @@
+-# From https://sourceforge.net/projects/libjpeg-turbo/files/2.0.1/
+-sha1 7ea4a288bccbb5a2d5bfad5fb328d4a839853f4e  libjpeg-turbo-2.0.1.tar.gz
+-md5 1b05a66aa9b006fd04ed29f408e68f46  libjpeg-turbo-2.0.1.tar.gz
++# From https://sourceforge.net/projects/libjpeg-turbo/files/2.0.3/
++sha1 539363a444f92421c098a1a3e7cebfda48d4cfb3  libjpeg-turbo-2.0.3.tar.gz
++md5  bd07fddf26f9def7bab02739eb655116 libjpeg-turbo-2.0.3.tar.gz
+ # Locally computed
+-sha256 e5f86cec31df1d39596e0cca619ab1b01f99025a27dafdfc97a30f3a12f866ff  libjpeg-turbo-2.0.1.tar.gz
+-sha256 8412238c5ad95965cf3c3197791e9dea8b5fae505d133449e33ee2fa754fe61e  LICENSE.md
++sha256 4246de500544d4ee408ee57048aa4aadc6f165fc17f141da87669f20ed3241b7  libjpeg-turbo-2.0.3.tar.gz
++sha256 69e570a251515ced17d4492256d57c89db77ed949652f88a44c80c1ca9607920  LICENSE.md
+ sha256 82fece2bff2669c476495f0fe70096b154e8bc5b40916a64e99836d9a01c3110  README.ijg
+diff --git a/package/jpeg-turbo/jpeg-turbo.mk b/package/jpeg-turbo/jpeg-turbo.mk
+index b848b66899..0c75cf1db5 100644
+--- a/package/jpeg-turbo/jpeg-turbo.mk
++++ b/package/jpeg-turbo/jpeg-turbo.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-JPEG_TURBO_VERSION = 2.0.1
++JPEG_TURBO_VERSION = 2.0.3
+ JPEG_TURBO_SOURCE = libjpeg-turbo-$(JPEG_TURBO_VERSION).tar.gz
+ JPEG_TURBO_SITE = https://downloads.sourceforge.net/project/libjpeg-turbo/$(JPEG_TURBO_VERSION)
+ JPEG_TURBO_LICENSE = IJG (libjpeg), BSD-3-Clause (TurboJPEG), Zlib (SIMD)
+diff --git a/package/kexec-lite/Config.in b/package/kexec-lite/Config.in
+index cd0e30f2dd..3e84f90d57 100644
+--- a/package/kexec-lite/Config.in
++++ b/package/kexec-lite/Config.in
+@@ -15,6 +15,8 @@ config BR2_PACKAGE_KEXEC_LITE
+ 	  This package is a tiny implementation of the kexec userspace
+ 	  components, for devicetree-based platforms.
+ 
++	  https://github.com/antonblanchard/kexec-lite
++
+ comment "kexec-lite needs a uClibc or glibc toolchain w/ wchar, dynamic library"
+ 	depends on BR2_powerpc || BR2_powerpc64
+ 	depends on BR2_STATIC_LIBS || !BR2_USE_WCHAR \
+diff --git a/package/kf5/Config.in b/package/kf5/Config.in
+index 2e50bce49e..aecbb932f5 100644
+--- a/package/kf5/Config.in
++++ b/package/kf5/Config.in
+@@ -6,6 +6,8 @@ menuconfig BR2_PACKAGE_KF5
+ 	  This option enables the KF5 KDE Frameworks. Sub-options
+ 	  allow to select which modules should be built.
+ 
++	  https://techbase.kde.org/KDE_Frameworks
++
+ if BR2_PACKAGE_KF5
+ source "package/kf5/kf5-extra-cmake-modules/Config.in"
+ source "package/kf5/kf5-kcoreaddons/Config.in"
+diff --git a/package/kodi-jsonschemabuilder/kodi-jsonschemabuilder.mk b/package/kodi-jsonschemabuilder/kodi-jsonschemabuilder.mk
+index fcf4888a9c..713d415fed 100644
+--- a/package/kodi-jsonschemabuilder/kodi-jsonschemabuilder.mk
++++ b/package/kodi-jsonschemabuilder/kodi-jsonschemabuilder.mk
+@@ -9,6 +9,7 @@
+ KODI_JSONSCHEMABUILDER_VERSION = 17.6-Krypton
+ KODI_JSONSCHEMABUILDER_SITE = $(call github,xbmc,xbmc,$(KODI_JSONSCHEMABUILDER_VERSION))
+ KODI_JSONSCHEMABUILDER_SOURCE = kodi-$(KODI_JSONSCHEMABUILDER_VERSION).tar.gz
++KODI_JSONSCHEMABUILDER_DL_SUBDIR = kodi
+ KODI_JSONSCHEMABUILDER_LICENSE = GPL-2.0
+ KODI_JSONSCHEMABUILDER_LICENSE_FILES = LICENSE.GPL
+ HOST_KODI_JSONSCHEMABUILDER_SUBDIR = tools/depends/native/JsonSchemaBuilder
+diff --git a/package/kodi-texturepacker/kodi-texturepacker.mk b/package/kodi-texturepacker/kodi-texturepacker.mk
+index 31e3580aed..bb35252b94 100644
+--- a/package/kodi-texturepacker/kodi-texturepacker.mk
++++ b/package/kodi-texturepacker/kodi-texturepacker.mk
+@@ -9,6 +9,7 @@
+ KODI_TEXTUREPACKER_VERSION = 17.6-Krypton
+ KODI_TEXTUREPACKER_SITE = $(call github,xbmc,xbmc,$(KODI_TEXTUREPACKER_VERSION))
+ KODI_TEXTUREPACKER_SOURCE = kodi-$(KODI_TEXTUREPACKER_VERSION).tar.gz
++KODI_TEXTUREPACKER_DL_SUBDIR = kodi
+ KODI_TEXTUREPACKER_LICENSE = GPL-2.0
+ KODI_TEXTUREPACKER_LICENSE_FILES = LICENSE.GPL
+ HOST_KODI_TEXTUREPACKER_SUBDIR = tools/depends/native/TexturePacker
+diff --git a/package/kodi/Config.in b/package/kodi/Config.in
+index 279b4ead0d..28c56ac1b5 100644
+--- a/package/kodi/Config.in
++++ b/package/kodi/Config.in
+@@ -81,12 +81,10 @@ menuconfig BR2_PACKAGE_KODI
+ 	select BR2_PACKAGE_PYTHON_BZIP2
+ 	select BR2_PACKAGE_PYTHON_CURSES
+ 	select BR2_PACKAGE_PYTHON_PYEXPAT
+-	select BR2_PACKAGE_PYTHON_READLINE
+ 	select BR2_PACKAGE_PYTHON_SQLITE
+ 	select BR2_PACKAGE_PYTHON_SSL
+ 	select BR2_PACKAGE_PYTHON_UNICODEDATA
+ 	select BR2_PACKAGE_PYTHON_ZLIB
+-	select BR2_PACKAGE_READLINE
+ 	select BR2_PACKAGE_SQLITE
+ 	select BR2_PACKAGE_TAGLIB
+ 	select BR2_PACKAGE_TINYXML
+diff --git a/package/kodi/kodi.hash b/package/kodi/kodi.hash
+index 8018c67a3a..2b2e5e64f9 100644
+--- a/package/kodi/kodi.hash
++++ b/package/kodi/kodi.hash
+@@ -8,3 +8,5 @@ sha256 b6eb2d929ff56cb051152c32010afc5e7cf5fe8c5ae32dca412a2b46b6b57e34  2f12236
+ sha256 312b3d15bc448d24e92f4b2e7248409525eccc4e75776026d805478e51c5ef3d  981488f.tar.gz
+ # Locally computed - libdvdread
+ sha256 e7179b2054163652596a56301c9f025515cb08c6d6310b42b897c3ad11c0199b  17d99db.tar.gz
++# Locally computed
++sha256 89931c1fb1f3716694175763cf3221cfcd63d6935031cf6b4512d17ffe5d9860  LICENSE.GPL
+diff --git a/package/kodi/kodi.mk b/package/kodi/kodi.mk
+index 590af15b7c..3ba89abcc8 100644
+--- a/package/kodi/kodi.mk
++++ b/package/kodi/kodi.mk
+@@ -19,6 +19,7 @@ KODI_DEPENDENCIES = \
+ 	freetype \
+ 	gnutls \
+ 	host-gawk \
++	host-gettext \
+ 	host-gperf \
+ 	host-kodi-jsonschemabuilder \
+ 	host-kodi-texturepacker \
+@@ -38,7 +39,6 @@ KODI_DEPENDENCIES = \
+ 	openssl \
+ 	pcre \
+ 	python \
+-	readline \
+ 	sqlite \
+ 	taglib \
+ 	tinyxml \
+diff --git a/package/kvm-unit-tests/kvm-unit-tests.mk b/package/kvm-unit-tests/kvm-unit-tests.mk
+index bb08c0603d..2637066701 100644
+--- a/package/kvm-unit-tests/kvm-unit-tests.mk
++++ b/package/kvm-unit-tests/kvm-unit-tests.mk
+@@ -35,13 +35,14 @@ KVM_UNIT_TESTS_CONF_OPTS =\
+ # compiler. However, for x86-64, we use the host compiler, as
+ # kvm-unit-tests builds 32 bit code, which Buildroot toolchains for
+ # x86-64 cannot do.
+-ifneq ($(BR2_x86_64),y)
+-KVM_UNIT_TESTS_CONF_OPTS += --cross-prefix="$(TARGET_CROSS)"
++ifeq ($(BR2_x86_64),y)
+ # Arch Linux adds -fstack-protector even when building with -ffreestanding, but
+ # it doesn't link with the stack-protector library when -nostdlib is passed,
+ # which leads to a link error. Therefore, disable it explicitly to work around
+ # this bug in Arch Linux. https://bugs.archlinux.org/task/64270
+ KVM_UNIT_TESTS_MAKE_OPTS += EXTRA_CFLAGS=-fno-stack-protector
++else
++KVM_UNIT_TESTS_CONF_OPTS += --cross-prefix="$(TARGET_CROSS)"
+ endif
+ 
+ define KVM_UNIT_TESTS_CONFIGURE_CMDS
+diff --git a/package/leafnode2/Config.in b/package/leafnode2/Config.in
+index 93d3090a00..e244bdc45b 100644
+--- a/package/leafnode2/Config.in
++++ b/package/leafnode2/Config.in
+@@ -9,9 +9,9 @@ config BR2_PACKAGE_LEAFNODE2
+ 
+ 	  Leafnode-2 needs inetd, check chapter 14 of the documentation
+ 	  at:
+-	  http://www.dt.e-technik.uni-dortmund.de/~ma/leafnode/beta/leafnode-readme.txt
++	  http://krusty.dt.e-technik.tu-dortmund.de/~ma/leafnode/beta/leafnode-readme.txt
+ 
+ 	  For example, you can add this line to inetd.conf:
+ 	  nntp    stream  tcp     nowait  news    /usr/sbin/leafnode
+ 
+-	  http://www.dt.e-technik.tu-dortmund.de/~ma/leafnode/beta
++	  http://krusty.dt.e-technik.tu-dortmund.de/~ma/leafnode/beta
+diff --git a/package/libass/Config.in b/package/libass/Config.in
+index 7690685187..c654d8212a 100644
+--- a/package/libass/Config.in
++++ b/package/libass/Config.in
+@@ -6,4 +6,4 @@ config BR2_PACKAGE_LIBASS
+ 	  libass is a portable subtitle renderer for the ASS/SSA
+ 	  (Advanced Substation Alpha/Substation Alpha) subtitle format
+ 
+-	  http://code.google.com/p/libass/
++	  https://github.com/libass/libass
+diff --git a/package/libbson/Config.in b/package/libbson/Config.in
+index 4305ca9037..95f224e29e 100644
+--- a/package/libbson/Config.in
++++ b/package/libbson/Config.in
+@@ -5,5 +5,7 @@ config BR2_PACKAGE_LIBBSON
+ 	  libbson is a library providing useful routines related to
+ 	  building, parsing, and iterating BSON documents.
+ 
++	  http://mongoc.org/libbson/
++
+ comment "libbson needs a toolchain w/ threads"
+ 	depends on !BR2_TOOLCHAIN_HAS_THREADS
+diff --git a/package/libdvdnav/Config.in b/package/libdvdnav/Config.in
+index 8cfcb4a6de..77cba5f135 100644
+--- a/package/libdvdnav/Config.in
++++ b/package/libdvdnav/Config.in
+@@ -7,7 +7,7 @@ config BR2_PACKAGE_LIBDVDNAV
+ 	  DVD navigation features such as DVD menus, multiangle
+ 	  playback and even interactive DVD games.
+ 
+-	  http://www.mplayerhq.hu
++	  https://www.videolan.org/developers/libdvdnav.html
+ 
+ comment "libdvdnav needs a toolchain w/ threads"
+ 	depends on !BR2_TOOLCHAIN_HAS_THREADS
+diff --git a/package/libdvdread/Config.in b/package/libdvdread/Config.in
+index 91bec83a40..3579054158 100644
+--- a/package/libdvdread/Config.in
++++ b/package/libdvdread/Config.in
+@@ -5,4 +5,4 @@ config BR2_PACKAGE_LIBDVDREAD
+ 	  libdvdread provides a simple foundation for reading
+ 	  DVD-Video images.
+ 
+-	  http://www.mplayerhq.hu/MPlayer/releases/dvdnav/
++	  https://www.videolan.org/developers/libdvdnav.html
+diff --git a/package/liberation/Config.in b/package/liberation/Config.in
+index b68166f638..8d6b3e78d9 100644
+--- a/package/liberation/Config.in
++++ b/package/liberation/Config.in
+@@ -5,6 +5,8 @@ config BR2_PACKAGE_LIBERATION
+ 	  three most commonly used fonts on Microsoft systems:
+ 	  Times New Roman, Arial, and Courier New.
+ 
++	  https://github.com/liberationfonts/liberation-fonts
++
+ if BR2_PACKAGE_LIBERATION
+ 
+ config BR2_PACKAGE_LIBERATION_MONO
+diff --git a/package/libftdi/libftdi.hash b/package/libftdi/libftdi.hash
+index 5d9f8765db..8271ab277a 100644
+--- a/package/libftdi/libftdi.hash
++++ b/package/libftdi/libftdi.hash
+@@ -1,2 +1,7 @@
+ # Locally computed (after checking the signature from http://www.intra2net.com/en/developer/libftdi/download.php)
+ sha256  3176d5b5986438f33f5208e690a8bfe90941be501cc0a72118ce3d338d4b838e  libftdi-0.20.tar.gz
++
++# Hash for license files:
++sha256  6bd354f4b9beca001b1b5395be48cef1d749a3ed27dddb8114bf09eb0ab2d88c  LICENSE
++sha256  ab15fd526bd8dd18a9e77ebc139656bf4d33e97fc7238cd11bf60e2b9b8666c6  COPYING.GPL
++sha256  c340cbee4974bb96019e782f2279df016c92fb1e7f5299347e779d9acedbb991  COPYING.LIB
+diff --git a/package/libftdi/libftdi.mk b/package/libftdi/libftdi.mk
+index cdd77c2e68..257342622f 100644
+--- a/package/libftdi/libftdi.mk
++++ b/package/libftdi/libftdi.mk
+@@ -6,6 +6,8 @@
+ 
+ LIBFTDI_VERSION = 0.20
+ LIBFTDI_SITE = http://www.intra2net.com/en/developer/libftdi/download
++LIBFTDI_LICENSE = LGPL-2.1 (libftdi)
++LIBFTDI_LICENSE_FILES = LICENSE COPYING.LIB
+ LIBFTDI_DEPENDENCIES = libusb-compat libusb
+ HOST_LIBFTDI_DEPENDENCIES = host-libusb-compat host-libusb
+ LIBFTDI_INSTALL_STAGING = YES
+@@ -16,6 +18,8 @@ LIBFTDI_CONF_OPTS = --without-examples
+ 
+ # configure detect it automaticaly so we need to force it
+ ifeq ($(BR2_PACKAGE_LIBFTDI_CPP),y)
++LIBFTDI_LICENSE += , GPL-2.0 with exception (ftdipp)
++LIBFTDI_LICENSE_FILES += COPYING.GPL
+ LIBFTDI_DEPENDENCIES += boost
+ LIBFTDI_CONF_OPTS += --enable-libftdipp
+ else
+diff --git a/package/libftdi1/libftdi1.mk b/package/libftdi1/libftdi1.mk
+index 014dd8401e..9c3bafdbc0 100644
+--- a/package/libftdi1/libftdi1.mk
++++ b/package/libftdi1/libftdi1.mk
+@@ -9,12 +9,14 @@ LIBFTDI1_SOURCE = libftdi1-$(LIBFTDI1_VERSION).tar.bz2
+ LIBFTDI1_SITE = http://www.intra2net.com/en/developer/libftdi/download
+ LIBFTDI1_INSTALL_STAGING = YES
+ LIBFTDI1_DEPENDENCIES = libusb
+-LIBFTDI1_LICENSE = LGPL-2.0 (libftdi1), GPL-2.0 with exception (ftdipp1)
+-LIBFTDI1_LICENSE_FILES = LICENSE COPYING.GPL COPYING.LIB
++LIBFTDI1_LICENSE = LGPL-2.1 (libftdi1), MIT (libftdi1)
++LIBFTDI1_LICENSE_FILES = LICENSE COPYING.LIB
+ LIBFTDI1_CONFIG_SCRIPTS = libftdi1-config
+ LIBFTDI1_CONF_OPTS = -DDOCUMENTATION=OFF -DEXAMPLES=OFF
+ 
+ ifeq ($(BR2_PACKAGE_LIBFTDI1_LIBFTDIPP1),y)
++LIBFTDI1_LICENSE += , GPL-2.0 with exception (libftdipp1)
++LIBFTDI1_LICENSE_FILES += COPYING.GPL
+ LIBFTDI1_DEPENDENCIES += boost
+ LIBFTDI1_CONF_OPTS += -DFTDIPP=ON
+ else
+@@ -30,6 +32,8 @@ endif
+ 
+ ifeq ($(BR2_PACKAGE_LIBFTDI1_FDTI_EEPROM),y)
+ # ftdi_eeprom optionally depends on libintl
++LIBFTDI1_LICENSE += , GPL-2.0 (ftdi_eeprom)
++LIBFTDI1_LICENSE_FILES += COPYING.GPL
+ LIBFTDI1_DEPENDENCIES += libconfuse $(TARGET_NLS_DEPENDENCIES)
+ LIBFTDI1_CONF_OPTS += -DFTDI_EEPROM=ON
+ else
+diff --git a/package/libglob/Config.in b/package/libglob/Config.in
+index 029ed6a1d3..7ae2bfd250 100644
+--- a/package/libglob/Config.in
++++ b/package/libglob/Config.in
+@@ -2,3 +2,5 @@ config BR2_PACKAGE_LIBGLOB
+ 	bool "libglob"
+ 	help
+ 	  OpenBSD implementation of glob(3).
++
++	  https://github.com/void-linux/libglob
+diff --git a/package/libhid/Config.in b/package/libhid/Config.in
+index e6f2012860..ec66308061 100644
+--- a/package/libhid/Config.in
++++ b/package/libhid/Config.in
+@@ -6,7 +6,7 @@ config BR2_PACKAGE_LIBHID
+ 	help
+ 	  Userspace library for accessing USB HID devices
+ 
+-	  http://libhid.alioth.debian.org
++	  https://directory.fsf.org/wiki/Libhid
+ 
+ comment "libhid needs a toolchain w/ threads"
+ 	depends on !BR2_TOOLCHAIN_HAS_THREADS
+diff --git a/package/libiscsi/Config.in b/package/libiscsi/Config.in
+index 760fecea66..8e588c9ef3 100644
+--- a/package/libiscsi/Config.in
++++ b/package/libiscsi/Config.in
+@@ -9,4 +9,4 @@ config BR2_PACKAGE_LIBISCSI
+ 	  scsi tasks, but a sync layer is also provided for ease of use
+ 	  for simpler applications.
+ 
+-	  https://github.com/sahlberg/libiscsi  (no proper homepage)
++	  https://github.com/sahlberg/libiscsi
+diff --git a/package/liblockfile/Config.in b/package/liblockfile/Config.in
+index 88a9c338bb..83ffea86c8 100644
+--- a/package/liblockfile/Config.in
++++ b/package/liblockfile/Config.in
+@@ -2,3 +2,5 @@ config BR2_PACKAGE_LIBLOCKFILE
+ 	bool "liblockfile"
+ 	help
+ 	  NFS-safe locking library.
++
++	  https://github.com/miquels/liblockfile
+diff --git a/package/libmspack/Config.in b/package/libmspack/Config.in
+new file mode 100644
+index 0000000000..e2b1a9059a
+--- /dev/null
++++ b/package/libmspack/Config.in
+@@ -0,0 +1,7 @@
++config BR2_PACKAGE_LIBMSPACK
++	bool "libmspack"
++	help
++	  libmspack is a portable library for some loosely related
++	  Microsoft compression formats
++
++	  https://www.cabextract.org.uk/libmspack
+diff --git a/package/libmspack/libmspack.hash b/package/libmspack/libmspack.hash
+new file mode 100644
+index 0000000000..b12e9b6280
+--- /dev/null
++++ b/package/libmspack/libmspack.hash
+@@ -0,0 +1,3 @@
++# Locally computed
++sha256 bac862dee6e0fc10d92c70212441d9f8ad9b0222edc9a708c3ead4adb1b24a8e  libmspack-0.10.1alpha.tar.gz
++sha256 a190dc9c8043755d90f8b0a75fa66b9e42d4af4c980bf5ddc633f0124db3cee7  COPYING.LIB
+diff --git a/package/libmspack/libmspack.mk b/package/libmspack/libmspack.mk
+new file mode 100644
+index 0000000000..e9fdc3ca8d
+--- /dev/null
++++ b/package/libmspack/libmspack.mk
+@@ -0,0 +1,13 @@
++################################################################################
++#
++# libmspack
++#
++################################################################################
++
++LIBMSPACK_VERSION = 0.10.1alpha
++LIBMSPACK_SITE = https://www.cabextract.org.uk/libmspack
++LIBMSPACK_LICENSE = LGPL-2.1
++LIBMSPACK_LICENSE_FILES = COPYING.LIB
++LIBMSPACK_INSTALL_STAGING = YES
++
++$(eval $(autotools-package))
+diff --git a/package/libnss/libnss.hash b/package/libnss/libnss.hash
+index 92d6fd3908..518d95d842 100644
+--- a/package/libnss/libnss.hash
++++ b/package/libnss/libnss.hash
+@@ -1,4 +1,4 @@
+ # From https://ftp.mozilla.org/pub/security/nss/releases/NSS_3_46_1_RTM/src/SHA256SUMS
+-sha256	6cd0c4438b616bdacc0b5f25ff1506b0d07ee97ea6c95d514c5487200a155fa7  nss-3.47.tar.gz
++sha256	1ae3d1cb1de345b258788f2ef6b10a460068034c3fd64f42427a183d8342a6fb  nss-3.47.1.tar.gz
+ # Locally calculated
+ sha256	a20c1a32d1f8102432360b42e932869f7c11c7cdbacf9cac554c422132af47f4  nss/COPYING
+diff --git a/package/libnss/libnss.mk b/package/libnss/libnss.mk
+index b1c30cf07f..cf11deaf9e 100644
+--- a/package/libnss/libnss.mk
++++ b/package/libnss/libnss.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBNSS_VERSION = 3.47
++LIBNSS_VERSION = 3.47.1
+ LIBNSS_SOURCE = nss-$(LIBNSS_VERSION).tar.gz
+ LIBNSS_SITE = https://ftp.mozilla.org/pub/mozilla.org/security/nss/releases/NSS_$(subst .,_,$(LIBNSS_VERSION))_RTM/src
+ LIBNSS_DISTDIR = dist
+diff --git a/package/libpciaccess/Config.in b/package/libpciaccess/Config.in
+index 6cc983f577..1f5d5e6bef 100644
+--- a/package/libpciaccess/Config.in
++++ b/package/libpciaccess/Config.in
+@@ -2,3 +2,7 @@ config BR2_PACKAGE_LIBPCIACCESS
+ 	bool "libpciaccess"
+ 	help
+ 	  X.Org libpciaccess
++
++	  Generic PCI access library
++
++	  https://gitlab.freedesktop.org/xorg/lib/libpciaccess
+diff --git a/package/libsecret/Config.in b/package/libsecret/Config.in
+index 0539e5da2c..04a3e46fe7 100644
+--- a/package/libsecret/Config.in
++++ b/package/libsecret/Config.in
+@@ -10,7 +10,7 @@ config BR2_PACKAGE_LIBSECRET
+ 	  using DBus. gnome-keyring and ksecretservice are both
+ 	  implementations of a Secret Service.
+ 
+-	  https://wiki.gnome.org/Libsecret
++	  https://wiki.gnome.org/Projects/Libsecret
+ 
+ comment "libsecret needs a toolchain w/ wchar, threads"
+ 	depends on BR2_USE_MMU
+diff --git a/package/libsexy/Config.in b/package/libsexy/Config.in
+index 5d1e710c44..a2a2cc820c 100644
+--- a/package/libsexy/Config.in
++++ b/package/libsexy/Config.in
+@@ -8,4 +8,4 @@ config BR2_PACKAGE_LIBSEXY
+ 	  GtkLabel by subclassing them and working around the
+ 	  limitations of the widgets.
+ 
+-	  http://www.chipx86.com/wiki/Libsexy
++	  https://blog.chipx86.com/tag/libsexy/
+diff --git a/package/libstrophe/libstrophe.hash b/package/libstrophe/libstrophe.hash
+index 72eb386520..1e46a82bc9 100644
+--- a/package/libstrophe/libstrophe.hash
++++ b/package/libstrophe/libstrophe.hash
+@@ -1,4 +1,4 @@
+ # Locally calculated
+-sha256 158145bc1565a5fd0bbd7f57e3e15d768e58b8a460897ab5918a5a689d67ae6f  libstrophe-0.9.2.tar.gz
++sha256 8a3b79f62177ed59c01d4d4108357ff20bd933d53b845ee4e350d304c051a4fe  libstrophe-0.9.3.tar.gz
+ sha256 82476f36ffd5e895a176013c0812166ba7b7d99f3d536fc7f5ed2e33e9f74a08  MIT-LICENSE.txt
+ sha256 8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  GPL-LICENSE.txt
+diff --git a/package/libstrophe/libstrophe.mk b/package/libstrophe/libstrophe.mk
+index 7445caa67f..d5434f5033 100644
+--- a/package/libstrophe/libstrophe.mk
++++ b/package/libstrophe/libstrophe.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-LIBSTROPHE_VERSION = 0.9.2
++LIBSTROPHE_VERSION = 0.9.3
+ LIBSTROPHE_SITE = $(call github,strophe,libstrophe,$(LIBSTROPHE_VERSION))
+ LIBSTROPHE_DEPENDENCIES = openssl host-pkgconf
+ # Doesn't ship configure
+diff --git a/package/libsvgtiny/libsvgtiny.hash b/package/libsvgtiny/libsvgtiny.hash
+index fce3795352..86096cef3b 100644
+--- a/package/libsvgtiny/libsvgtiny.hash
++++ b/package/libsvgtiny/libsvgtiny.hash
+@@ -1,2 +1,3 @@
+ # Locally computed
+ sha256 082a2e8849f05e2364a942eec51a798d637c6eca44db8c73350a038ebd1fd268  libsvgtiny-ea9d99fc8b231c22d06168135e181d61f4eb2f06.tar.gz
++sha256 92b965c77be71661cae51425a6b40a5ca274f44cc13c723c90fb471a9a26a828  README
+diff --git a/package/libsvgtiny/libsvgtiny.mk b/package/libsvgtiny/libsvgtiny.mk
+index febd3fcec8..fe7dc0a6d2 100644
+--- a/package/libsvgtiny/libsvgtiny.mk
++++ b/package/libsvgtiny/libsvgtiny.mk
+@@ -12,6 +12,8 @@ LIBSVGTINY_DEPENDENCIES = \
+ 	libxml2 host-gperf host-pkgconf host-netsurf-buildsystem
+ LIBSVGTINY_LICENSE = MIT
+ LIBSVGTINY_LICENSE_FILES = README
++# Package does not build in parallel due to improper make rules
++LIBSVGTINY_MAKE = $(MAKE1)
+ 
+ # The libsvgtiny build system cannot build both the shared and static
+ # libraries. So when the Buildroot configuration requests to build
+diff --git a/package/libvorbis/Config.in b/package/libvorbis/Config.in
+index 3d5b5d6d61..1b7cd6c3b2 100644
+--- a/package/libvorbis/Config.in
++++ b/package/libvorbis/Config.in
+@@ -13,3 +13,5 @@ config BR2_PACKAGE_LIBVORBIS
+ 	  representations such as MPEG-4 (AAC), and similar to, but
+ 	  higher performance than MPEG-1/2 audio layer 3, MPEG-4 audio
+ 	  (TwinVQ), WMA and PAC.
++
++	  https://xiph.org/vorbis/
+diff --git a/package/linux-fusion/Config.in b/package/linux-fusion/Config.in
+index ed8bd6ad48..14b4f946af 100644
+--- a/package/linux-fusion/Config.in
++++ b/package/linux-fusion/Config.in
+@@ -8,3 +8,5 @@ config BR2_PACKAGE_LINUX_FUSION
+ 	help
+ 	  DirectFB Communication Layer allowing multiple DirectFB
+ 	  applications to run concurrently
++
++	  https://github.com/deniskropp/linux-fusion
+diff --git a/package/linux-headers/Config.in.host b/package/linux-headers/Config.in.host
+index d581e5916c..17a27075c2 100644
+--- a/package/linux-headers/Config.in.host
++++ b/package/linux-headers/Config.in.host
+@@ -287,10 +287,10 @@ endchoice
+ 
+ config BR2_DEFAULT_KERNEL_HEADERS
+ 	string
+-	default "4.4.198"	if BR2_KERNEL_HEADERS_4_4
+-	default "4.9.198"	if BR2_KERNEL_HEADERS_4_9
+-	default "4.14.151"	if BR2_KERNEL_HEADERS_4_14
+-	default "4.19.81"	if BR2_KERNEL_HEADERS_4_19
++	default "4.4.206"	if BR2_KERNEL_HEADERS_4_4
++	default "4.9.206"	if BR2_KERNEL_HEADERS_4_9
++	default "4.14.158"	if BR2_KERNEL_HEADERS_4_14
++	default "4.19.88"	if BR2_KERNEL_HEADERS_4_19
+ 	default "4.20.17"	if BR2_KERNEL_HEADERS_4_20
+ 	default BR2_DEFAULT_KERNEL_VERSION if BR2_KERNEL_HEADERS_VERSION
+ 	default "custom"	if BR2_KERNEL_HEADERS_CUSTOM_TARBALL
+diff --git a/package/luasql-sqlite3/Config.in b/package/luasql-sqlite3/Config.in
+index cc4d3d5450..3a1fc6ba60 100644
+--- a/package/luasql-sqlite3/Config.in
++++ b/package/luasql-sqlite3/Config.in
+@@ -4,4 +4,4 @@ config BR2_PACKAGE_LUASQL_SQLITE3
+ 	help
+ 	  LuaSQL is a simple interface from Lua to a DBMS.
+ 
+-	  http://www.keplerproject.org/luasql
++	  http://keplerproject.github.io/luasql/
+diff --git a/package/lvm2/lvm2.mk b/package/lvm2/lvm2.mk
+index 7fdb9a7e30..14575668a5 100644
+--- a/package/lvm2/lvm2.mk
++++ b/package/lvm2/lvm2.mk
+@@ -28,13 +28,8 @@ LVM2_DEPENDENCIES += host-pkgconf libaio
+ # take into account the toolchain passed at configure time.
+ LVM2_MAKE_ENV = $(TARGET_CONFIGURE_OPTS)
+ 
+-ifeq ($(BR2_PACKAGE_READLINE),y)
+-LVM2_DEPENDENCIES += readline
+-else
+-# v2.02.44: disable readline usage, or binaries are linked against provider
+-# of "tgetent" (=> ncurses) even if it's not used..
++# package/readline is GPL-3.0+, so not license compatible
+ LVM2_CONF_OPTS += --disable-readline
+-endif
+ 
+ ifeq ($(BR2_PACKAGE_LIBSELINUX),y)
+ LVM2_CONF_OPTS += --enable-selinux
+diff --git a/package/lzma/lzma.hash b/package/lzma/lzma.hash
+index e73517ca57..6055d7d986 100644
+--- a/package/lzma/lzma.hash
++++ b/package/lzma/lzma.hash
+@@ -1,2 +1,5 @@
+ # Locally calculated
+ sha256	02aa57f995d15b7acb7c2496d88a39fb0124ea00bf027cc61dd24eddb5942dff	lzma-4.32.7.tar.xz
++sha256	231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c	COPYING.GPLv2
++sha256	8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903	COPYING.GPLv3
++sha256	6095e9ffa777dd22839f7801aa845b31c9ed07f3d6bf8a26dc5d2dec8ccc0ef3	COPYING.LGPLv2.1
+diff --git a/package/lzma/lzma.mk b/package/lzma/lzma.mk
+index 1b4d7febb1..095382d174 100644
+--- a/package/lzma/lzma.mk
++++ b/package/lzma/lzma.mk
+@@ -7,6 +7,8 @@
+ LZMA_VERSION = 4.32.7
+ LZMA_SOURCE = lzma-$(LZMA_VERSION).tar.xz
+ LZMA_SITE = http://tukaani.org/lzma
++LZMA_LICENSE = LGPL-2.1+ (lzmadec library, lzmainfo, LzmaDecode), GPL-2.0+ (lzma program, lzgrep and lzmore scripts), GPL-3.0+ (tests)
++LZMA_LICENSE_FILES = COPYING.GPLv2 COPYING.GPLv3 COPYING.LGPLv2.1
+ 
+ $(eval $(host-autotools-package))
+ 
+diff --git a/package/mariadb/mariadb.mk b/package/mariadb/mariadb.mk
+index c59235adb1..6d8441b256 100644
+--- a/package/mariadb/mariadb.mk
++++ b/package/mariadb/mariadb.mk
+@@ -19,8 +19,10 @@ MARIADB_DEPENDENCIES = \
+ 	openssl \
+ 	zlib \
+ 	libaio \
+-	libxml2 \
+-	readline
++	libxml2
++
++# use bundled GPL-2.0+ licensed readline as package/readline is GPL-3.0+
++MARIADB_CONF_OPTS += -DWITH_READLINE=ON
+ 
+ # We won't need unit tests
+ MARIADB_CONF_OPTS += -DWITH_UNIT_TESTS=0
+diff --git a/package/matchbox-common/Config.in b/package/matchbox-common/Config.in
+index 587a0694e8..3717a551f2 100644
+--- a/package/matchbox-common/Config.in
++++ b/package/matchbox-common/Config.in
+@@ -5,6 +5,8 @@ config BR2_PACKAGE_MATCHBOX_COMMON
+ 	help
+ 	  Common desktop folders and matchbox-session script.
+ 
++	  http://git.yoctoproject.org/cgit/cgit.cgi/matchbox-common/
++
+ config BR2_PACKAGE_MATCHBOX_COMMON_PDA
+ 	bool "PDA style app folder"
+ 	depends on BR2_PACKAGE_MATCHBOX_COMMON
+diff --git a/package/matchbox-desktop/Config.in b/package/matchbox-desktop/Config.in
+index 22c568bc1a..9d3e522a5a 100644
+--- a/package/matchbox-desktop/Config.in
++++ b/package/matchbox-desktop/Config.in
+@@ -4,3 +4,5 @@ config BR2_PACKAGE_MATCHBOX_DESKTOP
+ 	select BR2_PACKAGE_ZLIB
+ 	help
+ 	  A PDA style application launcher or 'item browser'.
++
++	  http://git.yoctoproject.org/cgit/cgit.cgi/matchbox-desktop
+diff --git a/package/matchbox-fakekey/Config.in b/package/matchbox-fakekey/Config.in
+index 1a1f1341ec..0a8f628182 100644
+--- a/package/matchbox-fakekey/Config.in
++++ b/package/matchbox-fakekey/Config.in
+@@ -4,3 +4,5 @@ config BR2_PACKAGE_MATCHBOX_FAKEKEY
+ 	select BR2_PACKAGE_XLIB_LIBXTST
+ 	help
+ 	  Library for simulating key press events under X11.
++
++	  http://git.yoctoproject.org/cgit/cgit.cgi/libfakekey/
+diff --git a/package/matchbox-keyboard/Config.in b/package/matchbox-keyboard/Config.in
+index 8bd2a7972c..b6753f3bec 100644
+--- a/package/matchbox-keyboard/Config.in
++++ b/package/matchbox-keyboard/Config.in
+@@ -6,3 +6,5 @@ config BR2_PACKAGE_MATCHBOX_KEYBOARD
+ 	select BR2_PACKAGE_MATCHBOX_LIB
+ 	help
+ 	  Virtual Keyboard
++
++	  http://git.yoctoproject.org/cgit/cgit.cgi/matchbox-keyboard/
+diff --git a/package/matchbox-lib/Config.in b/package/matchbox-lib/Config.in
+index d758ab35a8..98cdae730d 100644
+--- a/package/matchbox-lib/Config.in
++++ b/package/matchbox-lib/Config.in
+@@ -3,3 +3,5 @@ config BR2_PACKAGE_MATCHBOX_LIB
+ 	select BR2_PACKAGE_XLIB_LIBXEXT
+ 	help
+ 	  Matchbox common functionality library.
++
++	  http://git.yoctoproject.org/cgit/cgit.cgi/libmatchbox
+diff --git a/package/matchbox-panel/Config.in b/package/matchbox-panel/Config.in
+index 47bd10ad7e..1fc38336a5 100644
+--- a/package/matchbox-panel/Config.in
++++ b/package/matchbox-panel/Config.in
+@@ -4,3 +4,5 @@ config BR2_PACKAGE_MATCHBOX_PANEL
+ 	help
+ 	  A flexible always present 'window bar' for holding
+ 	  application launchers.
++
++	  http://git.yoctoproject.org/cgit/cgit.cgi/matchbox-panel/
+diff --git a/package/matchbox-startup-monitor/Config.in b/package/matchbox-startup-monitor/Config.in
+index 9dce60ea12..be2fab4c1a 100644
+--- a/package/matchbox-startup-monitor/Config.in
++++ b/package/matchbox-startup-monitor/Config.in
+@@ -4,3 +4,5 @@ config BR2_PACKAGE_MATCHBOX_STARTUP_MONITOR
+ 	select BR2_PACKAGE_STARTUP_NOTIFICATION
+ 	help
+ 	  Matchbox Panel Startup Monitor Applet.
++
++	  http://git.yoctoproject.org/cgit.cgi/mb-applet-startup-monitor/
+diff --git a/package/mediastreamer/Config.in b/package/mediastreamer/Config.in
+index afaed4a730..b18c83c5e5 100644
+--- a/package/mediastreamer/Config.in
++++ b/package/mediastreamer/Config.in
+@@ -11,7 +11,7 @@ config BR2_PACKAGE_MEDIASTREAMER
+ 	  and sending of multimedia streams in linphone, including
+ 	  voice/video capture, encoding and decoding, and rendering.
+ 
+-	  http://www.linphone.org/eng/documentation/dev/mediastreamer2.html
++	  http://www.linphone.org/technical-corner/mediastreamer2
+ 
+ comment "mediastreamer needs a toolchain w/ threads, C++"
+ 	depends on !BR2_INSTALL_LIBSTDCPP || !BR2_TOOLCHAIN_HAS_THREADS
+diff --git a/package/metacity/Config.in b/package/metacity/Config.in
+index 833a091e7f..fc106a26b9 100644
+--- a/package/metacity/Config.in
++++ b/package/metacity/Config.in
+@@ -14,3 +14,5 @@ config BR2_PACKAGE_METACITY
+ 	select BR2_PACKAGE_XLIB_LIBXFT
+ 	help
+ 	  Metacity is a window manager for the X Window System.
++
++	  https://wiki.gnome.org/Projects/Metacity
+diff --git a/package/mii-diag/Config.in b/package/mii-diag/Config.in
+index ca48ba216f..37f3647bb9 100644
+--- a/package/mii-diag/Config.in
++++ b/package/mii-diag/Config.in
+@@ -3,3 +3,5 @@ config BR2_PACKAGE_MII_DIAG
+ 	help
+ 	  mii-diag allows you to manipulate the MII registers of
+ 	  network cards.
++
++	  https://launchpad.net/ubuntu/+source/mii-diag
+diff --git a/package/minicom/minicom.mk b/package/minicom/minicom.mk
+index 000597f8a9..4635d39ee7 100644
+--- a/package/minicom/minicom.mk
++++ b/package/minicom/minicom.mk
+@@ -28,4 +28,8 @@ define MINICOM_MKDIR_M4
+ endef
+ MINICOM_POST_PATCH_HOOKS += MINICOM_MKDIR_M4
+ 
++MINICOM_CONF_OPTS = \
++	--enable-dfl-port=/dev/ttyS1 \
++	--enable-lock-dir=/var/lock
++
+ $(eval $(autotools-package))
+diff --git a/package/mp4v2/Config.in b/package/mp4v2/Config.in
+index 42315a2272..490ebac9fd 100644
+--- a/package/mp4v2/Config.in
++++ b/package/mp4v2/Config.in
+@@ -5,7 +5,7 @@ config BR2_PACKAGE_MP4V2
+ 	  The MP4v2 library provides functions to read, create, and
+ 	  modify mp4 files.
+ 
+-	  https://code.google.com/p/mp4v2/
++	  https://code.google.com/archive/p/mp4v2/
+ 
+ if BR2_PACKAGE_MP4V2
+ 
+diff --git a/package/musl/Config.in b/package/musl/Config.in
+index 67e9e78a14..69da615b63 100644
+--- a/package/musl/Config.in
++++ b/package/musl/Config.in
+@@ -8,3 +8,5 @@ config BR2_PACKAGE_MUSL
+ 		&& !(BR2_i386 || BR2_powerpc)
+ 	# Compatibility headers: cdefs.h, queue.h
+ 	select BR2_PACKAGE_MUSL_COMPAT_HEADERS
++	help
++	  https://www.musl-libc.org/
+diff --git a/package/mxsldr/Config.in.host b/package/mxsldr/Config.in.host
+index a427e71cf7..0a02877c8b 100644
+--- a/package/mxsldr/Config.in.host
++++ b/package/mxsldr/Config.in.host
+@@ -6,4 +6,4 @@ config BR2_PACKAGE_HOST_MXSLDR
+ 	  Freescale i.MX23 and i.MX28 SoC's through the Serial
+ 	  Download Protocol.
+ 
+-	  git://git.denx.de/mxsldr.git
++	  https://gitlab.denx.de/denx/mxsldr
+diff --git a/package/mysql/Config.in b/package/mysql/Config.in
+index 30a82cc91b..ef4a9531a7 100644
+--- a/package/mysql/Config.in
++++ b/package/mysql/Config.in
+@@ -22,7 +22,6 @@ config BR2_PACKAGE_MARIADB
+ 	select BR2_PACKAGE_LIBXML2
+ 	select BR2_PACKAGE_NCURSES
+ 	select BR2_PACKAGE_OPENSSL
+-	select BR2_PACKAGE_READLINE
+ 	select BR2_PACKAGE_HAS_MYSQL
+ 	help
+ 	  MariaDB is one of the most popular database servers in the
+@@ -38,7 +37,6 @@ comment "mariadb needs a toolchain w/ dynamic library"
+ config BR2_PACKAGE_ORACLE_MYSQL
+ 	bool "oracle mysql"
+ 	select BR2_PACKAGE_NCURSES
+-	select BR2_PACKAGE_READLINE
+ 	select BR2_PACKAGE_HAS_MYSQL
+ 	help
+ 	  The MySQL Open Source Database System
+diff --git a/package/neardal/Config.in b/package/neardal/Config.in
+index c729283380..5f33ae4953 100644
+--- a/package/neardal/Config.in
++++ b/package/neardal/Config.in
+@@ -5,7 +5,7 @@ config BR2_PACKAGE_NEARDAL
+ 	depends on BR2_USE_MMU # dbus
+ 	select BR2_PACKAGE_DBUS
+ 	select BR2_PACKAGE_DBUS_GLIB
+-	select BR2_PACKAGE_READLINE if !BR2_PACKAGE_LIBEDIT
++	select BR2_PACKAGE_LIBEDIT
+ 	help
+ 	  Provides a simple C API to exchange data with the neard NFC
+ 	  manager daemon.
+diff --git a/package/neardal/neardal.mk b/package/neardal/neardal.mk
+index 3883011932..f511201b9f 100644
+--- a/package/neardal/neardal.mk
++++ b/package/neardal/neardal.mk
+@@ -7,20 +7,12 @@
+ NEARDAL_VERSION = 33b54a55032b047fd885a5eb3592c169c0056c49
+ NEARDAL_SITE = $(call github,connectivity,neardal,$(NEARDAL_VERSION))
+ NEARDAL_INSTALL_STAGING = YES
+-NEARDAL_LICENSE = GPL-2.0
++NEARDAL_LICENSE = LGPL-2.0
+ NEARDAL_LICENSE_FILES = COPYING
+ 
+-NEARDAL_DEPENDENCIES = host-pkgconf dbus dbus-glib
++NEARDAL_DEPENDENCIES = host-pkgconf dbus dbus-glib libedit
+ NEARDAL_AUTORECONF = YES
+ 
+-# Either readline or libedit are needed, and the Config.in file
+-# guarantees at least one of them is enabled
+-ifeq ($(BR2_PACKAGE_READLINE),y)
+-NEARDAL_DEPENDENCIES += readline
+-else ifeq ($(BR2_PACKAGE_LIBEDIT),y)
+-NEARDAL_DEPENDENCIES += libedit
+-endif
+-
+ define NEARDAL_INSTALL_NCL
+ 	$(INSTALL) -m 0755 -D $(@D)/ncl/ncl $(TARGET_DIR)/usr/bin/ncl
+ endef
+diff --git a/package/netperf/Config.in b/package/netperf/Config.in
+index 2f36b1b0da..a935fde507 100644
+--- a/package/netperf/Config.in
++++ b/package/netperf/Config.in
+@@ -3,4 +3,4 @@ config BR2_PACKAGE_NETPERF
+ 	help
+ 	  Network performance benchmark tool
+ 
+-	  http://www.netperf.org/
++	  https://hewlettpackard.github.io/netperf/
+diff --git a/package/nodejs/nodejs.mk b/package/nodejs/nodejs.mk
+index 2cc8ecc829..583b2276e2 100644
+--- a/package/nodejs/nodejs.mk
++++ b/package/nodejs/nodejs.mk
+@@ -72,6 +72,7 @@ define HOST_NODEJS_BUILD_CMDS
+ 	$(HOST_MAKE_ENV) PYTHON=$(HOST_DIR)/bin/python2 \
+ 		$(MAKE) -C $(@D) \
+ 		$(HOST_CONFIGURE_OPTS) \
++		LDFLAGS.host="$(HOST_LDFLAGS)" \
+ 		NO_LOAD=cctest.target.mk \
+ 		PATH=$(@D)/bin:$(BR_PATH)
+ endef
+@@ -80,6 +81,7 @@ define HOST_NODEJS_INSTALL_CMDS
+ 	$(HOST_MAKE_ENV) PYTHON=$(HOST_DIR)/bin/python2 \
+ 		$(MAKE) -C $(@D) install \
+ 		$(HOST_CONFIGURE_OPTS) \
++		LDFLAGS.host="$(HOST_LDFLAGS)" \
+ 		NO_LOAD=cctest.target.mk \
+ 		PATH=$(@D)/bin:$(BR_PATH)
+ endef
+@@ -94,10 +96,23 @@ else ifeq ($(BR2_mipsel),y)
+ NODEJS_CPU = mipsel
+ else ifeq ($(BR2_arm),y)
+ NODEJS_CPU = arm
+-else ifeq ($(BR2_aarch64),y)
+-NODEJS_CPU = arm64
+ # V8 needs to know what floating point ABI the target is using.
+ NODEJS_ARM_FP = $(GCC_TARGET_FLOAT_ABI)
++# it also wants to know which FPU to use, but only has support for
++# vfp, vfpv3, vfpv3-d16 and neon.
++ifeq ($(BR2_ARM_FPU_VFPV2),y)
++NODEJS_ARM_FPU = vfp
++# vfpv4 is a superset of vfpv3
++else ifeq ($(BR2_ARM_FPU_VFPV3)$(BR2_ARM_FPU_VFPV4),y)
++NODEJS_ARM_FPU = vfpv3
++# vfpv4-d16 is a superset of vfpv3-d16
++else ifeq ($(BR2_ARM_FPU_VFPV3D16)$(BR2_ARM_FPU_VFPV4D16),y)
++NODEJS_ARM_FPU = vfpv3-d16
++else ifeq ($(BR2_ARM_FPU_NEON),y)
++NODEJS_ARM_FPU = neon
++endif
++else ifeq ($(BR2_aarch64),y)
++NODEJS_CPU = arm64
+ endif
+ 
+ # MIPS architecture specific options
+@@ -125,6 +140,7 @@ define NODEJS_CONFIGURE_CMDS
+ 		--prefix=/usr \
+ 		--dest-cpu=$(NODEJS_CPU) \
+ 		$(if $(NODEJS_ARM_FP),--with-arm-float-abi=$(NODEJS_ARM_FP)) \
++		$(if $(NODEJS_ARM_FPU),--with-arm-fpu=$(NODEJS_ARM_FPU)) \
+ 		$(if $(NODEJS_MIPS_ARCH_VARIANT),--with-mips-arch-variant=$(NODEJS_MIPS_ARCH_VARIANT)) \
+ 		$(if $(NODEJS_MIPS_FPU_MODE),--with-mips-fpu-mode=$(NODEJS_MIPS_FPU_MODE)) \
+ 		$(NODEJS_CONF_OPTS) \
+diff --git a/package/opencv3/opencv3.mk b/package/opencv3/opencv3.mk
+index 416b422261..f720464543 100644
+--- a/package/opencv3/opencv3.mk
++++ b/package/opencv3/opencv3.mk
+@@ -324,6 +324,7 @@ OPENCV3_CONF_OPTS += \
+ 	-DPYTHON2_PACKAGES_PATH=/usr/lib/python$(PYTHON_VERSION_MAJOR)/site-packages \
+ 	-DPYTHON2_NUMPY_VERSION=$(PYTHON_NUMPY_VERSION)
+ OPENCV3_DEPENDENCIES += python
++OPENCV3_KEEP_PY_FILES += usr/lib/python$(PYTHON_VERSION_MAJOR)/site-packages/cv2/config*.py
+ else
+ OPENCV3_CONF_OPTS += \
+ 	-DBUILD_opencv_python2=OFF \
+@@ -335,6 +336,7 @@ OPENCV3_CONF_OPTS += \
+ 	-DPYTHON3_PACKAGES_PATH=/usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages \
+ 	-DPYTHON3_NUMPY_VERSION=$(PYTHON_NUMPY_VERSION)
+ OPENCV3_DEPENDENCIES += python3
++OPENCV3_KEEP_PY_FILES += usr/lib/python$(PYTHON3_VERSION_MAJOR)/site-packages/cv2/config*.py
+ endif
+ OPENCV3_CONF_ENV += $(PKG_PYTHON_DISTUTILS_ENV)
+ OPENCV3_DEPENDENCIES += python-numpy
+diff --git a/package/opentyrian-data/Config.in b/package/opentyrian-data/Config.in
+index dd3b0c1328..c0698c297c 100644
+--- a/package/opentyrian-data/Config.in
++++ b/package/opentyrian-data/Config.in
+@@ -6,4 +6,4 @@ config BR2_PACKAGE_OPENTYRIAN_DATA
+ 	  original Tyrian 2.1 data files, that have been released as
+ 	  Freeware in 2004, are compatible.
+ 
+-	  http://code.google.com/p/opentyrian/wiki/FAQ
++	  https://bitbucket.org/opentyrian/opentyrian/wiki/Home
+diff --git a/package/openvmtools/0003-Rename-poll-h-into-vm_poll-h-to-fix-build-failure-on-musl.patch b/package/openvmtools/0003-Rename-poll-h-into-vm_poll-h-to-fix-build-failure-on-musl.patch
+new file mode 100644
+index 0000000000..e9495ce43f
+--- /dev/null
++++ b/package/openvmtools/0003-Rename-poll-h-into-vm_poll-h-to-fix-build-failure-on-musl.patch
+@@ -0,0 +1,798 @@
++From 9d13e32e362ad3ce5169f49b7f0fe1d9380e558c Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Mon, 30 Sep 2019 13:32:35 +0200
++Subject: [PATCH] Rename poll.h into vm_poll.h to fix build failure on musl
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++musl libc redirects include of sys/poll.h to poll.h. But since poll.h is
++also a local header file, the musl libc header is never included. This
++leads to the following build failure:
++
++In file included from asyncsocket.c:73:0:
++.../host/i586-buildroot-linux-musl/sysroot/usr/include/sys/poll.h:1:2: warning: #warning redirecting incorrect #include <sys/poll.h> to <poll.h> [-Wcpp]
++ #warning redirecting incorrect #include <sys/poll.h> to <poll.h>
++asyncsocket.c: In function ‘AsyncTCPSocketPollWork’:
++asyncsocket.c:2537:13: error: invalid use of undefined type ‘struct pollfd’
++          pfd[i].fd = asock[i]->fd;
++             ^
++asyncsocket.c:2537:13: error: dereferencing pointer to incomplete type ‘struct pollfd’
++asyncsocket.c:2538:13: error: invalid use of undefined type ‘struct pollfd’
++          pfd[i].events = read ? POLLIN : POLLOUT;
++             ^
++asyncsocket.c:2538:33: error: ‘POLLIN’ undeclared (first use in this function); did you mean ‘POLL_IN’?
++          pfd[i].events = read ? POLLIN : POLLOUT;
++
++So rename poll.h into vm_poll.h as suggested by srowe in
++https://github.com/vmware/open-vm-tools/issues/359#issuecomment-533529956
++
++Fixes:
++ - http://autobuild.buildroot.org/results/4f575ef42bbc4387a07e396205052b2da081c64d
++
++Fix #359
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Upstream status: https://github.com/vmware/open-vm-tools/pull/383]
++---
++ lib/asyncsocket/asyncsocket.c |   4 +-
++ lib/hgfsServer/hgfsServer.c   |   2 +-
++ lib/include/asyncsocket.h     |   2 +-
++ lib/include/poll.h            | 330 --------------------
++ lib/include/pollImpl.h        |   2 +-
++ lib/include/vm_poll.h         | 330 ++++++++++++++++++++
++ lib/rpcIn/rpcin.c             |   2 +-
++ 7 files changed, 336 insertions(+), 336 deletions(-)
++ delete mode 100644 open-vm-tools/lib/include/poll.h
++ create mode 100644 open-vm-tools/lib/include/vm_poll.h
++
++diff --git a/lib/asyncsocket/asyncsocket.c b/lib/asyncsocket/asyncsocket.c
++index 102638cc..01181a95 100644
++--- a/lib/asyncsocket/asyncsocket.c
+++++ b/lib/asyncsocket/asyncsocket.c
++@@ -69,8 +69,8 @@
++ #else
++ #include <stddef.h>
++ #include <ctype.h>
+++#include <poll.h>
++ #include <sys/types.h>
++-#include <sys/poll.h>
++ #include <sys/socket.h>
++ #include <sys/un.h>
++ #include <netdb.h>
++@@ -86,7 +86,7 @@
++ #include "random.h"
++ #include "asyncsocket.h"
++ #include "asyncSocketBase.h"
++-#include "poll.h"
+++#include "vm_poll.h"
++ #include "log.h"
++ #include "err.h"
++ #include "hostinfo.h"
++diff --git a/lib/hgfsServer/hgfsServer.c b/lib/hgfsServer/hgfsServer.c
++index 46224551..fc691286 100644
++--- a/lib/hgfsServer/hgfsServer.c
+++++ b/lib/hgfsServer/hgfsServer.c
++@@ -48,7 +48,7 @@
++ #include "hgfsServerOplock.h"
++ #include "hgfsDirNotify.h"
++ #include "userlock.h"
++-#include "poll.h"
+++#include "vm_poll.h"
++ #include "mutexRankLib.h"
++ #include "vm_basic_asm.h"
++ #include "unicodeOperations.h"
++diff --git a/lib/include/asyncsocket.h b/lib/include/asyncsocket.h
++index 95a5e464..a4b4e5aa 100644
++--- a/lib/include/asyncsocket.h
+++++ b/lib/include/asyncsocket.h
++@@ -164,7 +164,7 @@ typedef struct AsyncSocket AsyncSocket;
++  * Or the client can specify its favorite poll class and locking behavior.
++  * Use of IVmdbPoll is only supported for regular sockets and for Attach.
++  */
++-#include "poll.h"
+++#include "vm_poll.h"
++ struct IVmdbPoll;
++ typedef struct AsyncSocketPollParams {
++    int flags;               /* Default 0, only POLL_FLAG_NO_BULL is valid */
++diff --git a/lib/include/poll.h b/lib/include/poll.h
++deleted file mode 100644
++index 6acd4f35..00000000
++--- a/lib/include/poll.h
+++++ /dev/null
++@@ -1,330 +0,0 @@
++-/*********************************************************
++- * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
++- *
++- * This program is free software; you can redistribute it and/or modify it
++- * under the terms of the GNU Lesser General Public License as published
++- * by the Free Software Foundation version 2.1 and no later version.
++- *
++- * This program is distributed in the hope that it will be useful, but
++- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
++- * or FITNESS FOR A PARTICULAR PURPOSE.  See the Lesser GNU General Public
++- * License for more details.
++- *
++- * You should have received a copy of the GNU Lesser General Public License
++- * along with this program; if not, write to the Free Software Foundation, Inc.,
++- * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA.
++- *
++- *********************************************************/
++-
++-/*********************************************************
++- * The contents of this file are subject to the terms of the Common
++- * Development and Distribution License (the "License") version 1.0
++- * and no later version.  You may not use this file except in
++- * compliance with the License.
++- *
++- * You can obtain a copy of the License at
++- *         http://www.opensource.org/licenses/cddl1.php
++- *
++- * See the License for the specific language governing permissions
++- * and limitations under the License.
++- *
++- *********************************************************/
++-
++-
++-#ifndef _POLL_H_
++-#define _POLL_H_
++-
++-#define INCLUDE_ALLOW_USERLEVEL
++-#define INCLUDE_ALLOW_VMCORE
++-#include "includeCheck.h"
++-
++-#include "vm_basic_types.h"
++-#include "vm_basic_defs.h"
++-#include "vmware.h"
++-#include "userlock.h"
++-
++-#if defined(__cplusplus)
++-extern "C" {
++-#endif
++-
++-#ifdef _WIN32
++-#define HZ 100
++-#elif defined linux
++-#include <asm/param.h>
++-#elif __APPLE__
++-#include <TargetConditionals.h>
++-/*
++- * Old SDKs don't define TARGET_OS_IPHONE at all.
++- * New ones define it to 0 on Mac OS X, 1 on iOS.
++- */
++-#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE == 0
++-#include <sys/kernel.h>
++-#endif
++-#include <sys/poll.h>
++-#define HZ 100
++-#endif
++-#ifdef __ANDROID__
++-/*
++- * <poll.h> of android should be included, but its name is same
++- * with this file. So its content is put here to avoid conflict.
++- */
++-#include <asm/poll.h>
++-#define HZ 100
++-typedef unsigned int  nfds_t;
++-int poll(struct pollfd *, nfds_t, long);
++-#endif
++-
++-
++-/*
++- * Poll event types: each type has a different reason for firing,
++- * or condition that must be met before firing.
++- */
++-
++-typedef enum {
++-   /*
++-    * Actual Poll queue types against which you can register callbacks.
++-    */
++-   POLL_VIRTUALREALTIME = -1, /* Negative because it doesn't have its own Q */
++-   POLL_VTIME = 0,
++-   POLL_REALTIME,
++-   POLL_DEVICE,
++-   POLL_MAIN_LOOP,
++-   POLL_NUM_QUEUES
++-} PollEventType;
++-
++-
++-/*
++- * Classes of events
++- *
++- * These are the predefined classes.  More can be declared
++- * with Poll_AllocClass().
++- */
++-
++-typedef enum PollClass {
++-   POLL_CLASS_MAIN,
++-   POLL_CLASS_PAUSE,
++-   POLL_CLASS_IPC,
++-   POLL_CLASS_CPT,
++-   POLL_CLASS_MKS,
++-   POLL_FIXED_CLASSES,
++-   POLL_DEFAULT_FIXED_CLASSES,
++-   /* Size enum to maximum */
++-   POLL_MAX_CLASSES = 31,
++-} PollClass;
++-
++-/*
++- * Do not use; Special pseudo private poll class supported by
++- * PollDefault only
++- */
++-#define POLL_DEFAULT_CLASS_NET POLL_FIXED_CLASSES
++-#define POLL_DEFAULT_CS_NET    PollClassSet_Singleton(POLL_DEFAULT_CLASS_NET)
++-
++-/*
++- * Each callback is registered in a set of classes
++- */
++-
++-typedef struct PollClassSet {
++-   uintptr_t bits;
++-} PollClassSet;
++-
++-/* An empty PollClassSet. */
++-static INLINE PollClassSet
++-PollClassSet_Empty(void)
++-{
++-   PollClassSet set = { 0 };
++-   return set;
++-}
++-
++-/* A PollClassSet with the single member. */
++-static INLINE PollClassSet
++-PollClassSet_Singleton(PollClass c)
++-{
++-   PollClassSet s = PollClassSet_Empty();
++-
++-   ASSERT_ON_COMPILE(POLL_MAX_CLASSES < sizeof s.bits * 8);
++-   ASSERT(c < POLL_MAX_CLASSES);
++-
++-   s.bits = CONST3264U(1) << c;
++-   return s;
++-}
++-
++-/* Combine two PollClassSets. */
++-static INLINE PollClassSet
++-PollClassSet_Union(PollClassSet lhs, PollClassSet rhs)
++-{
++-   PollClassSet set;
++-   set.bits = lhs.bits | rhs.bits;
++-   return set;
++-}
++-
++-/* Add single class to PollClassSet. */
++-static INLINE PollClassSet
++-PollClassSet_Include(PollClassSet set, PollClass c)
++-{
++-   return PollClassSet_Union(set, PollClassSet_Singleton(c));
++-}
++-
++-
++-#define POLL_CS_MAIN    PollClassSet_Singleton(POLL_CLASS_MAIN)
++-#define POLL_CS_PAUSE   PollClassSet_Union(POLL_CS_MAIN,            \
++-                           PollClassSet_Singleton(POLL_CLASS_PAUSE))
++-#define POLL_CS_CPT     PollClassSet_Union(POLL_CS_PAUSE,           \
++-                           PollClassSet_Singleton(POLL_CLASS_CPT))
++-#define POLL_CS_IPC     PollClassSet_Union(POLL_CS_CPT,             \
++-                           PollClassSet_Singleton(POLL_CLASS_IPC))
++-#define POLL_CS_VMDB    POLL_CS_PAUSE /* POLL_CLASS_VMDB is retired */
++-#define POLL_CS_MKS	PollClassSet_Singleton(POLL_CLASS_MKS)
++-/* 
++- * DANGER.  You don't need POLL_CS_ALWAYS.  Really.  So don't use it.
++- */
++-#define POLL_CS_ALWAYS  PollClassSet_Union(POLL_CS_CPT, POLL_CS_IPC)
++-
++-/*
++- * Poll class-set taxonomy:
++- * POLL_CS_MAIN
++- *    - Unless you NEED another class, use POLL_CS_MAIN.
++- * POLL_CS_PAUSE
++- *    - For callbacks that must occur even if the guest is paused.
++- *      Most VMDB or Foundry commands are in this category.
++- * POLL_CS_CPT
++- *    - Only for callbacks which can trigger intermediate Checkpoint 
++- *      transitions.
++- *      The ONLY such callback is Migrate.
++- * POLL_CS_IPC
++- *    - Only for callbacks which can contain Msg_(Post|Hint|Question) 
++- *      responses, and for signal handlers (why)?
++- *      Vigor, VMDB, and Foundry can contain Msg_* responses.
++- * POLL_CS_MKS
++- *    - Callback runs in MKS thread.
++- * POLL_CS_ALWAYS
++- *    - Only for events that must be processed immediately.
++- *      The ONLY such callback is OvhdMemVmxSizeCheck.
++- */
++-
++-
++-/*
++- * Poll_Callback flags
++- */
++-
++-#define POLL_FLAG_PERIODIC		0x01    // keep after firing
++-#define POLL_FLAG_REMOVE_AT_POWEROFF	0x02  	// self-explanatory
++-#define POLL_FLAG_READ			0x04	// device is ready for reading
++-#define POLL_FLAG_WRITE			0x08	// device is ready for writing
++-#define POLL_FLAG_SOCKET                0x10    // device is a Windows socket
++-#define POLL_FLAG_NO_BULL               0x20    // callback does its own locking
++-#define POLL_FLAG_WINSOCK               0x40    // Winsock style write events
++-#define POLL_FLAG_FD                    0x80    // device is a Windows file descriptor.
++-#define POLL_FLAG_ACCEPT_INVALID_FDS    0x100   // For broken 3rd party libs, e.g. curl
++-#define POLL_FLAG_THUNK_TO_WND          0x200   // thunk callback to window message loop
++-
++-
++-typedef void (*PollerFunction)(void *clientData);
++-typedef void (*PollerFireWrapper)(PollerFunction func,
++-                                  void *funcData,
++-                                  void *wrapperData);
++-typedef Bool (*PollerErrorFn)(const char *errorStr);
++-
++-/*
++- * Initialisers:
++- *
++- *      For the sake of convenience, we declare the initialisers
++- *      for custom implmentations here, even though the actual
++- *      implementations are distinct from the core poll code.
++- */
++-
++-typedef struct PollOptions {
++-   Bool locked;           // Use internal MXUser for locking
++-   Bool allowFullQueue;   // Don't assert when device event queue is full.
++-   VThreadID windowsMsgThread;       // thread that processes Windows messages
++-   PollerFireWrapper fireWrapperFn;  // optional; may be useful for stats
++-   void *fireWrapperData; // optional
++-   PollerErrorFn errorFn; // optional; called upon unrecoverable error
++-} PollOptions;
++-
++-
++-void Poll_InitDefault(void);
++-void Poll_InitDefaultEx(const PollOptions *opts);
++-void Poll_InitGtk(void); // On top of glib for Linux
++-void Poll_InitCF(void);  // On top of CoreFoundation for OSX
++-
++-
++-/*
++- * Functions
++- */
++-int Poll_SocketPair(Bool vmci, Bool stream, int fds[2]);
++-void Poll_Loop(Bool loop, Bool *exit, PollClass c);
++-void Poll_LoopTimeout(Bool loop, Bool *exit, PollClass c, int timeout);
++-Bool Poll_LockingEnabled(void);
++-void Poll_Exit(void);
++-
++-
++-/*
++- * Poll_Callback adds a callback regardless of whether an identical one exists.
++- * The exception to this rule is POLL_DEVICE callbacks: there is a maximum of
++- * one read and one write callback per fd.
++- *
++- * Poll_CallbackRemove removes one callback. If there are multiple identical
++- * callbacks, which one is removed is an implementation detail. Note that in
++- * the case of POLL_DEVICE and POLL_REALTIME callbacks, the fd/delay used to
++- * create the callback is not specified when removing, so all callbacks
++- * of those types with the same flags, function, and clientData are considered
++- * "identical" even if their fd/delay differed.
++- */
++-
++-VMwareStatus Poll_Callback(PollClassSet classSet,
++-                           int flags,
++-                           PollerFunction f,
++-                           void *clientData,
++-                           PollEventType type,
++-                           PollDevHandle info, // fd/microsec delay
++-                           MXUserRecLock *lck);
++-Bool Poll_CallbackRemove(PollClassSet classSet,
++-                         int flags,
++-                         PollerFunction f,
++-                         void *clientData,
++-                         PollEventType type);
++-Bool Poll_CallbackRemoveOneByCB(PollClassSet classSet,
++-                                int flags,
++-                                PollerFunction f,
++-                                PollEventType type,
++-                                void **clientData);
++-
++-void Poll_NotifyChange(PollClassSet classSet);
++-
++-/*
++- * Wrappers for Poll_Callback and Poll_CallbackRemove that present
++- * simpler subsets of those interfaces.
++- */
++-
++-VMwareStatus Poll_CB_Device(PollerFunction f,
++-                            void *clientData,
++-                            PollDevHandle device,
++-                            Bool periodic);
++-
++-Bool Poll_CB_DeviceRemove(PollerFunction f,
++-                          void *clientData,
++-                          Bool periodic);
++-
++-
++-VMwareStatus Poll_CB_RTime(PollerFunction f,
++-                           void *clientData,
++-                           int64 delay,   // microseconds
++-                           Bool periodic,
++-                           MXUserRecLock *lock);
++-
++-Bool Poll_CB_RTimeRemove(PollerFunction f,
++-                         void *clientData,
++-                         Bool periodic);
++-
++-
++-#ifdef _WIN32
++-void Poll_SetPumpsWindowsMessages(Bool pumps);
++-void Poll_SetWindowMessageRecipient(HWND hWnd, UINT msg, Bool alwaysThunk);
++-Bool Poll_FireWndCallback(void *lparam);
++-#endif
++-
++-#if defined(__cplusplus)
++-}  // extern "C"
++-#endif
++-
++-#endif // _POLL_H_
++diff --git a/lib/include/pollImpl.h b/lib/include/pollImpl.h
++index 46442e55..8bc66997 100644
++--- a/lib/include/pollImpl.h
+++++ b/lib/include/pollImpl.h
++@@ -44,7 +44,7 @@
++ #define INCLUDE_ALLOW_USERLEVEL
++ #include "includeCheck.h"
++ 
++-#include "poll.h"
+++#include "vm_poll.h"
++ #include "vm_basic_asm.h"
++ 
++ #if defined(__cplusplus)
++diff --git a/lib/include/vm_poll.h b/lib/include/vm_poll.h
++new file mode 100644
++index 00000000..6acd4f35
++--- /dev/null
+++++ b/lib/include/vm_poll.h
++@@ -0,0 +1,330 @@
+++/*********************************************************
+++ * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
+++ *
+++ * This program is free software; you can redistribute it and/or modify it
+++ * under the terms of the GNU Lesser General Public License as published
+++ * by the Free Software Foundation version 2.1 and no later version.
+++ *
+++ * This program is distributed in the hope that it will be useful, but
+++ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+++ * or FITNESS FOR A PARTICULAR PURPOSE.  See the Lesser GNU General Public
+++ * License for more details.
+++ *
+++ * You should have received a copy of the GNU Lesser General Public License
+++ * along with this program; if not, write to the Free Software Foundation, Inc.,
+++ * 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA.
+++ *
+++ *********************************************************/
+++
+++/*********************************************************
+++ * The contents of this file are subject to the terms of the Common
+++ * Development and Distribution License (the "License") version 1.0
+++ * and no later version.  You may not use this file except in
+++ * compliance with the License.
+++ *
+++ * You can obtain a copy of the License at
+++ *         http://www.opensource.org/licenses/cddl1.php
+++ *
+++ * See the License for the specific language governing permissions
+++ * and limitations under the License.
+++ *
+++ *********************************************************/
+++
+++
+++#ifndef _POLL_H_
+++#define _POLL_H_
+++
+++#define INCLUDE_ALLOW_USERLEVEL
+++#define INCLUDE_ALLOW_VMCORE
+++#include "includeCheck.h"
+++
+++#include "vm_basic_types.h"
+++#include "vm_basic_defs.h"
+++#include "vmware.h"
+++#include "userlock.h"
+++
+++#if defined(__cplusplus)
+++extern "C" {
+++#endif
+++
+++#ifdef _WIN32
+++#define HZ 100
+++#elif defined linux
+++#include <asm/param.h>
+++#elif __APPLE__
+++#include <TargetConditionals.h>
+++/*
+++ * Old SDKs don't define TARGET_OS_IPHONE at all.
+++ * New ones define it to 0 on Mac OS X, 1 on iOS.
+++ */
+++#if !defined(TARGET_OS_IPHONE) || TARGET_OS_IPHONE == 0
+++#include <sys/kernel.h>
+++#endif
+++#include <sys/poll.h>
+++#define HZ 100
+++#endif
+++#ifdef __ANDROID__
+++/*
+++ * <poll.h> of android should be included, but its name is same
+++ * with this file. So its content is put here to avoid conflict.
+++ */
+++#include <asm/poll.h>
+++#define HZ 100
+++typedef unsigned int  nfds_t;
+++int poll(struct pollfd *, nfds_t, long);
+++#endif
+++
+++
+++/*
+++ * Poll event types: each type has a different reason for firing,
+++ * or condition that must be met before firing.
+++ */
+++
+++typedef enum {
+++   /*
+++    * Actual Poll queue types against which you can register callbacks.
+++    */
+++   POLL_VIRTUALREALTIME = -1, /* Negative because it doesn't have its own Q */
+++   POLL_VTIME = 0,
+++   POLL_REALTIME,
+++   POLL_DEVICE,
+++   POLL_MAIN_LOOP,
+++   POLL_NUM_QUEUES
+++} PollEventType;
+++
+++
+++/*
+++ * Classes of events
+++ *
+++ * These are the predefined classes.  More can be declared
+++ * with Poll_AllocClass().
+++ */
+++
+++typedef enum PollClass {
+++   POLL_CLASS_MAIN,
+++   POLL_CLASS_PAUSE,
+++   POLL_CLASS_IPC,
+++   POLL_CLASS_CPT,
+++   POLL_CLASS_MKS,
+++   POLL_FIXED_CLASSES,
+++   POLL_DEFAULT_FIXED_CLASSES,
+++   /* Size enum to maximum */
+++   POLL_MAX_CLASSES = 31,
+++} PollClass;
+++
+++/*
+++ * Do not use; Special pseudo private poll class supported by
+++ * PollDefault only
+++ */
+++#define POLL_DEFAULT_CLASS_NET POLL_FIXED_CLASSES
+++#define POLL_DEFAULT_CS_NET    PollClassSet_Singleton(POLL_DEFAULT_CLASS_NET)
+++
+++/*
+++ * Each callback is registered in a set of classes
+++ */
+++
+++typedef struct PollClassSet {
+++   uintptr_t bits;
+++} PollClassSet;
+++
+++/* An empty PollClassSet. */
+++static INLINE PollClassSet
+++PollClassSet_Empty(void)
+++{
+++   PollClassSet set = { 0 };
+++   return set;
+++}
+++
+++/* A PollClassSet with the single member. */
+++static INLINE PollClassSet
+++PollClassSet_Singleton(PollClass c)
+++{
+++   PollClassSet s = PollClassSet_Empty();
+++
+++   ASSERT_ON_COMPILE(POLL_MAX_CLASSES < sizeof s.bits * 8);
+++   ASSERT(c < POLL_MAX_CLASSES);
+++
+++   s.bits = CONST3264U(1) << c;
+++   return s;
+++}
+++
+++/* Combine two PollClassSets. */
+++static INLINE PollClassSet
+++PollClassSet_Union(PollClassSet lhs, PollClassSet rhs)
+++{
+++   PollClassSet set;
+++   set.bits = lhs.bits | rhs.bits;
+++   return set;
+++}
+++
+++/* Add single class to PollClassSet. */
+++static INLINE PollClassSet
+++PollClassSet_Include(PollClassSet set, PollClass c)
+++{
+++   return PollClassSet_Union(set, PollClassSet_Singleton(c));
+++}
+++
+++
+++#define POLL_CS_MAIN    PollClassSet_Singleton(POLL_CLASS_MAIN)
+++#define POLL_CS_PAUSE   PollClassSet_Union(POLL_CS_MAIN,            \
+++                           PollClassSet_Singleton(POLL_CLASS_PAUSE))
+++#define POLL_CS_CPT     PollClassSet_Union(POLL_CS_PAUSE,           \
+++                           PollClassSet_Singleton(POLL_CLASS_CPT))
+++#define POLL_CS_IPC     PollClassSet_Union(POLL_CS_CPT,             \
+++                           PollClassSet_Singleton(POLL_CLASS_IPC))
+++#define POLL_CS_VMDB    POLL_CS_PAUSE /* POLL_CLASS_VMDB is retired */
+++#define POLL_CS_MKS	PollClassSet_Singleton(POLL_CLASS_MKS)
+++/* 
+++ * DANGER.  You don't need POLL_CS_ALWAYS.  Really.  So don't use it.
+++ */
+++#define POLL_CS_ALWAYS  PollClassSet_Union(POLL_CS_CPT, POLL_CS_IPC)
+++
+++/*
+++ * Poll class-set taxonomy:
+++ * POLL_CS_MAIN
+++ *    - Unless you NEED another class, use POLL_CS_MAIN.
+++ * POLL_CS_PAUSE
+++ *    - For callbacks that must occur even if the guest is paused.
+++ *      Most VMDB or Foundry commands are in this category.
+++ * POLL_CS_CPT
+++ *    - Only for callbacks which can trigger intermediate Checkpoint 
+++ *      transitions.
+++ *      The ONLY such callback is Migrate.
+++ * POLL_CS_IPC
+++ *    - Only for callbacks which can contain Msg_(Post|Hint|Question) 
+++ *      responses, and for signal handlers (why)?
+++ *      Vigor, VMDB, and Foundry can contain Msg_* responses.
+++ * POLL_CS_MKS
+++ *    - Callback runs in MKS thread.
+++ * POLL_CS_ALWAYS
+++ *    - Only for events that must be processed immediately.
+++ *      The ONLY such callback is OvhdMemVmxSizeCheck.
+++ */
+++
+++
+++/*
+++ * Poll_Callback flags
+++ */
+++
+++#define POLL_FLAG_PERIODIC		0x01    // keep after firing
+++#define POLL_FLAG_REMOVE_AT_POWEROFF	0x02  	// self-explanatory
+++#define POLL_FLAG_READ			0x04	// device is ready for reading
+++#define POLL_FLAG_WRITE			0x08	// device is ready for writing
+++#define POLL_FLAG_SOCKET                0x10    // device is a Windows socket
+++#define POLL_FLAG_NO_BULL               0x20    // callback does its own locking
+++#define POLL_FLAG_WINSOCK               0x40    // Winsock style write events
+++#define POLL_FLAG_FD                    0x80    // device is a Windows file descriptor.
+++#define POLL_FLAG_ACCEPT_INVALID_FDS    0x100   // For broken 3rd party libs, e.g. curl
+++#define POLL_FLAG_THUNK_TO_WND          0x200   // thunk callback to window message loop
+++
+++
+++typedef void (*PollerFunction)(void *clientData);
+++typedef void (*PollerFireWrapper)(PollerFunction func,
+++                                  void *funcData,
+++                                  void *wrapperData);
+++typedef Bool (*PollerErrorFn)(const char *errorStr);
+++
+++/*
+++ * Initialisers:
+++ *
+++ *      For the sake of convenience, we declare the initialisers
+++ *      for custom implmentations here, even though the actual
+++ *      implementations are distinct from the core poll code.
+++ */
+++
+++typedef struct PollOptions {
+++   Bool locked;           // Use internal MXUser for locking
+++   Bool allowFullQueue;   // Don't assert when device event queue is full.
+++   VThreadID windowsMsgThread;       // thread that processes Windows messages
+++   PollerFireWrapper fireWrapperFn;  // optional; may be useful for stats
+++   void *fireWrapperData; // optional
+++   PollerErrorFn errorFn; // optional; called upon unrecoverable error
+++} PollOptions;
+++
+++
+++void Poll_InitDefault(void);
+++void Poll_InitDefaultEx(const PollOptions *opts);
+++void Poll_InitGtk(void); // On top of glib for Linux
+++void Poll_InitCF(void);  // On top of CoreFoundation for OSX
+++
+++
+++/*
+++ * Functions
+++ */
+++int Poll_SocketPair(Bool vmci, Bool stream, int fds[2]);
+++void Poll_Loop(Bool loop, Bool *exit, PollClass c);
+++void Poll_LoopTimeout(Bool loop, Bool *exit, PollClass c, int timeout);
+++Bool Poll_LockingEnabled(void);
+++void Poll_Exit(void);
+++
+++
+++/*
+++ * Poll_Callback adds a callback regardless of whether an identical one exists.
+++ * The exception to this rule is POLL_DEVICE callbacks: there is a maximum of
+++ * one read and one write callback per fd.
+++ *
+++ * Poll_CallbackRemove removes one callback. If there are multiple identical
+++ * callbacks, which one is removed is an implementation detail. Note that in
+++ * the case of POLL_DEVICE and POLL_REALTIME callbacks, the fd/delay used to
+++ * create the callback is not specified when removing, so all callbacks
+++ * of those types with the same flags, function, and clientData are considered
+++ * "identical" even if their fd/delay differed.
+++ */
+++
+++VMwareStatus Poll_Callback(PollClassSet classSet,
+++                           int flags,
+++                           PollerFunction f,
+++                           void *clientData,
+++                           PollEventType type,
+++                           PollDevHandle info, // fd/microsec delay
+++                           MXUserRecLock *lck);
+++Bool Poll_CallbackRemove(PollClassSet classSet,
+++                         int flags,
+++                         PollerFunction f,
+++                         void *clientData,
+++                         PollEventType type);
+++Bool Poll_CallbackRemoveOneByCB(PollClassSet classSet,
+++                                int flags,
+++                                PollerFunction f,
+++                                PollEventType type,
+++                                void **clientData);
+++
+++void Poll_NotifyChange(PollClassSet classSet);
+++
+++/*
+++ * Wrappers for Poll_Callback and Poll_CallbackRemove that present
+++ * simpler subsets of those interfaces.
+++ */
+++
+++VMwareStatus Poll_CB_Device(PollerFunction f,
+++                            void *clientData,
+++                            PollDevHandle device,
+++                            Bool periodic);
+++
+++Bool Poll_CB_DeviceRemove(PollerFunction f,
+++                          void *clientData,
+++                          Bool periodic);
+++
+++
+++VMwareStatus Poll_CB_RTime(PollerFunction f,
+++                           void *clientData,
+++                           int64 delay,   // microseconds
+++                           Bool periodic,
+++                           MXUserRecLock *lock);
+++
+++Bool Poll_CB_RTimeRemove(PollerFunction f,
+++                         void *clientData,
+++                         Bool periodic);
+++
+++
+++#ifdef _WIN32
+++void Poll_SetPumpsWindowsMessages(Bool pumps);
+++void Poll_SetWindowMessageRecipient(HWND hWnd, UINT msg, Bool alwaysThunk);
+++Bool Poll_FireWndCallback(void *lparam);
+++#endif
+++
+++#if defined(__cplusplus)
+++}  // extern "C"
+++#endif
+++
+++#endif // _POLL_H_
++diff --git a/lib/rpcIn/rpcin.c b/lib/rpcIn/rpcin.c
++index 47a3380e..660382c6 100644
++--- a/lib/rpcIn/rpcin.c
+++++ b/lib/rpcIn/rpcin.c
++@@ -57,7 +57,7 @@
++ 
++ #if defined(VMTOOLS_USE_VSOCKET)
++ #  include <glib.h>
++-#  include "poll.h"
+++#  include "vm_poll.h"
++ #  include "asyncsocket.h"
++ #  include "vmci_defs.h"
++ #include "dataMap.h"
++-- 
++2.23.0
++
+diff --git a/package/openvmtools/0004-Remove-assumptions-about-glibc-being-only-libc-imple.patch b/package/openvmtools/0004-Remove-assumptions-about-glibc-being-only-libc-imple.patch
+new file mode 100644
+index 0000000000..5960006f2f
+--- /dev/null
++++ b/package/openvmtools/0004-Remove-assumptions-about-glibc-being-only-libc-imple.patch
+@@ -0,0 +1,27 @@
++From a0983d84185f04c4e40778fe951fde4439894882 Mon Sep 17 00:00:00 2001
++From: Khem Raj <raj.khem@gmail.com>
++Date: Sun, 16 Jul 2017 07:37:03 -0700
++Subject: [PATCH] Remove assumptions about glibc being only libc
++ implementation on linux
++
++Signed-off-by: Khem Raj <raj.khem@gmail.com>
++[Retrieved (and updated to work on current version) from:
++http://cgit.openembedded.org/meta-openembedded/tree/meta-oe/recipes-support/open-vm-tools/open-vm-tools/0001-Remove-assumptions-about-glibc-being-only-libc-imple.patch?h=sumo]
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++---
++ open-vm-tools/lib/file/fileIOPosix.c      | 2 +-
++ 2 files changed, 3 insertions(+), 1 deletion(-)
++
++Index: open-vm-tools/lib/file/fileIOPosix.c
++===================================================================
++--- open-vm-tools.orig/lib/file/fileIOPosix.c
+++++ open-vm-tools/lib/file/fileIOPosix.c
++@@ -205,7 +205,7 @@ static AlignedPool alignedPool;
++  * are not available in any header file.
++  */
++ 
++-#if defined(__linux__) && !defined(__ANDROID__)
+++#if defined(__linux__) && defined(__GLIBC__)
++    #if defined(_FILE_OFFSET_BITS) && (_FILE_OFFSET_BITS == 64)
++       /*
++        * We want preadv/pwritev. But due to FOB=64, the symbols are -64.
+diff --git a/package/openvmtools/0005-Use-configure-test-for-struct-timespec.patch b/package/openvmtools/0005-Use-configure-test-for-struct-timespec.patch
+new file mode 100644
+index 0000000000..3386faec15
+--- /dev/null
++++ b/package/openvmtools/0005-Use-configure-test-for-struct-timespec.patch
+@@ -0,0 +1,48 @@
++From bf1eafb07297711baf9320b1edcca8a3376f117d Mon Sep 17 00:00:00 2001
++From: Natanael Copa <ncopa@alpinelinux.org>
++Date: Wed, 18 Nov 2015 09:03:00 +0000
++Subject: [PATCH] Use configure test for struct timespec
++
++Use the configure script to test for struct time spec instead of trying
++to keep track of what platforms has it.
++
++Signed-off-by: Natanael Copa <ncopa@alpinelinux.org>
++[Retrieved from:
++http://cgit.openembedded.org/meta-openembedded/tree/meta-oe/recipes-support/open-vm-tools/open-vm-tools/0005-Use-configure-test-for-struct-timespec.patch?h=sumo]
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++---
++ open-vm-tools/configure.ac           | 1 +
++ open-vm-tools/lib/include/hgfsUtil.h | 8 +-------
++ 2 files changed, 2 insertions(+), 7 deletions(-)
++
++Index: open-vm-tools/configure.ac
++===================================================================
++--- open-vm-tools.orig/configure.ac
+++++ open-vm-tools/configure.ac
++@@ -1127,6 +1127,7 @@ AC_TYPE_OFF_T
++ AC_TYPE_PID_T
++ AC_TYPE_SIZE_T
++ AC_CHECK_MEMBERS([struct stat.st_rdev])
+++AC_CHECK_MEMBERS([struct timespec.tv_sec],[],[],[[#include <time.h>]])
++ AC_HEADER_TIME
++ AC_STRUCT_TM
++ AC_C_VOLATILE
++Index: open-vm-tools/lib/include/hgfsUtil.h
++===================================================================
++--- open-vm-tools.orig/lib/include/hgfsUtil.h
+++++ open-vm-tools/lib/include/hgfsUtil.h
++@@ -53,13 +53,7 @@
++ #      include <time.h>
++ #   endif
++ #   include "vm_basic_types.h"
++-#   if !defined _STRUCT_TIMESPEC &&   \
++-       !defined _TIMESPEC_DECLARED && \
++-       !defined __timespec_defined && \
++-       !defined sun && \
++-       !defined __FreeBSD__ && \
++-       !__APPLE__ && \
++-       !defined _WIN32
+++#   if !defined HAVE_STRUCT_TIMESPEC_TV_SEC
++ struct timespec {
++    time_t tv_sec;
++    long   tv_nsec;
+diff --git a/package/openvmtools/0006-Fix-definition-of-ALLPERMS-and-ACCESSPERMS.patch b/package/openvmtools/0006-Fix-definition-of-ALLPERMS-and-ACCESSPERMS.patch
+new file mode 100644
+index 0000000000..371004c90f
+--- /dev/null
++++ b/package/openvmtools/0006-Fix-definition-of-ALLPERMS-and-ACCESSPERMS.patch
+@@ -0,0 +1,61 @@
++From 31ae6f42458f90d4994a4ad8e2b7673691612c36 Mon Sep 17 00:00:00 2001
++From: Natanael Copa <ncopa@alpinelinux.org>
++Date: Wed, 18 Nov 2015 09:10:14 +0000
++Subject: [PATCH] Fix definition of ALLPERMS and ACCESSPERMS
++
++The ALLPERMS and ACCESSPERMS defines are not specified in POSIX so
++assume it is not there instead of testing for specific implementations.
++
++This is needed for musl libc.
++
++Signed-off-by: Natanael Copa <ncopa@alpinelinux.org>
++[Retrieved from:
++http://cgit.openembedded.org/meta-openembedded/tree/meta-oe/recipes-support/open-vm-tools/open-vm-tools/0006-Fix-definition-of-ALLPERMS-and-ACCESSPERMS.patch?h=sumo]
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++---
++ open-vm-tools/lib/hgfsServer/hgfsServerLinux.c      | 8 +++++---
++ open-vm-tools/services/plugins/dndcp/dnd/dndLinux.c | 3 +--
++ 2 files changed, 6 insertions(+), 5 deletions(-)
++
++Index: open-vm-tools/lib/hgfsServer/hgfsServerLinux.c
++===================================================================
++--- open-vm-tools.orig/lib/hgfsServer/hgfsServerLinux.c
+++++ open-vm-tools/lib/hgfsServer/hgfsServerLinux.c
++@@ -107,11 +107,13 @@ typedef struct DirectoryEntry {
++ #endif
++ 
++ /*
++- * ALLPERMS (mode 07777) and ACCESSPERMS (mode 0777) are not defined in the
++- * Solaris version of <sys/stat.h>.
+++ * ALLPERMS (mode 07777) and ACCESSPERMS (mode 0777) are not specified in
+++ * POSIX.
++  */
++-#ifdef sun
+++#ifndef ACCESSPERMS
++ #   define ACCESSPERMS (S_IRWXU|S_IRWXG|S_IRWXO)
+++#endif
+++#ifndef ALLPERMS
++ #   define ALLPERMS (S_ISUID|S_ISGID|S_ISVTX|S_IRWXU|S_IRWXG|S_IRWXO)
++ #endif
++ 
++Index: open-vm-tools/services/plugins/dndcp/dnd/dndLinux.c
++===================================================================
++--- open-vm-tools.orig/services/plugins/dndcp/dnd/dndLinux.c
+++++ open-vm-tools/services/plugins/dndcp/dnd/dndLinux.c
++@@ -51,7 +51,7 @@
++ 
++ #define DND_ROOTDIR_PERMS     (S_IRWXU | S_IRWXG | S_IRWXO)
++ #define DND_STAGINGDIR_PERMS  (S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)
++-#ifdef sun
+++#ifndef ACCESSPERMS
++ #define ACCESSPERMS           (S_IRWXU | S_IRWXG | S_IRWXO)
++ #endif
++ #ifdef __ANDROID__
++@@ -60,7 +60,6 @@
++  */
++ #define NO_SETMNTENT
++ #define NO_ENDMNTENT
++-#define ACCESSPERMS           (S_IRWXU | S_IRWXG | S_IRWXO)
++ #endif
++ 
++ 
+diff --git a/package/openvmtools/0007-Use-configure-to-test-for-feature-instead-of-platfor.patch b/package/openvmtools/0007-Use-configure-to-test-for-feature-instead-of-platfor.patch
+new file mode 100644
+index 0000000000..0d3948aa10
+--- /dev/null
++++ b/package/openvmtools/0007-Use-configure-to-test-for-feature-instead-of-platfor.patch
+@@ -0,0 +1,150 @@
++From 6cc1c22cc30320f56da552a76bd956db8f255b6a Mon Sep 17 00:00:00 2001
++From: Natanael Copa <ncopa@alpinelinux.org>
++Date: Wed, 18 Nov 2015 10:05:07 +0000
++Subject: [PATCH] Use configure to test for feature instead of platform
++
++Test for various functions instead of trying to keep track of what
++platform and what version of the given platform has support for what.
++
++This should make it easier to port to currently unknown platforms and
++will solve the issue if a platform add support for a missing feature in
++the future.
++
++The features we test for are:
++- getifaddrs
++- getauxval
++- issetugid
++- __secure_getenv
++
++This is needed for musl libc.
++
++Signed-off-by: Natanael Copa <ncopa@alpinelinux.org>
++[Retrieved (and slightly updated) from:
++http://cgit.openembedded.org/meta-openembedded/tree/meta-oe/recipes-support/open-vm-tools/open-vm-tools/0007-Use-configure-to-test-for-feature-instead-of-platfor.patch?h=sumo]
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++---
++ open-vm-tools/configure.ac               |  4 ++++
++ open-vm-tools/lib/misc/idLinux.c         | 30 ++++++++++++++----------------
++ open-vm-tools/lib/nicInfo/nicInfoPosix.c |  8 ++++++--
++ 3 files changed, 24 insertions(+), 18 deletions(-)
++
++Index: open-vm-tools/configure.ac
++===================================================================
++--- open-vm-tools.orig/configure.ac
+++++ open-vm-tools/configure.ac
++@@ -798,6 +798,7 @@ AC_CHECK_FUNCS(
++ 
++ AC_CHECK_FUNCS([ecvt])
++ AC_CHECK_FUNCS([fcvt])
+++AC_CHECK_FUNCS([getifaddrs getauxval issetugid __secure_getenv])
++ 
++ AC_CHECK_FUNC([mkdtemp], [have_mkdtemp=yes])
++ 
++@@ -1063,10 +1064,13 @@ AC_PATH_PROG(
++ ###
++ 
++ AC_CHECK_HEADERS([crypt.h])
+++AC_CHECK_HEADERS([ifaddrs.h])
++ AC_CHECK_HEADERS([inttypes.h])
++ AC_CHECK_HEADERS([stdint.h])
++ AC_CHECK_HEADERS([stdlib.h])
++ AC_CHECK_HEADERS([wchar.h])
+++AC_CHECK_HEADERS([net/if.h])
+++AC_CHECK_HEADERS([sys/auxv.h])
++ AC_CHECK_HEADERS([sys/inttypes.h])
++ AC_CHECK_HEADERS([sys/io.h])
++ AC_CHECK_HEADERS([sys/param.h]) # Required to make the sys/user.h check work correctly on FreeBSD
++Index: open-vm-tools/lib/misc/idLinux.c
++===================================================================
++--- open-vm-tools.orig/lib/misc/idLinux.c
+++++ open-vm-tools/lib/misc/idLinux.c
++@@ -27,12 +27,9 @@
++ #include <sys/syscall.h>
++ #include <string.h>
++ #include <unistd.h>
++-#ifdef __linux__
++-#if defined(__GLIBC__) && \
++-           (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 16))
+++#ifdef HAVE_SYS_AUXV_H
++ #include <sys/auxv.h>
++ #endif
++-#endif
++ #ifdef __APPLE__
++ #include <sys/socket.h>
++ #include <TargetConditionals.h>
++@@ -997,31 +994,32 @@ Id_EndSuperUser(uid_t uid)  // IN:
++ static Bool
++ IdIsSetUGid(void)
++ {
++-#if defined(__ANDROID__)
++-   /* Android does not have a secure_getenv, so be conservative. */
++-   return TRUE;
++-#else
++    /*
++     * We use __secure_getenv, which returns NULL if the binary is
++-    * setuid or setgid. Alternatives include,
+++    * setuid or setgid, when issetugid or getauxval(AT_SECURE) is not
+++    * available. Alternatives include,
++     *
++-    *   a) getauxval(AT_SECURE); not available until glibc 2.16.
++-    *   b) __libc_enable_secure; may not be exported.
+++    *   a) issetugid(); not (yet?) available in glibc.
+++    *   b) getauxval(AT_SECURE); not available until glibc 2.16.
+++    *   c) __libc_enable_secure; may not be exported.
++     *
++-    * Use (a) when we are based on glibc 2.16, or newer.
+++    * Use (b) when we are based on glibc 2.16, or newer.
++     */
++ 
++-#if defined(__GLIBC__) && \
++-           (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 16))
+++#if HAVE_ISSETUGID
+++   return issetugid();
+++#elif HAVE_GETAUXVAL
++    return getauxval(AT_SECURE) != 0;
++-#else
+++#elif HAVE___SECURE_GETENV
++    static const char envName[] = "VMW_SETUGID_TEST";
++ 
++    if (setenv(envName, "1", TRUE) == -1) {
++       return TRUE; /* Conservative */
++    }
++    return __secure_getenv(envName) == NULL;
++-#endif
+++#else
+++   /* Android does not have a secure_getenv, so be conservative. */
+++   return TRUE;
++ #endif
++ }
++ #endif
++Index: open-vm-tools/lib/nicInfo/nicInfoPosix.c
++===================================================================
++--- open-vm-tools.orig/lib/nicInfo/nicInfoPosix.c
+++++ open-vm-tools/lib/nicInfo/nicInfoPosix.c
++@@ -34,9 +34,13 @@
++ #include <sys/socket.h>
++ #include <sys/stat.h>
++ #include <errno.h>
++-#if defined(__FreeBSD__) || defined(__APPLE__)
+++#if HAVE_SYS_SYSCTL_H
++ # include <sys/sysctl.h>
+++#endif
+++#if HAVE_IFADDRS_H
++ # include <ifaddrs.h>
+++#endif
+++#if HAVE_NET_IF_H
++ # include <net/if.h>
++ #endif
++ #ifndef NO_DNET
++@@ -348,10 +352,7 @@ GuestInfoGetNicInfo(NicInfoV3 *nicInfo)
++  *
++  ******************************************************************************
++  */
++-#if defined(__FreeBSD__) || \
++-    defined(__APPLE__) || \
++-    defined(USERWORLD) || \
++-    (defined(__linux__) && defined(NO_DNET))
+++#if defined(NO_DNET) && defined(HAVE_GETIFADDRS)
++ 
++ char *
++ GuestInfoGetPrimaryIP(void)
+diff --git a/package/openvmtools/0008-Use-configure-test-for-sys-stat.h-include.patch b/package/openvmtools/0008-Use-configure-test-for-sys-stat.h-include.patch
+new file mode 100644
+index 0000000000..c058dfe6c3
+--- /dev/null
++++ b/package/openvmtools/0008-Use-configure-test-for-sys-stat.h-include.patch
+@@ -0,0 +1,28 @@
++From 95c6184d9ff70a47c41768850923a96de9e544aa Mon Sep 17 00:00:00 2001
++From: Natanael Copa <ncopa@alpinelinux.org>
++Date: Wed, 18 Nov 2015 10:41:01 +0000
++Subject: [PATCH] Use configure test for sys/stat.h include
++
++This is needed for musl libc.
++
++Signed-off-by: Natanael Copa <ncopa@alpinelinux.org>
++[Retrieved from:
++http://cgit.openembedded.org/meta-openembedded/tree/meta-oe/recipes-support/open-vm-tools/open-vm-tools/0011-Use-configure-test-for-sys-stat.h-include.patch?h=sumo]
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++---
++ open-vm-tools/services/plugins/vix/vixTools.c | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++Index: open-vm-tools/services/plugins/vix/vixTools.c
++===================================================================
++--- open-vm-tools.orig/services/plugins/vix/vixTools.c
+++++ open-vm-tools/services/plugins/vix/vixTools.c
++@@ -66,7 +66,7 @@
++ #include <unistd.h>
++ #endif
++ 
++-#if defined(sun) || defined(__FreeBSD__) || defined(__APPLE__)
+++#ifdef HAVE_SYS_STAT_H
++ #include <sys/stat.h>
++ #endif
++ 
+diff --git a/package/openvmtools/0009-Set-permissions-on-rules-file.patch b/package/openvmtools/0009-Set-permissions-on-rules-file.patch
+new file mode 100644
+index 0000000000..6a37c1690d
+--- /dev/null
++++ b/package/openvmtools/0009-Set-permissions-on-rules-file.patch
+@@ -0,0 +1,23 @@
++From c3ef6a8285132871ad10f9300d8afff55d8d6de2 Mon Sep 17 00:00:00 2001
++From: puneetse <22071208+puneetse@users.noreply.github.com>
++Date: Wed, 16 Oct 2019 10:09:38 -0700
++Subject: [PATCH] Set permissions on rules file
++
++udevs rules should not be executable otherwise udev will log a warning in the journal
++
++Signed-off-by: Pascal de Bruijn <p.debruijn@unilogic.nl>
++---
++ udev/Makefile.am | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/udev/Makefile.am b/udev/Makefile.am
++index 68fbc3e27..8b9a4d716 100644
++--- a/udev/Makefile.am
+++++ b/udev/Makefile.am
++@@ -17,5 +17,5 @@
++ 
++ install-data-local:
++ 	$(INSTALL) -d $(DESTDIR)$(UDEVRULESDIR)
++-	$(INSTALL) $(srcdir)/99-vmware-scsi-udev.rules $(DESTDIR)$(UDEVRULESDIR)
+++	$(INSTALL) -m 0644 $(srcdir)/99-vmware-scsi-udev.rules $(DESTDIR)$(UDEVRULESDIR)
++ 
+diff --git a/package/openvmtools/0010-Change-DEVPATH-to-devpath.patch b/package/openvmtools/0010-Change-DEVPATH-to-devpath.patch
+new file mode 100644
+index 0000000000..5af694d8f2
+--- /dev/null
++++ b/package/openvmtools/0010-Change-DEVPATH-to-devpath.patch
+@@ -0,0 +1,25 @@
++From 22f5d198b3b2f7e4debed83948ba1baf70d4749a Mon Sep 17 00:00:00 2001
++From: puneetse <22071208+puneetse@users.noreply.github.com>
++Date: Wed, 16 Oct 2019 10:04:41 -0700
++Subject: [PATCH] Change $DEVPATH to $devpath
++
++$DEVPATH throws a warning by udev.
++
++Signed-off-by: Pascal de Bruijn <p.debruijn@unilogic.nl>
++---
++ udev/99-vmware-scsi-udev.rules | 4 ++--
++ 1 file changed, 2 insertions(+), 2 deletions(-)
++
++diff --git a/udev/99-vmware-scsi-udev.rules b/udev/99-vmware-scsi-udev.rules
++index 053b59706..a605d80ef 100644
++--- a/udev/99-vmware-scsi-udev.rules
+++++ b/udev/99-vmware-scsi-udev.rules
++@@ -2,6 +2,6 @@
++ #
++ # This file is part of open-vm-tools
++ 
++-ACTION=="add", SUBSYSTEMS=="scsi", ATTRS{vendor}=="VMware*", ATTRS{model}=="Virtual disk*", ENV{DEVTYPE}=="disk", RUN+="/bin/sh -c 'echo 180 >/sys$DEVPATH/device/timeout'"
++-ACTION=="add", SUBSYSTEMS=="scsi", ATTRS{vendor}=="VMware*", ATTRS{model}=="VMware Virtual S", ENV{DEVTYPE}=="disk", RUN+="/bin/sh -c 'echo 180 >/sys$DEVPATH/device/timeout'"
+++ACTION=="add", SUBSYSTEMS=="scsi", ATTRS{vendor}=="VMware*", ATTRS{model}=="Virtual disk*", ENV{DEVTYPE}=="disk", RUN+="/bin/sh -c 'echo 180 >/sys/$devpath/device/timeout'"
+++ACTION=="add", SUBSYSTEMS=="scsi", ATTRS{vendor}=="VMware*", ATTRS{model}=="VMware Virtual S", ENV{DEVTYPE}=="disk", RUN+="/bin/sh -c 'echo 180 >/sys/$devpath/device/timeout'"
++ 
+diff --git a/package/openvmtools/vmtoolsd.service b/package/openvmtools/vmtoolsd.service
+index 17a4df44c2..cb97357ec2 100644
+--- a/package/openvmtools/vmtoolsd.service
++++ b/package/openvmtools/vmtoolsd.service
+@@ -1,6 +1,7 @@
+ [Unit]
+ Description=vmtoolsd for openvmtools
+ After=syslog.target network.target
++ConditionVirtualization=vmware
+ 
+ [Service]
+ Type=forking
+diff --git a/package/opkg/Config.in b/package/opkg/Config.in
+index 20f6fa2f53..1f6a39343f 100644
+--- a/package/opkg/Config.in
++++ b/package/opkg/Config.in
+@@ -17,7 +17,7 @@ config BR2_PACKAGE_OPKG
+ 	  conforms to a subset of debian's policy manual regarding
+ 	  control files.
+ 
+-	  http://code.google.com/p/opkg/
++	  https://code.google.com/archive/p/opkg/
+ 
+ if BR2_PACKAGE_OPKG
+ 
+diff --git a/package/oprofile/Config.in b/package/oprofile/Config.in
+index d99a7e60c8..cce2cfdab8 100644
+--- a/package/oprofile/Config.in
++++ b/package/oprofile/Config.in
+@@ -39,6 +39,8 @@ config BR2_PACKAGE_OPROFILE
+ 	  interrupt handlers, kernel modules, the kernel, shared
+ 	  libraries, and applications.
+ 
++	  https://sourceforge.net/projects/oprofile/
++
+ comment "oprofile needs a toolchain w/ C++, wchar"
+ 	depends on BR2_USE_MMU
+ 	depends on BR2_PACKAGE_OPROFILE_ARCH_SUPPORTS
+diff --git a/package/oracle-mysql/oracle-mysql.mk b/package/oracle-mysql/oracle-mysql.mk
+index 0275a8428f..326fbcc040 100644
+--- a/package/oracle-mysql/oracle-mysql.mk
++++ b/package/oracle-mysql/oracle-mysql.mk
+@@ -9,7 +9,7 @@ ORACLE_MYSQL_VERSION = $(ORACLE_MYSQL_VERSION_MAJOR).73
+ ORACLE_MYSQL_SOURCE = mysql-$(ORACLE_MYSQL_VERSION).tar.gz
+ ORACLE_MYSQL_SITE = http://dev.mysql.com/get/Downloads/MySQL-$(ORACLE_MYSQL_VERSION_MAJOR)
+ ORACLE_MYSQL_INSTALL_STAGING = YES
+-ORACLE_MYSQL_DEPENDENCIES = readline ncurses
++ORACLE_MYSQL_DEPENDENCIES = ncurses
+ ORACLE_MYSQL_AUTORECONF = YES
+ ORACLE_MYSQL_LICENSE = GPL-2.0
+ ORACLE_MYSQL_LICENSE_FILES = README COPYING
+@@ -33,7 +33,7 @@ ORACLE_MYSQL_CONF_OPTS = \
+ 	--without-docs \
+ 	--without-man \
+ 	--without-libedit \
+-	--without-readline \
++	--with-readline \
+ 	--with-low-memory \
+ 	--enable-thread-safe-client \
+ 	--with-unix-socket-path=$(MYSQL_SOCKET) \
+diff --git a/package/ortp/Config.in b/package/ortp/Config.in
+index 788eaf4bbb..052ff1d397 100644
+--- a/package/ortp/Config.in
++++ b/package/ortp/Config.in
+@@ -6,7 +6,7 @@ config BR2_PACKAGE_ORTP
+ 	help
+ 	  oRTP, a Real-time Transport Protocol (RTP,RFC3550) library
+ 
+-	  http://www.linphone.org/eng/documentation/dev/ortp.html
++	  https://www.linphone.org/technical-corner/ortp
+ 
+ comment "ortp needs a toolchain w/ C++, threads"
+ 	depends on !BR2_INSTALL_LIBSTDCPP || !BR2_TOOLCHAIN_HAS_THREADS
+diff --git a/package/perl-gdgraph/perl-gdgraph.hash b/package/perl-gdgraph/perl-gdgraph.hash
+index ea994519dd..c0b195eb2a 100644
+--- a/package/perl-gdgraph/perl-gdgraph.hash
++++ b/package/perl-gdgraph/perl-gdgraph.hash
+@@ -2,5 +2,6 @@
+ md5    38c6a188519e6272e9b2b722b315c3d8 GDGraph-1.54.tar.gz
+ sha256 b96f5c10b656c17d16ab65a1777c908297b028d3b6815f6d54b2337f006bfa4f GDGraph-1.54.tar.gz
+ 
+-# computed by scancpan
++# Hash for license files
+ sha256 710484e3a1196664bbe8a5ad5d53c528e01226eb20e2885a4e1131eb6c6565cd Dustismo.LICENSE
++sha256 f44630ad9101e40a101d906a07908c975a9b0742273cfb0c00a51d73afb53e7d README
+diff --git a/package/perl-gdgraph/perl-gdgraph.mk b/package/perl-gdgraph/perl-gdgraph.mk
+index 284dc9dc21..286902a66e 100644
+--- a/package/perl-gdgraph/perl-gdgraph.mk
++++ b/package/perl-gdgraph/perl-gdgraph.mk
+@@ -7,8 +7,8 @@
+ PERL_GDGRAPH_VERSION = 1.54
+ PERL_GDGRAPH_SOURCE = GDGraph-$(PERL_GDGRAPH_VERSION).tar.gz
+ PERL_GDGRAPH_SITE = $(BR2_CPAN_MIRROR)/authors/id/R/RU/RUZ
+-PERL_GDGRAPH_LICENSE = Artistic or GPL-1.0+
+-PERL_GDGRAPH_LICENSE_FILES = Dustismo.LICENSE
++PERL_GDGRAPH_LICENSE = Artistic or GPL-1.0+ (perl module), GPL-2.0+ (font)
++PERL_GDGRAPH_LICENSE_FILES = Dustismo.LICENSE README
+ PERL_GDGRAPH_DISTNAME = GDGraph
+ 
+ $(eval $(perl-package))
+diff --git a/package/perl-gdtextutil/perl-gdtextutil.hash b/package/perl-gdtextutil/perl-gdtextutil.hash
+index f0e947f63c..add0717f1d 100644
+--- a/package/perl-gdtextutil/perl-gdtextutil.hash
++++ b/package/perl-gdtextutil/perl-gdtextutil.hash
+@@ -2,5 +2,6 @@
+ md5    941ad06eadc86b47f3a32da405665c41 GDTextUtil-0.86.tar.gz
+ sha256 886ecbf85cfe94f4135ee5689c4847a9ae783ecb99e6759e12c734f2dd6116bc GDTextUtil-0.86.tar.gz
+ 
+-# computed by scancpan
++# Hash for license files
+ sha256 710484e3a1196664bbe8a5ad5d53c528e01226eb20e2885a4e1131eb6c6565cd Dustismo.LICENSE
++sha256 93ca7dd7f372c79e8ec1f849f2a418a67d195e4027c1b3e3dd8444fb30f3e97c README
+diff --git a/package/perl-gdtextutil/perl-gdtextutil.mk b/package/perl-gdtextutil/perl-gdtextutil.mk
+index cd1617fbbd..f91d9e9eb3 100644
+--- a/package/perl-gdtextutil/perl-gdtextutil.mk
++++ b/package/perl-gdtextutil/perl-gdtextutil.mk
+@@ -7,7 +7,8 @@
+ PERL_GDTEXTUTIL_VERSION = 0.86
+ PERL_GDTEXTUTIL_SOURCE = GDTextUtil-$(PERL_GDTEXTUTIL_VERSION).tar.gz
+ PERL_GDTEXTUTIL_SITE = $(BR2_CPAN_MIRROR)/authors/id/M/MV/MVERB
+-PERL_GDTEXTUTIL_LICENSE_FILES = Dustismo.LICENSE
++PERL_GDTEXTUTIL_LICENSE = Artistic or GPL-1.0+ (perl module), GPL-2.0+ (font)
++PERL_GDTEXTUTIL_LICENSE_FILES = Dustismo.LICENSE README
+ PERL_GDTEXTUTIL_DISTNAME = GDTextUtil
+ 
+ $(eval $(perl-package))
+diff --git a/package/php/php.hash b/package/php/php.hash
+index debc14c64e..11ce109591 100644
+--- a/package/php/php.hash
++++ b/package/php/php.hash
+@@ -1,5 +1,5 @@
+ # From http://php.net/downloads.php
+-sha256 657cf6464bac28e9490c59c07a2cf7bb76c200f09cfadf6e44ea64e95fa01021  php-7.3.11.tar.xz
++sha256 aafe5e9861ad828860c6af8c88cdc1488314785962328eb1783607c1fdd855df  php-7.3.12.tar.xz
+ 
+ # License file
+ sha256 f689b8fa63bea7950ce6a21bf52ed88ea0d77673ee76e6de12f51191174d91b8  LICENSE
+diff --git a/package/php/php.mk b/package/php/php.mk
+index fe7cea8880..dae1fade23 100644
+--- a/package/php/php.mk
++++ b/package/php/php.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-PHP_VERSION = 7.3.11
++PHP_VERSION = 7.3.12
+ PHP_SITE = http://www.php.net/distributions
+ PHP_SOURCE = php-$(PHP_VERSION).tar.xz
+ PHP_INSTALL_STAGING = YES
+diff --git a/package/pkg-generic.mk b/package/pkg-generic.mk
+index 3cb13176ed..1ac7f7877e 100644
+--- a/package/pkg-generic.mk
++++ b/package/pkg-generic.mk
+@@ -538,6 +538,12 @@ ifndef $(2)_SITE_METHOD
+  endif
+ endif
+ 
++ifndef $(2)_DL_OPTS
++ ifdef $(3)_DL_OPTS
++  $(2)_DL_OPTS = $$($(3)_DL_OPTS)
++ endif
++endif
++
+ ifneq ($$(filter bzr cvs hg svn,$$($(2)_SITE_METHOD)),)
+ BR_NO_CHECK_HASH_FOR += $$($(2)_SOURCE)
+ endif
+@@ -1037,6 +1043,7 @@ PACKAGES_USERS += $$($(2)_USERS)$$(sep)
+ endif
+ TARGET_FINALIZE_HOOKS += $$($(2)_TARGET_FINALIZE_HOOKS)
+ ROOTFS_PRE_CMD_HOOKS += $$($(2)_ROOTFS_PRE_CMD_HOOKS)
++KEEP_PYTHON_PY_FILES += $$($(2)_KEEP_PY_FILES)
+ 
+ ifeq ($$($(2)_SITE_METHOD),svn)
+ DL_TOOLS_DEPENDENCIES += svn
+diff --git a/package/pkg-kconfig.mk b/package/pkg-kconfig.mk
+index d62be0fd03..a795781355 100644
+--- a/package/pkg-kconfig.mk
++++ b/package/pkg-kconfig.mk
+@@ -159,7 +159,7 @@ $$($(2)_TARGET_CONFIGURE): $$($(2)_DIR)/.stamp_kconfig_fixup_done
+ $(1)-clean-for-reconfigure: $(1)-clean-kconfig-for-reconfigure
+ 
+ $(1)-clean-kconfig-for-reconfigure:
+-	rm -f $$($(2)_DIR)/.stamp_kconfig_fixup_done
++	rm -f $$($(2)_DIR)/$$($(2)_KCONFIG_STAMP_DOTCONFIG)
+ 
+ # Only enable the foo-*config targets when the package is actually enabled.
+ # Note: the variable $(2)_KCONFIG_VAR is not related to the kconfig
+diff --git a/package/postgresql/Config.in b/package/postgresql/Config.in
+index e548d3cb27..2f677daf5b 100644
+--- a/package/postgresql/Config.in
++++ b/package/postgresql/Config.in
+@@ -11,7 +11,7 @@ config BR2_PACKAGE_POSTGRESQL
+ 	  database system.
+ 
+ 	  Enable the readline package to gain readline support in
+-	  pgsql (the command line interpreter), which offers
++	  psql (the command line interpreter), which offers
+ 	  command history and edit functions.
+ 
+ 	  Enable the zlib package to gain builtin compression for
+diff --git a/package/postgresql/postgresql.hash b/package/postgresql/postgresql.hash
+index 7a427e629e..4c78ad68b3 100644
+--- a/package/postgresql/postgresql.hash
++++ b/package/postgresql/postgresql.hash
+@@ -1,7 +1,7 @@
+-# From https://ftp.postgresql.org/pub/source/v11.5/postgresql-11.5.tar.bz2.md5
+-md5 580da94f6d85046ff2a228785ab2cc89  postgresql-11.5.tar.bz2
+-# From https://ftp.postgresql.org/pub/source/v11.5/postgresql-11.5.tar.bz2.sha256
+-sha256 7fdf23060bfc715144cbf2696cf05b0fa284ad3eb21f0c378591c6bca99ad180  postgresql-11.5.tar.bz2
++# From https://ftp.postgresql.org/pub/source/v11.6/postgresql-11.6.tar.bz2.md5
++md5 8e3462b342caf6f2265126674dde26da  postgresql-11.6.tar.bz2
++# From https://ftp.postgresql.org/pub/source/v11.6/postgresql-11.6.tar.bz2.sha256
++sha256 49924f7ff92965fdb20c86e0696f2dc9f8553e1563124ead7beedf8910c13170  postgresql-11.6.tar.bz2
+ 
+ # License file, Locally calculated
+ sha256	c4c86d683970b22b9fab53320ee1b3a30ef4e8223122b4fb6be53ea62ecee8b3  COPYRIGHT
+diff --git a/package/postgresql/postgresql.mk b/package/postgresql/postgresql.mk
+index f409849102..4209cde344 100644
+--- a/package/postgresql/postgresql.mk
++++ b/package/postgresql/postgresql.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-POSTGRESQL_VERSION = 11.5
++POSTGRESQL_VERSION = 11.6
+ POSTGRESQL_SOURCE = postgresql-$(POSTGRESQL_VERSION).tar.bz2
+ POSTGRESQL_SITE = https://ftp.postgresql.org/pub/source/v$(POSTGRESQL_VERSION)
+ POSTGRESQL_LICENSE = PostgreSQL
+diff --git a/package/prosody/prosody.hash b/package/prosody/prosody.hash
+index f3f9aa4777..d7d1d06eda 100644
+--- a/package/prosody/prosody.hash
++++ b/package/prosody/prosody.hash
+@@ -1,8 +1,8 @@
+ # Locally computed:
+-md5    b4529e0cf8e0ee82a2f677e404c3df35  prosody-0.11.2.tar.gz
+-sha1   0508cfc1c3c74a7eb8fdac2ed50435e190930f6a  prosody-0.11.2.tar.gz
+-sha256 8911f6dc29b9e0c4edf9e61dc23fa22d77bc42c4caf28b809ab843b2f08e4831  prosody-0.11.2.tar.gz
+-sha512 22e55a551a40c92f38a1ed1de5fdcad574d699d58c2e27f93c3d465b55487b8e923c2ba088daf93c7140cbafb0d429687e0b662c8bb1c1aba4b79ac1ea271cd1  prosody-0.11.2.tar.gz
++md5    2cf85cd8f7fc061916d97a169e850a0e  prosody-0.11.3.tar.gz
++sha1   87ec8039bf297ba9bc4da44b2ba42f4b035e73ca  prosody-0.11.3.tar.gz
++sha256 cfdabd6f42a9fc5db300221967c518c26bd4b6e62def721c1626894d6325bf87  prosody-0.11.3.tar.gz
++sha512 07239433c7c65184ca24d665c92b787ff9e4a5ee190ab90dede802ffd2cbd97855356d818858871e62284e9923f485b3468ab1baed5d3fb13aac0551a38967eb  prosody-0.11.3.tar.gz
+ 
+ # Hash for license file:
+ sha256 bbbdc1c5426e5944cf869fc0faeaf19d88a220cd2b39ea98b7b8e86b0e88a2ef  COPYING
+diff --git a/package/prosody/prosody.mk b/package/prosody/prosody.mk
+index c2111f6b83..05ea3d2e40 100644
+--- a/package/prosody/prosody.mk
++++ b/package/prosody/prosody.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-PROSODY_VERSION = 0.11.2
++PROSODY_VERSION = 0.11.3
+ PROSODY_SITE = https://prosody.im/downloads/source
+ PROSODY_LICENSE = MIT
+ PROSODY_LICENSE_FILES = COPYING
+diff --git a/package/python-django/python-django.hash b/package/python-django/python-django.hash
+index 22a0d9c4d8..213c525f76 100644
+--- a/package/python-django/python-django.hash
++++ b/package/python-django/python-django.hash
+@@ -1,5 +1,5 @@
+ # md5, sha256 from https://pypi.org/pypi/django/json
+-md5	42f0d3ccdcd89c566a30765ee0e25d42  Django-2.1.11.tar.gz
+-sha256	1a41831eace203fd1939edf899e07d7abd12ce9bafc3d9a5a63a24a8d1d12bd5  Django-2.1.11.tar.gz
++md5	a9d02735cb5722608c08fb2d79350523  Django-2.1.15.tar.gz
++sha256	 a794f7a2f4b7c928eecfbc4ebad03712ff27fb545abe269bf01aa8500781eb1c Django-2.1.15.tar.gz
+ # Locally computed sha256 checksums
+ sha256	b846415d1b514e9c1dff14a22deb906d794bc546ca6129f950a18cd091e2a669  LICENSE
+diff --git a/package/python-django/python-django.mk b/package/python-django/python-django.mk
+index 40a2e96e03..c3e60f8759 100644
+--- a/package/python-django/python-django.mk
++++ b/package/python-django/python-django.mk
+@@ -4,10 +4,10 @@
+ #
+ ################################################################################
+ 
+-PYTHON_DJANGO_VERSION = 2.1.11
++PYTHON_DJANGO_VERSION = 2.1.15
+ PYTHON_DJANGO_SOURCE = Django-$(PYTHON_DJANGO_VERSION).tar.gz
+ # The official Django site has an unpractical URL
+-PYTHON_DJANGO_SITE = https://files.pythonhosted.org/packages/e0/e9/7e6008abee3eb2a40704c95a5cfc8a9627012df1580289d3df0f34c99766
++PYTHON_DJANGO_SITE = https://files.pythonhosted.org/packages/a5/ea/a3424e68851acb44a1f8f823dc32ee3eb10b7fda474b03d527f7e666b443
+ PYTHON_DJANGO_LICENSE = BSD-3-Clause
+ PYTHON_DJANGO_LICENSE_FILES = LICENSE
+ PYTHON_DJANGO_SETUP_TYPE = setuptools
+diff --git a/package/python/python.mk b/package/python/python.mk
+index 4b82cdcce3..29b9e363b1 100644
+--- a/package/python/python.mk
++++ b/package/python/python.mk
+@@ -262,7 +262,9 @@ endif
+ 
+ ifeq ($(BR2_PACKAGE_PYTHON_PYC_ONLY),y)
+ define PYTHON_REMOVE_PY_FILES
+-	find $(TARGET_DIR)/usr/lib/python$(PYTHON_VERSION_MAJOR) -name '*.py' -print0 | \
++	find $(TARGET_DIR)/usr/lib/python$(PYTHON_VERSION_MAJOR) -name '*.py' \
++		$(if $(strip $(KEEP_PYTHON_PY_FILES)),-not \( $(call finddirclauses,$(TARGET_DIR),$(KEEP_PYTHON_PY_FILES)) \) ) \
++		-print0 | \
+ 		xargs -0 --no-run-if-empty rm -f
+ endef
+ PYTHON_TARGET_FINALIZE_HOOKS += PYTHON_REMOVE_PY_FILES
+diff --git a/package/python3/python3.mk b/package/python3/python3.mk
+index 8d042954df..625c059135 100644
+--- a/package/python3/python3.mk
++++ b/package/python3/python3.mk
+@@ -280,7 +280,9 @@ endif
+ 
+ ifeq ($(BR2_PACKAGE_PYTHON3_PYC_ONLY),y)
+ define PYTHON3_REMOVE_PY_FILES
+-	find $(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR) -name '*.py' -print0 | \
++	find $(TARGET_DIR)/usr/lib/python$(PYTHON3_VERSION_MAJOR) -name '*.py' \
++		$(if $(strip $(KEEP_PYTHON_PY_FILES)),-not \( $(call finddirclauses,$(TARGET_DIR),$(KEEP_PYTHON_PY_FILES)) \) ) \
++		-print0 | \
+ 		xargs -0 --no-run-if-empty rm -f
+ endef
+ PYTHON3_TARGET_FINALIZE_HOOKS += PYTHON3_REMOVE_PY_FILES
+diff --git a/package/rabbitmq-c/rabbitmq-c.hash b/package/rabbitmq-c/rabbitmq-c.hash
+index 0af88774e6..eb57626518 100644
+--- a/package/rabbitmq-c/rabbitmq-c.hash
++++ b/package/rabbitmq-c/rabbitmq-c.hash
+@@ -1,3 +1,3 @@
+ # Locally calculated
+-sha256 316c0d156452b488124806911a62e0c2aa8a546d38fc8324719cd29aaa493024 rabbitmq-c-v0.9.0.tar.gz
++sha256 6455efbaebad8891c59f274a852b75b5cc51f4d669dfc78d2ae7e6cc97fcd8c0 rabbitmq-c-0.10.0.tar.gz
+ sha256 94a12c906acb31a66c2c8a6c1b6e46cab52bc5694c5ada2a06d86b05d3d3f422 LICENSE-MIT
+diff --git a/package/rabbitmq-c/rabbitmq-c.mk b/package/rabbitmq-c/rabbitmq-c.mk
+index 6385ccb6b6..e059ff706c 100644
+--- a/package/rabbitmq-c/rabbitmq-c.mk
++++ b/package/rabbitmq-c/rabbitmq-c.mk
+@@ -4,8 +4,8 @@
+ #
+ ################################################################################
+ 
+-RABBITMQ_C_VERSION = v0.9.0
+-RABBITMQ_C_SITE = $(call github,alanxz,rabbitmq-c,$(RABBITMQ_C_VERSION))
++RABBITMQ_C_VERSION = 0.10.0
++RABBITMQ_C_SITE = $(call github,alanxz,rabbitmq-c,v$(RABBITMQ_C_VERSION))
+ RABBITMQ_C_LICENSE = MIT
+ RABBITMQ_C_LICENSE_FILES = LICENSE-MIT
+ RABBITMQ_C_INSTALL_STAGING = YES
+diff --git a/package/rauc/Config.in b/package/rauc/Config.in
+index 456f8f382c..5091dc72a5 100644
+--- a/package/rauc/Config.in
++++ b/package/rauc/Config.in
+@@ -7,6 +7,8 @@ config BR2_PACKAGE_RAUC
+ 	select BR2_PACKAGE_OPENSSL
+ 	select BR2_PACKAGE_DBUS # run-time dependency
+ 	select BR2_PACKAGE_SQUASHFS # run-time dependency
++	select BR2_PACKAGE_UBOOT_TOOLS if BR2_TARGET_UBOOT # run-time dependency
++	select BR2_PACKAGE_UBOOT_TOOLS_FWPRINTENV if BR2_TARGET_UBOOT
+ 	help
+ 	  RAUC is the Robust Auto-Update Controller developed by
+ 	  Pengutronix. It supports updating embedded Linux
+diff --git a/package/redis/redis.hash b/package/redis/redis.hash
+index 0b4e25c61d..59c16e12ea 100644
+--- a/package/redis/redis.hash
++++ b/package/redis/redis.hash
+@@ -1,5 +1,5 @@
+ # From https://github.com/antirez/redis-hashes/blob/master/README
+-sha256 fc53e73ae7586bcdacb4b63875d1ff04f68c5474c1ddeda78f00e5ae2eed1bbb  redis-4.0.11.tar.gz
++sha256 1e1e18420a86cfb285933123b04a82e1ebda20bfb0a289472745a087587e93a7  redis-4.0.14.tar.gz
+ 
+ # Locally calculated
+ sha256 cbf420a3672475a6e2765e3c0984c1f81efe0212afb94a3c998ee63bfd661063  COPYING
+diff --git a/package/redis/redis.mk b/package/redis/redis.mk
+index da2307d693..783f2c5c44 100644
+--- a/package/redis/redis.mk
++++ b/package/redis/redis.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-REDIS_VERSION = 4.0.11
++REDIS_VERSION = 4.0.14
+ REDIS_SITE = http://download.redis.io/releases
+ REDIS_LICENSE = BSD-3-Clause (core); MIT and BSD family licenses (Bundled components)
+ REDIS_LICENSE_FILES = COPYING
+diff --git a/package/rpcbind/rpcbind.mk b/package/rpcbind/rpcbind.mk
+index 5c216afc93..d69735d32e 100644
+--- a/package/rpcbind/rpcbind.mk
++++ b/package/rpcbind/rpcbind.mk
+@@ -17,6 +17,7 @@ RPCBIND_CONF_OPTS += --with-rpcuser=root
+ 
+ ifeq ($(BR2_INIT_SYSTEMD),y)
+ RPCBIND_CONF_OPTS += --with-systemdsystemunitdir=/usr/lib/systemd/system
++RPCBIND_DEPENDENCIES += systemd
+ else
+ RPCBIND_CONF_OPTS += --with-systemdsystemunitdir=no
+ endif
+diff --git a/package/socat/socat.mk b/package/socat/socat.mk
+index 5fea067d82..e4595007df 100644
+--- a/package/socat/socat.mk
++++ b/package/socat/socat.mk
+@@ -29,6 +29,8 @@ endif
+ # automake, so we can't use the normal autoreconf logic.
+ 
+ SOCAT_DEPENDENCIES = host-autoconf
++# incompatibile license (GPL-3.0+)
++SOCAT_CONF_OPTS = --disable-readline
+ 
+ ifeq ($(BR2_PACKAGE_OPENSSL),y)
+ SOCAT_DEPENDENCIES += openssl
+@@ -36,12 +38,6 @@ else
+ SOCAT_CONF_OPTS += --disable-openssl
+ endif
+ 
+-ifeq ($(BR2_PACKAGE_READLINE),y)
+-SOCAT_DEPENDENCIES += readline
+-else
+-SOCAT_CONF_OPTS += --disable-readline
+-endif
+-
+ define SOCAT_RUN_AUTOCONF
+ 	(cd $(@D); $(HOST_DIR)/bin/autoconf)
+ endef
+diff --git a/package/spice-protocol/spice-protocol.hash b/package/spice-protocol/spice-protocol.hash
+index e72bb2d712..c23135141a 100644
+--- a/package/spice-protocol/spice-protocol.hash
++++ b/package/spice-protocol/spice-protocol.hash
+@@ -1,2 +1,5 @@
+ # Locally calculated after checking pgp signature
+-sha256	20350bc4309039fdf0d29ee4fd0033cde27bccf33501e13b3c1befafde9d0c9c	spice-protocol-0.12.14.tar.bz2
++sha256	b6a4aa1ca32668790b45a494bbd000e9d05797b391d5a5d4b91adf1118216eac	spice-protocol-0.14.0.tar.bz2
++
++# Hash for license file
++sha256	eb55ea746be694c449224c7ddce6340648b075fd377281712a19094e7fb7ef92	COPYING
+diff --git a/package/spice-protocol/spice-protocol.mk b/package/spice-protocol/spice-protocol.mk
+index 7392e9533d..f8c55c7b01 100644
+--- a/package/spice-protocol/spice-protocol.mk
++++ b/package/spice-protocol/spice-protocol.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SPICE_PROTOCOL_VERSION = 0.12.14
++SPICE_PROTOCOL_VERSION = 0.14.0
+ SPICE_PROTOCOL_SOURCE = spice-protocol-$(SPICE_PROTOCOL_VERSION).tar.bz2
+ SPICE_PROTOCOL_SITE = http://www.spice-space.org/download/releases
+ SPICE_PROTOCOL_LICENSE = BSD-3-Clause
+diff --git a/package/spice/0001-configure.ac-add-enable-tests.patch b/package/spice/0001-configure.ac-add-enable-tests.patch
+new file mode 100644
+index 0000000000..668dea1ca3
+--- /dev/null
++++ b/package/spice/0001-configure.ac-add-enable-tests.patch
+@@ -0,0 +1,54 @@
++From 1b6eaf5589a14763452cbe53382cc699cdeca141 Mon Sep 17 00:00:00 2001
++From: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++Date: Fri, 15 Nov 2019 11:36:14 +0100
++Subject: [PATCH] configure.ac: add --enable-tests
++
++Allow the user to disable tests through --disable-tests, this is
++especially useful for example to disable gdk-pixbuf dependency
++
++Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
++[Upstream status:
++https://gitlab.freedesktop.org/spice/spice-common/merge_requests/6]
++---
++ Makefile.am  | 6 +++++-
++ configure.ac | 7 +++++++
++ 2 files changed, 12 insertions(+), 1 deletion(-)
++
++diff --git a/subprojects/spice-common/Makefile.am b/subprojects/spice-common/Makefile.am
++index 5402499..00623a1 100644
++--- a/subprojects/spice-common/Makefile.am
+++++ b/subprojects/spice-common/Makefile.am
++@@ -1,7 +1,11 @@
++ NULL =
++ ACLOCAL_AMFLAGS = -I m4
++ 
++-SUBDIRS = python_modules common tests docs
+++SUBDIRS = python_modules common docs
+++
+++if ENABLE_TESTS
+++SUBDIRS += tests
+++endif
++ 
++ EXTRA_DIST =				\
++ 	meson.build			\
++diff --git a/subprojects/spice-common/configure.ac b/subprojects/spice-common/configure.ac
++index 9d10287..2dba7c8 100644
++--- a/subprojects/spice-common/configure.ac
+++++ b/subprojects/spice-common/configure.ac
++@@ -33,6 +33,13 @@ AC_SEARCH_LIBS(regcomp, [regex rx])
++ SPICE_CHECK_SYSDEPS
++ SPICE_EXTRA_CHECKS
++ 
+++AC_ARG_ENABLE([tests],
+++  AS_HELP_STRING([--enable-tests],
+++                 [Enable tests @<:@default=yes@:>@]),
+++  [],
+++  enable_tests="yes")
+++AM_CONDITIONAL(ENABLE_TESTS, test "x$enable_tests" = "xyes")
+++
++ AC_ARG_ENABLE([alignment-checks],
++   AS_HELP_STRING([--enable-alignment-checks],
++                  [Enable runtime checks for cast alignment @<:@default=no@:>@]),
++-- 
++2.23.0
++
+diff --git a/package/spice/spice.hash b/package/spice/spice.hash
+index 1a25926ab2..4243244129 100644
+--- a/package/spice/spice.hash
++++ b/package/spice/spice.hash
+@@ -1,2 +1,3 @@
+ # Locally calculated
+-sha256	1ead5de63d06eededed4017db37240f07bef0abffbaf621899647e7e685a1519	spice-0.14.1.tar.bz2
++sha256	b203b3882e06f4c7249a3150d90c84e1a90490d41ead255a3d2cede46f4a29a7	spice-0.14.2.tar.bz2
++sha256	dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551	COPYING
+diff --git a/package/spice/spice.mk b/package/spice/spice.mk
+index 16e57441a8..8c421abf2e 100644
+--- a/package/spice/spice.mk
++++ b/package/spice/spice.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-SPICE_VERSION = 0.14.1
++SPICE_VERSION = 0.14.2
+ SPICE_SOURCE = spice-$(SPICE_VERSION).tar.bz2
+ SPICE_SITE = http://www.spice-space.org/download/releases/spice-server
+ SPICE_LICENSE = LGPL-2.1+
+@@ -17,6 +17,8 @@ SPICE_DEPENDENCIES = \
+ 	openssl \
+ 	pixman \
+ 	spice-protocol
++# We're patching subprojects/spice-common/configure.ac
++SPICE_AUTORECONF = YES
+ 
+ # We disable everything for now, because the dependency tree can become
+ # quite deep if we try to enable some features, and I have not tested that.
+@@ -25,7 +27,8 @@ SPICE_CONF_OPTS = \
+ 	--disable-opengl \
+ 	--disable-smartcard \
+ 	--without-sasl \
+-	--disable-manual
++	--disable-manual \
++	--disable-tests
+ 
+ SPICE_DEPENDENCIES += host-pkgconf
+ 
+diff --git a/package/tftpd/tftpd.hash b/package/tftpd/tftpd.hash
+index 247b757fa6..c876b2edc2 100644
+--- a/package/tftpd/tftpd.hash
++++ b/package/tftpd/tftpd.hash
+@@ -1,2 +1,5 @@
+ # From https://www.kernel.org/pub/software/network/tftp/tftp-hpa/sha256sums.asc
+ sha256	afee361df96a2f88344e191f6a25480fd714e1d28d176c3f10cc43fa206b718b	tftp-hpa-5.2.tar.xz
++
++# Hash for license file
++sha256	5efef82650b8ece733e37790fc70f05e426c9e1ef9640d4ebcb04867bd3f5e28	tftpd/tftpd.c
+diff --git a/package/tftpd/tftpd.mk b/package/tftpd/tftpd.mk
+index c42456afd1..57905fda05 100644
+--- a/package/tftpd/tftpd.mk
++++ b/package/tftpd/tftpd.mk
+@@ -8,6 +8,8 @@ TFTPD_VERSION = 5.2
+ TFTPD_SOURCE = tftp-hpa-$(TFTPD_VERSION).tar.xz
+ TFTPD_SITE = $(BR2_KERNEL_MIRROR)/software/network/tftp/tftp-hpa
+ TFTPD_CONF_OPTS = --without-tcpwrappers
++TFTPD_LICENSE = BSD-4-Clause
++TFTPD_LICENSE_FILES = tftpd/tftpd.c
+ 
+ define TFTPD_INSTALL_TARGET_CMDS
+ 	$(INSTALL) -D $(@D)/tftp/tftp $(TARGET_DIR)/usr/bin/tftp
+diff --git a/package/tiff/0001-Fix-for-simple-memory-leak-that-was-assigned-CVE-2019-6128.patch b/package/tiff/0001-Fix-for-simple-memory-leak-that-was-assigned-CVE-2019-6128.patch
+deleted file mode 100644
+index 638760b71e..0000000000
+--- a/package/tiff/0001-Fix-for-simple-memory-leak-that-was-assigned-CVE-2019-6128.patch
++++ /dev/null
+@@ -1,53 +0,0 @@
+-From 0c74a9f49b8d7a36b17b54a7428b3526d20f88a8 Mon Sep 17 00:00:00 2001
+-From: Scott Gayou <github.scott@gmail.com>
+-Date: Wed, 23 Jan 2019 15:03:53 -0500
+-Subject: [PATCH] Fix for simple memory leak that was assigned CVE-2019-6128.
+-
+-pal2rgb failed to free memory on a few errors. This was reported
+-here: http://bugzilla.maptools.org/show_bug.cgi?id=2836.
+-
+-Signed-off-by: Fabrice Fontaine <fontaine.fabrice@gmail.com>
+-[Retrieved from:
+-https://gitlab.com/libtiff/libtiff/commit/ae0bed1fe530a82faf2e9ea1775109dbf301a971]
+----
+- tools/pal2rgb.c | 7 ++++++-
+- 1 file changed, 6 insertions(+), 1 deletion(-)
+-
+-diff --git a/tools/pal2rgb.c b/tools/pal2rgb.c
+-index 01d8502e..9492f1cf 100644
+---- a/tools/pal2rgb.c
+-+++ b/tools/pal2rgb.c
+-@@ -118,12 +118,14 @@ main(int argc, char* argv[])
+- 	    shortv != PHOTOMETRIC_PALETTE) {
+- 		fprintf(stderr, "%s: Expecting a palette image.\n",
+- 		    argv[optind]);
+-+		(void) TIFFClose(in);
+- 		return (-1);
+- 	}
+- 	if (!TIFFGetField(in, TIFFTAG_COLORMAP, &rmap, &gmap, &bmap)) {
+- 		fprintf(stderr,
+- 		    "%s: No colormap (not a valid palette image).\n",
+- 		    argv[optind]);
+-+		(void) TIFFClose(in);
+- 		return (-1);
+- 	}
+- 	bitspersample = 0;
+-@@ -131,11 +133,14 @@ main(int argc, char* argv[])
+- 	if (bitspersample != 8) {
+- 		fprintf(stderr, "%s: Sorry, can only handle 8-bit images.\n",
+- 		    argv[optind]);
+-+		(void) TIFFClose(in);
+- 		return (-1);
+- 	}
+- 	out = TIFFOpen(argv[optind+1], "w");
+--	if (out == NULL)
+-+	if (out == NULL) {
+-+		(void) TIFFClose(in);
+- 		return (-2);
+-+	}
+- 	cpTags(in, out);
+- 	TIFFGetField(in, TIFFTAG_IMAGEWIDTH, &imagewidth);
+- 	TIFFGetField(in, TIFFTAG_IMAGELENGTH, &imagelength);
+--- 
+-2.18.1
+-
+diff --git a/package/tiff/tiff.hash b/package/tiff/tiff.hash
+index 21eb4bd37a..36f30c4418 100644
+--- a/package/tiff/tiff.hash
++++ b/package/tiff/tiff.hash
+@@ -1,3 +1,3 @@
+ # Locally computed
+-sha256 2c52d11ccaf767457db0c46795d9c7d1a8d8f76f68b0b800a3dfe45786b996e4  tiff-4.0.10.tar.gz
++sha256 5d29f32517dadb6dbcd1255ea5bbc93a2b54b94fbf83653b4d65c7d6775b8634  tiff-4.1.0.tar.gz
+ sha256 fbd6fed7938541d2c809c0826225fc85e551fdbfa8732b10f0c87e0847acafd7  COPYRIGHT
+diff --git a/package/tiff/tiff.mk b/package/tiff/tiff.mk
+index aef08b341d..b26900ac70 100644
+--- a/package/tiff/tiff.mk
++++ b/package/tiff/tiff.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-TIFF_VERSION = 4.0.10
++TIFF_VERSION = 4.1.0
+ TIFF_SITE = http://download.osgeo.org/libtiff
+ TIFF_LICENSE = tiff license
+ TIFF_LICENSE_FILES = COPYRIGHT
+diff --git a/package/tz/tz.mk b/package/tz/tz.mk
+index 1e797046d2..135726c2ce 100644
+--- a/package/tz/tz.mk
++++ b/package/tz/tz.mk
+@@ -8,6 +8,16 @@ TZ_DEPENDENCIES = host-tzdata host-tzdump
+ TZ_LICENSE = Public domain
+ 
+ TZ_LOCALTIME = $(call qstrip,$(BR2_TARGET_LOCALTIME))
++ifneq ($(TZ_LOCALTIME),)
++define TZ_SET_LOCALTIME
++	if [ ! -f $(TARGET_DIR)/usr/share/zoneinfo/uclibc/$(TZ_LOCALTIME) ]; then \
++		printf "Error: '%s' is not a valid timezone, check your BR2_TARGET_LOCALTIME setting\n" \
++			"$(TZ_LOCALTIME)"; \
++		exit 1; \
++	fi
++	ln -sf ../usr/share/zoneinfo/uclibc/$(TZ_LOCALTIME) $(TARGET_DIR)/etc/TZ
++endef
++endif
+ 
+ define TZ_BUILD_CMDS
+ 	(cd $(HOST_DIR)/share/zoneinfo/posix/; \
+@@ -25,12 +35,7 @@ define TZ_INSTALL_TARGET_CMDS
+ 		$(TARGET_DIR)/usr/share/zoneinfo/iso3166.tab
+ 	mkdir -p $(TARGET_DIR)/usr/share/zoneinfo/uclibc
+ 	cp -a $(@D)/output/* $(TARGET_DIR)/usr/share/zoneinfo/uclibc
+-	if [ ! -f $(TARGET_DIR)/usr/share/zoneinfo/uclibc/$(TZ_LOCALTIME) ]; then \
+-		printf "Error: '%s' is not a valid timezone, check your BR2_TARGET_LOCALTIME setting\n" \
+-			"$(TZ_LOCALTIME)"; \
+-		exit 1; \
+-	fi
+-	ln -sf ../usr/share/zoneinfo/uclibc/$(TZ_LOCALTIME) $(TARGET_DIR)/etc/TZ
++	$(TZ_SET_LOCALTIME)
+ endef
+ 
+ $(eval $(generic-package))
+diff --git a/package/tzdata/tzdata.mk b/package/tzdata/tzdata.mk
+index e20c946208..75fa5eb67e 100644
+--- a/package/tzdata/tzdata.mk
++++ b/package/tzdata/tzdata.mk
+@@ -25,6 +25,17 @@ TZDATA_ZONELIST = $(call qstrip,$(BR2_TARGET_TZ_ZONELIST))
+ endif
+ 
+ TZDATA_LOCALTIME = $(call qstrip,$(BR2_TARGET_LOCALTIME))
++ifneq ($(TZDATA_LOCALTIME),)
++define TZDATA_SET_LOCALTIME
++	if [ ! -f $(TARGET_DIR)/usr/share/zoneinfo/$(TZDATA_LOCALTIME) ]; then \
++		printf "Error: '%s' is not a valid timezone, check your BR2_TARGET_LOCALTIME setting\n" \
++			"$(TZDATA_LOCALTIME)"; \
++		exit 1; \
++	fi
++	ln -sf ../usr/share/zoneinfo/$(TZDATA_LOCALTIME) $(TARGET_DIR)/etc/localtime
++	echo "$(TZDATA_LOCALTIME)" >$(TARGET_DIR)/etc/timezone
++endef
++endif
+ 
+ # No need to extract for target, we're using the host-installed files
+ TZDATA_EXTRACT_CMDS =
+@@ -36,13 +47,7 @@ define TZDATA_INSTALL_TARGET_CMDS
+ 	for zone in posix/*; do \
+ 	    ln -sfn "$${zone}" "$${zone##*/}"; \
+ 	done
+-	if [ ! -f $(TARGET_DIR)/usr/share/zoneinfo/$(TZDATA_LOCALTIME) ]; then \
+-		printf "Error: '%s' is not a valid timezone, check your BR2_TARGET_LOCALTIME setting\n" \
+-			"$(TZDATA_LOCALTIME)"; \
+-		exit 1; \
+-	fi
+-	ln -sf ../usr/share/zoneinfo/$(TZDATA_LOCALTIME) $(TARGET_DIR)/etc/localtime
+-	echo "$(TZDATA_LOCALTIME)" >$(TARGET_DIR)/etc/timezone
++	$(TZDATA_SET_LOCALTIME)
+ endef
+ 
+ define HOST_TZDATA_BUILD_CMDS
+diff --git a/package/webkitgtk/webkitgtk.hash b/package/webkitgtk/webkitgtk.hash
+index 8653369aa0..71642ad144 100644
+--- a/package/webkitgtk/webkitgtk.hash
++++ b/package/webkitgtk/webkitgtk.hash
+@@ -1,7 +1,7 @@
+-# From https://webkitgtk.org/releases/webkitgtk-2.24.4.tar.xz.sums
+-md5 c214963d8c0e7d83460da04a0d8dda87 webkitgtk-2.24.4.tar.xz
+-sha1 f978b967422c6b423b11062375bab6506243388c webkitgtk-2.24.4.tar.xz
+-sha256 8668b129c026624ec226a4cccf4995f9d26f3e88fc28ab75b0e965f3c32b7dd8 webkitgtk-2.24.4.tar.xz
++# From https://webkitgtk.org/releases/webkitgtk-2.26.2.tar.xz.sums
++md5 65e06fe73ee166447894aaea95038e3b webkitgtk-2.26.2.tar.xz
++sha1 5bd1ccb436c76fd1edb83afd5bec377de5655d45 webkitgtk-2.26.2.tar.xz
++sha256 6b80f0637a80818559ac8fd50db3b394f41cb61904fb9b3ed65fa51635806512 webkitgtk-2.26.2.tar.xz
+ 
+ # Hashes for license files:
+ sha256 0b5d3a7cc325942567373b0ecd757d07c132e0ebd7c97bfc63f7e1a76094edb4 Source/WebCore/LICENSE-APPLE
+diff --git a/package/webkitgtk/webkitgtk.mk b/package/webkitgtk/webkitgtk.mk
+index 97e3311654..1273c1afe8 100644
+--- a/package/webkitgtk/webkitgtk.mk
++++ b/package/webkitgtk/webkitgtk.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-WEBKITGTK_VERSION = 2.24.4
++WEBKITGTK_VERSION = 2.26.2
+ WEBKITGTK_SITE = https://www.webkitgtk.org/releases
+ WEBKITGTK_SOURCE = webkitgtk-$(WEBKITGTK_VERSION).tar.xz
+ WEBKITGTK_INSTALL_STAGING = YES
+@@ -17,6 +17,7 @@ WEBKITGTK_DEPENDENCIES = host-ruby host-python host-gperf \
+ 	libtasn1 libxml2 libxslt openjpeg sqlite webp woff2
+ WEBKITGTK_CONF_OPTS = \
+ 	-DENABLE_API_TESTS=OFF \
++	-DENABLE_BUBBLEWRAP_SANDBOX=OFF \
+ 	-DENABLE_GEOLOCATION=OFF \
+ 	-DENABLE_GTKDOC=OFF \
+ 	-DENABLE_INTROSPECTION=OFF \
+@@ -26,7 +27,8 @@ WEBKITGTK_CONF_OPTS = \
+ 	-DUSE_LIBNOTIFY=OFF \
+ 	-DUSE_LIBHYPHEN=OFF \
+ 	-DUSE_OPENJPEG=ON \
+-	-DUSE_WOFF2=ON
++	-DUSE_WOFF2=ON \
++	-DUSE_WPE_RENDERER=OFF
+ 
+ ifeq ($(BR2_PACKAGE_WEBKITGTK_MULTIMEDIA),y)
+ WEBKITGTK_CONF_OPTS += \
+diff --git a/system/Config.in b/system/Config.in
+index 498b56e222..b1aebf4ef5 100644
+--- a/system/Config.in
++++ b/system/Config.in
+@@ -481,6 +481,8 @@ config BR2_TARGET_LOCALTIME
+ 	    Pacific/Wallis
+ 	    ...
+ 
++	  Set to empty to not install a default time zone.
++
+ endif # BR2_TARGET_TZ_INFO
+ 
+ config BR2_ROOTFS_USERS_TABLES
+diff --git a/toolchain/helpers.mk b/toolchain/helpers.mk
+index c936da8f29..3c30a8268e 100644
+--- a/toolchain/helpers.mk
++++ b/toolchain/helpers.mk
+@@ -163,7 +163,9 @@ copy_toolchain_sysroot = \
+ # $3: kernel version string, in the form: X.Y
+ #
+ check_kernel_headers_version = \
+-	support/scripts/check-kernel-headers.sh $(1) $(2) $(3)
++	if ! support/scripts/check-kernel-headers.sh $(1) $(2) $(3); then \
++		exit 1; \
++	fi
+ 
+ #
+ # Check the specific gcc version actually matches the version in the
+diff --git a/toolchain/toolchain-buildroot/Config.in b/toolchain/toolchain-buildroot/Config.in
+index beb17a218b..d8e39fdce1 100644
+--- a/toolchain/toolchain-buildroot/Config.in
++++ b/toolchain/toolchain-buildroot/Config.in
+@@ -94,6 +94,8 @@ config BR2_TOOLCHAIN_BUILDROOT_MUSL
+ 	  This option selects musl as the C library for the
+ 	  cross-compilation toolchain.
+ 
++	  https://www.musl-libc.org/
++
+ endchoice
+ 
+ config BR2_TOOLCHAIN_BUILDROOT_LIBC
+diff --git a/utils/genrandconfig b/utils/genrandconfig
+index a2190d6d25..5f7aed0218 100755
+--- a/utils/genrandconfig
++++ b/utils/genrandconfig
+@@ -39,14 +39,6 @@ def urlopen_closing(uri):
+     return contextlib.closing(_urllib.urlopen(uri))
+ 
+ 
+-if sys.hexversion >= 0x3000000:
+-    def decode_byte_list(bl):
+-        return [b.decode() for b in bl]
+-else:
+-    def decode_byte_list(e):
+-        return e
+-
+-
+ class SystemInfo:
+     DEFAULT_NEEDED_PROGS = ["make", "git", "gcc", "timeout"]
+     DEFAULT_OPTIONAL_PROGS = ["bzr", "java", "javac", "jar"]
+@@ -128,7 +120,7 @@ def get_toolchain_configs(toolchains_csv, buildrootdir):
+     with open(toolchains_csv) as r:
+         # filter empty lines and comments
+         lines = [t for t in r.readlines() if len(t.strip()) > 0 and t[0] != '#']
+-        toolchains = decode_byte_list(lines)
++        toolchains = lines
+     configs = []
+ 
+     (_, _, _, _, hostarch) = os.uname()
